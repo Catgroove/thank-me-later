@@ -2,7 +2,7 @@
 // have no real implementation in this release; these stand in for them. The Git
 // Provider is real (see git.test.ts), so it has no fake here.
 
-import type { Pending } from "../src/pending.ts";
+import { AbortError, type Pending } from "../src/pending.ts";
 import type { CheckRun, Forge, OpenPullRequestInput, PullRequest } from "../src/providers/forge.ts";
 import type {
   AgentProgress,
@@ -76,10 +76,15 @@ export class FakeForge implements Forge {
 
 export interface FakeHarnessOptions {
   result?: AgentResult;
-  settleAfter?: number;
   models?: string[];
-  /** Emitted one-per-poll via `onProgress`, so progress interleaves with polling. */
+  /** Streamed via `onProgress` as `run` is called, before it resolves. */
   progress?: AgentProgress[];
+  /**
+   * When true, `run` never resolves on its own — only an Abort rejects it (with
+   * `AbortError`). Models a long-running agent that an external interrupt ends,
+   * the streaming analogue of the old `settleAfter: Infinity`.
+   */
+  blockUntilAborted?: boolean;
 }
 
 export class FakeHarness implements Harness {
@@ -87,38 +92,47 @@ export class FakeHarness implements Harness {
   /** Set true once an in-flight `run` observes its `signal` aborting. */
   aborted = false;
   private readonly result: AgentResult;
-  private readonly settleAfter: number;
   private readonly models: string[];
   private readonly progress: AgentProgress[];
+  private readonly blockUntilAborted: boolean;
 
   constructor(options: FakeHarnessOptions = {}) {
     this.result = options.result ?? { ok: true, summary: "done" };
-    this.settleAfter = options.settleAfter ?? 1;
     this.models = options.models ?? [];
     this.progress = options.progress ?? [];
+    this.blockUntilAborted = options.blockUntilAborted ?? false;
   }
 
-  run(task: string, opts?: AgentRunOpts): Pending<AgentResult> {
+  run(task: string, opts?: AgentRunOpts): Promise<AgentResult> {
     this.tasks.push(task);
-    opts?.signal?.addEventListener(
-      "abort",
-      () => {
-        this.aborted = true;
-      },
-      { once: true },
-    );
-    let calls = 0;
-    const { progress, settleAfter, result } = this;
-    return {
-      poll() {
-        calls += 1;
-        const item = progress[calls - 1];
-        if (item) opts?.onProgress?.(item);
-        return Promise.resolve(
-          calls >= settleAfter ? { done: true, value: result } : { done: false },
-        );
-      },
+    // Stream progress live, before resolving — proves consumers see it mid-Step.
+    for (const item of this.progress) opts?.onProgress?.(item);
+
+    const signal = opts?.signal;
+    const markAborted = () => {
+      this.aborted = true;
     };
+
+    if (this.blockUntilAborted) {
+      return new Promise<AgentResult>((_resolve, reject) => {
+        if (signal?.aborted) {
+          markAborted();
+          reject(new AbortError());
+          return;
+        }
+        signal?.addEventListener(
+          "abort",
+          () => {
+            markAborted();
+            reject(new AbortError());
+          },
+          { once: true },
+        );
+      });
+    }
+
+    signal?.addEventListener("abort", markAborted, { once: true });
+    return Promise.resolve(this.result);
   }
 
   listModels(): Promise<string[]> {

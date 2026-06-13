@@ -195,14 +195,13 @@ describe("engine — live emission (ADR-0008)", () => {
     const agentic = defineStep({
       name: "agentic",
       async run(ctx) {
-        await ctx.until(ctx.agent.run("do work"), { every: 1 });
+        await ctx.agent.run("do work");
         await gate;
         return {};
       },
     });
 
     const harness = new FakeHarness({
-      settleAfter: 2,
       progress: [{ kind: "text", text: "thinking…" }],
     });
     const engine = createEngine(

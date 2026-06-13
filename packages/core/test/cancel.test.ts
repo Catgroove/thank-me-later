@@ -12,7 +12,7 @@ function neverSettlingAgentStep(name: string) {
   return defineStep({
     name,
     async run(ctx) {
-      await ctx.until(ctx.agent.run("long task"), { every: 1 });
+      await ctx.agent.run("long task");
       return {};
     },
   });
@@ -21,7 +21,7 @@ function neverSettlingAgentStep(name: string) {
 describe("engine — cancellation (ADR-0008)", () => {
   test("an external abort mid-Step ends the Run with run:cancelled", async () => {
     const step = neverSettlingAgentStep("agentic");
-    const harness = new FakeHarness({ settleAfter: Number.POSITIVE_INFINITY });
+    const harness = new FakeHarness({ blockUntilAborted: true });
     const controller = new AbortController();
     const engine = createEngine(
       defineConfig({
@@ -46,7 +46,7 @@ describe("engine — cancellation (ADR-0008)", () => {
 
   test("abandoning the generator (break) aborts the in-flight agent", async () => {
     const step = neverSettlingAgentStep("agentic");
-    const harness = new FakeHarness({ settleAfter: Number.POSITIVE_INFINITY });
+    const harness = new FakeHarness({ blockUntilAborted: true });
     const engine = createEngine(
       defineConfig({ pipeline: [step], providers: { forge: new FakeForge(), agent: harness } }),
     );
