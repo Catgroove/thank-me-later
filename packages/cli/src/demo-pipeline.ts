@@ -41,9 +41,7 @@ const demoForge: Forge = {
 };
 
 const demoAgent: Harness = {
-  run: (task) => ({
-    poll: () => Promise.resolve({ done: true, value: { ok: true, summary: `ran: ${task}` } }),
-  }),
+  run: (task) => Promise.resolve({ ok: true, summary: `ran: ${task}` }),
 };
 
 const snapshot = defineArtifact<string>()("snapshot");

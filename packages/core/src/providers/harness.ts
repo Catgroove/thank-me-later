@@ -1,14 +1,13 @@
 // Harness — the Provider that runs an AI coding agent (ADR-0005). tml calls
 // `agent.run(task)` and the agent does the work; the harness is Claude Code,
-// opencode, codex, pi, etc., behind one interface. An agent task is long-running,
-// so `run` returns a Pending driven by `until`. A Step runs on the Harness's own
-// default model unless it pins a raw, harness-specific id.
+// opencode, codex, pi, etc., behind one interface. An agent *streams*, so `run`
+// returns a `Promise<AgentResult>` that resolves when the turn ends — it is not a
+// pollable `Pending` (ADR-0009: the Harness streams, only the Forge polls). A Step
+// runs on the Harness's own default model unless it pins a raw, harness-specific id.
 //
 // Progress is a polymorphic capability (ADR-0008): a harness reports what the
 // agent is doing through `onProgress`, normalized to `AgentProgress`, and the
 // engine turns that into the one event stream. A run is cancellable via `signal`.
-
-import type { Pending } from "../pending.ts";
 
 /** Normalized, harness-agnostic agent activity surfaced as `agent:progress`. */
 export type AgentProgress =
@@ -39,7 +38,7 @@ export interface AgentRunOpts {
 }
 
 export interface Harness {
-  run(task: string, opts?: AgentRunOpts): Pending<AgentResult>;
+  run(task: string, opts?: AgentRunOpts): Promise<AgentResult>;
   /** Optional capability: the engine validates pinned models when present. */
   listModels?(): Promise<string[]>;
 }

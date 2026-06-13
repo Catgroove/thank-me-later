@@ -61,24 +61,32 @@ A pluggable external capability a Step calls into, configured in `tml.config.ts`
 kinds — Harness (run an agent task) and Forge (the external code-host; GitHub first) — are
 *distinct, typed domain interfaces*, deliberately NOT collapsed into one generic interface
 (that would forfeit the type safety behind [[0003-declared-artifacts]]). What they share
-is not their domain shape but the temporal axis: long-running, eventually-consistent
-operations return a Pending value. Git is *not* a Provider — there is only one git, so the
+is not their domain shape but that each is a configured, typed domain interface. They
+differ on the temporal axis: the Forge *polls* — its eventually-consistent reads (CI
+settling, a PR becoming mergeable) return a Pending driven by `until` — whereas the
+Harness *streams* — `agent.run` pushes progress and resolves a result, never a Pending
+([[0009-harness-streams-forge-polls]]). Git is *not* a Provider — there is only one git, so the
 engine exposes it natively as `ctx.git` rather than as a configured, swappable interface
 ([[0007-git-is-native-not-a-provider]]).
 _Avoid_: Backend, driver, adapter, integration
 
 **Pending**:
-The result type for an eventually-consistent Provider operation — CI settling, an agent
-task finishing, a PR becoming mergeable. The engine owns a single `until(pending, {every,
-timeout})` primitive that polls any Pending to resolution, so the sync / async / pollable
-distinction lives in the *result type*, not in a per-Provider poll loop. Synchronous
-operations just return a Promise.
+The result type for an eventually-consistent, *pollable* Provider operation — CI settling,
+a PR becoming mergeable. These are Forge reads: external state with a cheap "is it there
+yet?" check. The engine owns a single `until(pending, {every, timeout})` primitive that
+polls any Pending to resolution, so the pollable / synchronous distinction lives in the
+*result type*, not in a per-Provider poll loop. Synchronous operations just return a
+Promise. A Harness agent task is *not* a Pending — it streams and resolves a result, not a
+thing you poll ([[0009-harness-streams-forge-polls]]).
 _Avoid_: Future, deferred, task, poller
 
 **Harness**:
-The Provider that runs an AI coding agent. tml calls `agent.run(task)` and receives a
-result; the harness is Claude Code, opencode, codex, pi, etc., abstracted behind one
-interface. A Step runs on the Harness's own default model unless it pins a raw,
+The Provider that runs an AI coding agent. tml calls `agent.run(task)`, which streams the
+agent's activity via `onProgress` and resolves a `Promise` with the result — it does not
+return a pollable Pending ([[0009-harness-streams-forge-polls]]). The harness is Claude
+Code, opencode, codex, pi, etc., abstracted behind one interface. Each gets its own small
+package that shells out to that tool's headless mode (pi: `pi --mode json`); ACP is a
+future *additional* backend, not the boundary. A Step runs on the Harness's own default model unless it pins a raw,
 harness-specific model (verified at startup when the Harness can list its models); the
 default pipeline names no models, so it stays portable by referencing nothing. tml can
 also be *hosted inside* a harness as a plugin. The Provider abstraction is the Harness;

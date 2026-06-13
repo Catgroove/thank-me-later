@@ -27,9 +27,9 @@ describe("FakeForge", () => {
 });
 
 describe("FakeHarness", () => {
-  test("run records the task and settles to a result via until", async () => {
+  test("run records the task and resolves to a result (a Promise, not a Pending)", async () => {
     const agent = new FakeHarness();
-    const result = await until(agent.run("format the repo"), { every: 1 });
+    const result = await agent.run("format the repo");
     expect(result.ok).toBe(true);
     expect(agent.tasks).toEqual(["format the repo"]);
   });
