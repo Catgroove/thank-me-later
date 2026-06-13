@@ -1,4 +1,7 @@
-// @tml/github — the Forge Provider (GitHub first): PullRequest, CheckRun,
-// ReviewThread, mergeable (ADR-0005). The real provider surface lands in a later
-// spec. Placeholder export keeps the package valid.
-export const PACKAGE = "@tml/github" as const;
+// @tml/github — the GitHub Forge provider (ADR-0005). `createGitHubForge(cwd)`
+// implements core's `Forge` by shelling out to the `gh` CLI; `gh` owns auth and
+// repo detection. The canonical lifecycle entities (PullRequest, CheckRun,
+// ReviewThread, mergeable) live in @tml/core — this package only maps onto them.
+
+export { createGitHubForge } from "./forge.ts";
+export type { GhRunner } from "./gh.ts";
