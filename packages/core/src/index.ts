@@ -1,6 +1,30 @@
-// @tml/core — the engine: step contract, Pending/until, lifecycle model.
-// The public surface is deliberately unspecified for now; see
-// docs/ARCHITECTURE.md ("Not yet decided / not yet built"). Placeholder export
-// keeps the package a valid, typecheckable workspace member until the real
-// surface lands in a later spec.
-export const PACKAGE = "@tml/core" as const;
+// @tml/core — the engine and the curated public surface plugins peer-depend on.
+// Only what is re-exported here is public; everything else (the flow-signal brand
+// and guard, the run-loop internals) stays private to the package.
+
+export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
+export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
+export { type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
+export type { Ctx } from "./context.ts";
+export { defineStep, type Step, type StepRun } from "./step.ts";
+export {
+  type Config,
+  defineConfig,
+  definePlugin,
+  type Pipeline,
+  type Plugin,
+  type Providers,
+} from "./pipeline.ts";
+export { type CommitResult, createGit, type Git, type GitStatus } from "./providers/git.ts";
+export type {
+  CheckRun,
+  Forge,
+  Mergeable,
+  OpenPullRequestInput,
+  PullRequest,
+  ReviewThread,
+} from "./providers/forge.ts";
+export type { AgentResult, Harness } from "./providers/harness.ts";
+export type { RunEvent } from "./events.ts";
+export { createEngine, type Engine, type EngineOptions, NotImplementedError } from "./engine.ts";
+export { AssemblyError, validatePipeline } from "./validate.ts";

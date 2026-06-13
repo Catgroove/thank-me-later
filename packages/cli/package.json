@@ -5,5 +5,8 @@
   "bin": {
     "tml": "./src/index.ts"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@tml/core": "workspace:*"
+  }
 }
