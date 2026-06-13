@@ -1,0 +1,9 @@
+{
+  "name": "tml",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "tml": "./src/index.ts"
+  },
+  "type": "module"
+}
