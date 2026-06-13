@@ -20,6 +20,9 @@
       "bin": {
         "tml": "./src/index.ts",
       },
+      "dependencies": {
+        "@tml/core": "workspace:*",
+      },
     },
     "packages/core": {
       "name": "@tml/core",

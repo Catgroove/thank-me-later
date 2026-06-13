@@ -16,10 +16,13 @@ async function runCli(...args: string[]) {
 }
 
 describe("tml ship", () => {
-  test("prints 'Hello World' and exits 0", async () => {
+  test("runs the demo pipeline through the engine and prints its event stream", async () => {
     const { stdout, exitCode } = await runCli("ship");
-    expect(stdout.trim()).toBe("Hello World");
     expect(exitCode).toBe(0);
+    expect(stdout).toContain("run started");
+    expect(stdout).toContain("snapshot");
+    expect(stdout).toContain("skipped"); // the maybe-skip Step exercised a flow signal
+    expect(stdout).toContain("run finished");
   });
 
   test("unknown command exits non-zero with a hint", async () => {

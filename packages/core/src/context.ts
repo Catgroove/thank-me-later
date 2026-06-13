@@ -1,0 +1,32 @@
+// The Run context handed to every Step's `run`. Reads are typed to the Step's
+// declared `consumes` (the `C` tuple), so a Step can only read artifacts it
+// declared — and the engine has already guaranteed at assembly time that a
+// producer exists. Providers are the three distinct, typed domain interfaces
+// (ADR-0005); `until` is the engine-owned temporal primitive; `ask` escalates a
+// decision (free-text in this release).
+
+import type { Artifact } from "./artifact.ts";
+import type { Pending } from "./pending.ts";
+import type { Forge } from "./providers/forge.ts";
+import type { Git } from "./providers/git.ts";
+import type { Harness } from "./providers/harness.ts";
+
+export interface Ctx<
+  C extends readonly Artifact<unknown, string>[] = readonly Artifact<unknown, string>[],
+> {
+  /** Read a consumed artifact's value. Only tokens declared in `consumes` are accepted. */
+  read<A extends C[number]>(artifact: A): A extends Artifact<infer T, string> ? T : never;
+
+  readonly git: Git;
+  readonly forge: Forge;
+  readonly agent: Harness;
+
+  /** Drive an eventually-consistent Provider result to resolution. */
+  until<T>(pending: Pending<T>, opts?: { every?: number; timeout?: number }): Promise<T>;
+
+  /** Escalate a decision to a human or agent; resolves to their free-text reply. */
+  ask(prompt: string): Promise<string>;
+
+  /** Emit a progress line into the Run's event stream. */
+  log(message: string): void;
+}
