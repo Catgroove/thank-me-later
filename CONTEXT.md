@@ -117,10 +117,26 @@ _Avoid_: Plugin (reserve for pipeline extensions), integration, binding
 
 **Event stream**:
 The structured sequence of events the headless core emits during a Run (`step:started`,
-`artifact:written`, `ask:pending`, `run:finished`, …). All presentation — the standalone
-TUI, CLI logs, and host Adapters — is a consumer of this one stream; the engine itself
-draws nothing.
+`artifact:written`, `agent:progress`, `ask:pending`, `run:finished`, `run:cancelled`, …).
+Events are emitted *live* as they occur — including `agent:progress` mid-Step — not
+batched at Step boundaries. All presentation — the standalone TUI, CLI logs, and host
+Adapters — is a consumer of this one stream; the engine itself draws nothing.
 _Avoid_: Logs, output, feed
+
+**Agent progress**:
+The normalized, harness-agnostic stream of what an agent is doing during an `agent.run` —
+text deltas and tool activity — surfaced as `agent:progress` events. Every Harness reports
+it the same way (`onProgress`), so the engine, not the harness, owns turning it into the
+one Event stream. The presentation (e.g. live TUI rendering) is a stream consumer's job.
+_Avoid_: Stream, output, deltas, transcript
+
+**Abort**:
+The external cancellation of an in-flight Run, delivered as an `AbortSignal` on `ctx.signal`
+that Providers observe — the agent subprocess is killed, the `until` poll loop stops — and
+ending the Run with a `run:cancelled` event. Distinct from the `cancel()` Flow signal: an
+Abort is an *outside* interrupt (a person hits Ctrl-C), whereas `cancel()` is an
+*in-pipeline* decision a Step returns. Same English word, two mechanisms.
+_Avoid_: Cancel (reserve for the Flow signal), kill, interrupt, stop
 
 **Worktree**:
 The disposable git worktree under `.tml/` into which tml snapshots the current state
@@ -132,7 +148,9 @@ _Avoid_: Sandbox, clone, scratch dir
 **Flow signal**:
 A value a Step *returns* to control the Pipeline: skip the Step, cancel the Run early,
 retry the Step, or goto another Step. Distinct from Ask, which is an *awaited* escalation
-effect, not a returned signal: flow signals redirect control, Ask requests a decision.
+effect, not a returned signal: flow signals redirect control, Ask requests a decision. The
+`cancel()` signal is an *in-pipeline* early exit a Step chooses; it is not an Abort (an
+external interrupt — see [[abort]]).
 _Avoid_: Control code, directive, command, branch (the mechanism is goto)
 
 **Ask**:

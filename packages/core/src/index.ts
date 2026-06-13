@@ -4,7 +4,7 @@
 
 export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
 export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
-export { type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
+export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
 export type { Ctx } from "./context.ts";
 export { defineStep, type Step, type StepRun } from "./step.ts";
 export {
@@ -24,7 +24,7 @@ export type {
   PullRequest,
   ReviewThread,
 } from "./providers/forge.ts";
-export type { AgentResult, Harness } from "./providers/harness.ts";
+export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions, NotImplementedError } from "./engine.ts";
 export { AssemblyError, validatePipeline } from "./validate.ts";
