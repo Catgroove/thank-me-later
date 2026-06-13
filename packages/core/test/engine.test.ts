@@ -180,3 +180,51 @@ describe("engine — flow signals, ask, and failure", () => {
     expect(() => engineFor([orphan])).toThrow(AssemblyError);
   });
 });
+
+describe("engine — live emission (ADR-0008)", () => {
+  test("agent:progress reaches the consumer before the Step finishes", async () => {
+    // The Step blocks on `gate` until the test sees an `agent:progress` event.
+    // Under buffer-then-flush the consumer would never see progress (the Step is
+    // still running), the gate would never open, and this test would time out —
+    // so completing at all proves events are emitted live, mid-Step.
+    let openGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+
+    const agentic = defineStep({
+      name: "agentic",
+      async run(ctx) {
+        await ctx.until(ctx.agent.run("do work"), { every: 1 });
+        await gate;
+        return {};
+      },
+    });
+
+    const harness = new FakeHarness({
+      settleAfter: 2,
+      progress: [{ kind: "text", text: "thinking…" }],
+    });
+    const engine = createEngine(
+      defineConfig({ pipeline: [agentic], providers: { forge: new FakeForge(), agent: harness } }),
+    );
+
+    const events: RunEvent[] = [];
+    for await (const event of engine.run()) {
+      events.push(event);
+      if (event.type === "agent:progress") openGate(); // unblock the Step
+    }
+
+    const order = types(events);
+    const progressAt = order.indexOf("agent:progress");
+    const finishedAt = order.indexOf("step:finished");
+    expect(progressAt).toBeGreaterThanOrEqual(0);
+    expect(progressAt).toBeLessThan(finishedAt);
+    expect(events).toContainEqual({
+      type: "agent:progress",
+      step: "agentic",
+      progress: { kind: "text", text: "thinking…" },
+    });
+    expect(order.at(-1)).toBe("run:finished");
+  });
+});

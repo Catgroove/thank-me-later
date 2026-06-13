@@ -21,8 +21,14 @@ export interface Ctx<
   readonly forge: Forge;
   readonly agent: Harness;
 
+  /** Aborts when the Run is cancelled; observed by `until` and the agent (ADR-0008). */
+  readonly signal: AbortSignal;
+
   /** Drive an eventually-consistent Provider result to resolution. */
-  until<T>(pending: Pending<T>, opts?: { every?: number; timeout?: number }): Promise<T>;
+  until<T>(
+    pending: Pending<T>,
+    opts?: { every?: number; timeout?: number; signal?: AbortSignal },
+  ): Promise<T>;
 
   /** Escalate a decision to a human or agent; resolves to their free-text reply. */
   ask(prompt: string): Promise<string>;

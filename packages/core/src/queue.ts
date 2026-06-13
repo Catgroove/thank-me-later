@@ -1,0 +1,73 @@
+// A minimal one-producer / one-consumer async queue that backs the engine's live
+// event stream (ADR-0008). The pipeline driver `push`es RunEvents as they happen;
+// the run generator iterates. It is *pull-based*, so a slow consumer applies
+// natural backpressure on iteration — there is no callback that can outrun a TUI.
+//
+// `close()` ends iteration after the buffer drains; `fail()` makes the next pull
+// reject. Both are terminal and idempotent.
+//
+// NOTE: the buffer is unbounded. A persistently slow consumer lets it grow; a hard
+// bound (drop / coalesce policy) is deliberately deferred until a real consumer
+// needs it (see 0004 spec, Open Question 4) — not silently handled here.
+
+interface Waiter<T> {
+  resolve(result: IteratorResult<T>): void;
+  reject(error: unknown): void;
+}
+
+export interface EventQueue<T> {
+  push(event: T): void;
+  close(): void;
+  fail(error: unknown): void;
+  [Symbol.asyncIterator](): AsyncIterator<T>;
+}
+
+export function createEventQueue<T>(): EventQueue<T> {
+  const buffer: T[] = [];
+  let waiter: Waiter<T> | null = null;
+  let closed = false;
+  let failure: { error: unknown } | null = null;
+
+  const takeWaiter = (): Waiter<T> | null => {
+    const w = waiter;
+    waiter = null;
+    return w;
+  };
+
+  return {
+    push(event) {
+      if (closed || failure) return; // terminal — ignore late producers
+      const w = takeWaiter();
+      if (w) w.resolve({ value: event, done: false });
+      else buffer.push(event);
+    },
+
+    close() {
+      if (closed || failure) return;
+      closed = true;
+      takeWaiter()?.resolve({ value: undefined as never, done: true });
+    },
+
+    fail(error) {
+      if (closed || failure) return;
+      failure = { error };
+      takeWaiter()?.reject(error);
+    },
+
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<T>> {
+          // Buffered events drain first — a failure or close only surfaces once
+          // the consumer has caught up.
+          if (buffer.length > 0)
+            return Promise.resolve({ value: buffer.shift() as T, done: false });
+          if (failure) return Promise.reject(failure.error);
+          if (closed) return Promise.resolve({ value: undefined as never, done: true });
+          return new Promise<IteratorResult<T>>((resolve, reject) => {
+            waiter = { resolve, reject };
+          });
+        },
+      };
+    },
+  };
+}

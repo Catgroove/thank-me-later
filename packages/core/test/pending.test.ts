@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type Pending, TimeoutError, until } from "../src/pending.ts";
+import { AbortError, type Pending, TimeoutError, until } from "../src/pending.ts";
 
 /** A Pending that settles to `value` on its Nth poll, counting calls. */
 function settlesAfter<T>(polls: number, value: T) {
@@ -36,5 +36,32 @@ describe("until", () => {
       caught = error;
     }
     expect(caught).toBeInstanceOf(TimeoutError);
+  });
+
+  test("throws AbortError immediately when the signal is already aborted", async () => {
+    const { pending, calls } = settlesAfter(5, "x");
+    let caught: unknown;
+    try {
+      await until(pending, { signal: AbortSignal.abort() });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(AbortError);
+    expect(calls()).toBe(0); // bailed before the first poll
+  });
+
+  test("aborts promptly mid-wait without spinning further polls", async () => {
+    const { pending, calls } = settlesAfter(5, "never reached");
+    const controller = new AbortController();
+    // Abort during the first inter-poll sleep (every is long; abort is prompt).
+    queueMicrotask(() => controller.abort());
+    let caught: unknown;
+    try {
+      await until(pending, { every: 10_000, timeout: 60_000, signal: controller.signal });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(AbortError);
+    expect(calls()).toBe(1); // one poll, then the sleep was interrupted
   });
 });

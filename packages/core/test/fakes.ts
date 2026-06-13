@@ -4,7 +4,12 @@
 
 import type { Pending } from "../src/pending.ts";
 import type { CheckRun, Forge, OpenPullRequestInput, PullRequest } from "../src/providers/forge.ts";
-import type { AgentResult, Harness } from "../src/providers/harness.ts";
+import type {
+  AgentProgress,
+  AgentResult,
+  AgentRunOpts,
+  Harness,
+} from "../src/providers/harness.ts";
 
 /** A Pending that settles to `value` on its Nth poll (N = 1 means immediate). */
 function pendingAfter<T>(polls: number, value: T): Pending<T> {
@@ -73,23 +78,47 @@ export interface FakeHarnessOptions {
   result?: AgentResult;
   settleAfter?: number;
   models?: string[];
+  /** Emitted one-per-poll via `onProgress`, so progress interleaves with polling. */
+  progress?: AgentProgress[];
 }
 
 export class FakeHarness implements Harness {
   readonly tasks: string[] = [];
+  /** Set true once an in-flight `run` observes its `signal` aborting. */
+  aborted = false;
   private readonly result: AgentResult;
   private readonly settleAfter: number;
   private readonly models: string[];
+  private readonly progress: AgentProgress[];
 
   constructor(options: FakeHarnessOptions = {}) {
     this.result = options.result ?? { ok: true, summary: "done" };
     this.settleAfter = options.settleAfter ?? 1;
     this.models = options.models ?? [];
+    this.progress = options.progress ?? [];
   }
 
-  run(task: string): Pending<AgentResult> {
+  run(task: string, opts?: AgentRunOpts): Pending<AgentResult> {
     this.tasks.push(task);
-    return pendingAfter(this.settleAfter, this.result);
+    opts?.signal?.addEventListener(
+      "abort",
+      () => {
+        this.aborted = true;
+      },
+      { once: true },
+    );
+    let calls = 0;
+    const { progress, settleAfter, result } = this;
+    return {
+      poll() {
+        calls += 1;
+        const item = progress[calls - 1];
+        if (item) opts?.onProgress?.(item);
+        return Promise.resolve(
+          calls >= settleAfter ? { done: true, value: result } : { done: false },
+        );
+      },
+    };
   }
 
   listModels(): Promise<string[]> {

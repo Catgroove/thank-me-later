@@ -11,6 +11,12 @@ function formatEvent(event: RunEvent): string {
       return `  ▸ ${event.step}`;
     case "step:log":
       return `    · ${event.message}`;
+    case "agent:progress": {
+      const p = event.progress;
+      return p.kind === "text"
+        ? `    · ${p.text}`
+        : `    ⚙ ${p.name} ${p.phase}${p.detail ? `: ${p.detail}` : ""}`;
+    }
     case "artifact:written":
       return `    + ${event.artifact}`;
     case "step:skipped":
@@ -21,6 +27,8 @@ function formatEvent(event: RunEvent): string {
       return `  ? ${event.step}: ${event.prompt}`;
     case "run:finished":
       return "■ run finished";
+    case "run:cancelled":
+      return `◼ run cancelled${event.step ? ` at ${event.step}` : ""}`;
     case "run:failed":
       return `✗ run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`;
   }
@@ -29,11 +37,14 @@ function formatEvent(event: RunEvent): string {
 async function ship(): Promise<number> {
   try {
     let failed = false;
+    let cancelled = false;
     for await (const event of createEngine(demoConfig()).run()) {
       console.log(formatEvent(event));
       if (event.type === "run:failed") failed = true;
+      if (event.type === "run:cancelled") cancelled = true;
     }
-    return failed ? 1 : 0;
+    // 130 = the conventional SIGINT exit code; an Abort is not a failure.
+    return cancelled ? 130 : failed ? 1 : 0;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
