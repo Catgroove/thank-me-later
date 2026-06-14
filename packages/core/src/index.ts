@@ -16,7 +16,6 @@ export {
   type Providers,
 } from "./pipeline.ts";
 export { type CommitResult, createGit, type Git, type GitStatus } from "./providers/git.ts";
-export { createWorktree, type Worktree } from "./worktree.ts";
 export type {
   CheckRun,
   Forge,

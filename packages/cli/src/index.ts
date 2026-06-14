@@ -1,13 +1,6 @@
 #!/usr/bin/env bun
 
-import {
-  type Config,
-  createEngine,
-  createWorktree,
-  type Engine,
-  type EngineOptions,
-  type Worktree,
-} from "@tml/core";
+import { type Config, createEngine, type Engine, type EngineOptions } from "@tml/core";
 import {
   createCliRenderer,
   createPlainRenderer,
@@ -17,11 +10,10 @@ import {
 } from "@tml/view";
 import { buildShipConfig } from "./config.ts";
 
-/** Seams, injected by tests; production uses the real worktree, config, and engine. */
+/** Seams, injected by tests; production uses the real config and engine against the checkout. */
 export interface ShipDeps {
   cwd?: string;
-  setupWorktree?: (cwd: string) => Promise<Worktree>;
-  buildConfig?: (worktree: Worktree) => Config;
+  buildConfig?: (cwd: string) => Config;
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
   /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
   renderer?: Renderer;
@@ -36,17 +28,14 @@ function defaultRenderer(): Renderer {
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
-  const setupWorktree = deps.setupWorktree ?? createWorktree;
   const buildConfig = deps.buildConfig ?? buildShipConfig;
   const engineFor = deps.engineFor ?? createEngine;
   const renderer = deps.renderer ?? defaultRenderer();
 
-  // Snapshot the live checkout into a disposable worktree and run the pipeline there, so the
-  // user's checkout is untouched; dispose it whatever the outcome (ADR-0010).
-  let worktree: Worktree | undefined;
+  // tml ship runs in place: the pipeline branches, commits, and pushes in the user's own checkout
+  // (ADR-0010), so the Providers and `ctx.git` all bind to `cwd`.
   try {
-    worktree = await setupWorktree(cwd);
-    const engine = engineFor(buildConfig(worktree), { cwd: worktree.path });
+    const engine = engineFor(buildConfig(cwd), { cwd });
     let view = initialView;
     let failed = false;
     let cancelled = false;
@@ -64,7 +53,6 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     return 1;
   } finally {
     renderer.close(); // stop the spinner timer / clear the live region on every path
-    await worktree?.dispose();
   }
 }
 

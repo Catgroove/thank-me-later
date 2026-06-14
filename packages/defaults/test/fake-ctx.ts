@@ -26,6 +26,8 @@ export class FakeGit implements Git {
   currentBranchName = "HEAD";
   headShaValue = "abc1234";
   commitSha = "0".repeat(40);
+  stagedFiles: string[] = [];
+  unstagedFiles: string[] = [];
 
   currentBranch(): Promise<string> {
     return Promise.resolve(this.currentBranchName);
@@ -53,10 +55,14 @@ export class FakeGit implements Git {
     return Promise.resolve({ sha: this.commitSha });
   }
   status(): Promise<GitStatus> {
-    return Promise.resolve({ branch: this.currentBranchName, staged: [], unstaged: [] });
+    return Promise.resolve({
+      branch: this.currentBranchName,
+      staged: this.stagedFiles,
+      unstaged: this.unstagedFiles,
+    });
   }
-  push(opts?: { setUpstream?: boolean }): Promise<void> {
-    this.calls.push(`push${opts?.setUpstream ? " -u" : ""}`);
+  push(opts: { branch: string }): Promise<void> {
+    this.calls.push(`push ${opts.branch}`);
     return Promise.resolve();
   }
 }

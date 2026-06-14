@@ -6,8 +6,8 @@
 // referencing nothing) and supplies no Providers — the host wires Forge + Harness.
 
 export { branchName, pullRequest, reviewSummary } from "./artifacts.ts";
-export { tmlDefaults } from "./plugin.ts";
-export { branchNameFor, branchStep } from "./steps/branch.ts";
+export { type DefaultsOptions, tmlDefaults } from "./plugin.ts";
+export { type BranchMode, branchNameFor, branchStep } from "./steps/branch.ts";
 export { ciWaitStep } from "./steps/ci-wait.ts";
 export { checkStep, formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
 export { openPrStep } from "./steps/open-pr.ts";

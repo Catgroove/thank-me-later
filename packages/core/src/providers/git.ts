@@ -2,8 +2,8 @@
 // interfaces, deliberately not collapsed into a generic Provider.
 //
 // `createGit(cwd)` is the real implementation: it shells out to the system `git`
-// against a caller-supplied repo directory. No worktree yet (that is a later
-// spec); production passes the live checkout, tests pass a throwaway temp repo.
+// against a caller-supplied repo directory. Production binds it to the live checkout
+// (ADR-0010); tests pass a throwaway temp repo.
 
 export interface CommitResult {
   readonly sha: string;
@@ -26,7 +26,8 @@ export interface Git {
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
   status(): Promise<GitStatus>;
-  push(opts?: { setUpstream?: boolean }): Promise<void>;
+  /** Push `branch` to `origin`, setting upstream tracking (the branch tml ships under). */
+  push(opts: { branch: string }): Promise<void>;
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -107,11 +108,7 @@ export function createGit(cwd: string): Git {
     },
 
     async push(opts) {
-      if (opts?.setUpstream) {
-        await git(cwd, ["push", "--set-upstream", "origin", await branch()]);
-        return;
-      }
-      await git(cwd, ["push"]);
+      await git(cwd, ["push", "--set-upstream", "origin", opts.branch]);
     },
   };
 }

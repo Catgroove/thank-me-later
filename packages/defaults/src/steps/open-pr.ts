@@ -1,7 +1,7 @@
 // `open-pr` — commit the work, push the branch, and open the PR. Idempotent (ADR-0004): if
 // a PR already exists for this head branch, reuse it and skip the open, so a re-run never
-// double-opens. The PR title + body are agent-written (structured output), the title doubles
-// as the single commit subject, and the base is the repo's default branch.
+// double-opens. The PR title + body are agent-written (structured output); when tml creates a
+// commit, the title doubles as its subject. The base is the repo's default branch.
 
 import { defineStep, type Step } from "@tml/core";
 import { branchName, pullRequest, reviewSummary } from "../artifacts.ts";
@@ -38,8 +38,13 @@ export function openPrStep(): Step {
       const { title, body } = asDescription(reply.output);
 
       await ctx.git.stageAll();
-      await ctx.git.commit(title); // the PR title is the commit subject — one commit per ship
-      await ctx.git.push({ setUpstream: true });
+      const status = await ctx.git.status();
+      if (status.staged.length > 0) {
+        await ctx.git.commit(title); // the PR title is the commit subject when tml creates one
+      } else {
+        ctx.log("no uncommitted changes to commit; pushing existing commits");
+      }
+      await ctx.git.push({ branch: head }); // push the feature branch we ship under (ADR-0012)
 
       const base = await ctx.git.defaultBranch();
       const pr = await ctx.forge.openPullRequest({ head, base, title, body });

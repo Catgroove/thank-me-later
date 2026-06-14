@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  branchNamePrompt,
+  branchNameSchema,
   formatPrompt,
   lintPrompt,
   prDescriptionPrompt,
@@ -30,5 +32,12 @@ describe("default pipeline prompts", () => {
 
   test("prDescriptionSchema requires title and body", () => {
     expect(prDescriptionSchema.required).toEqual(["title", "body"]);
+  });
+
+  test("branchNamePrompt asks for a name from the whole diff; schema requires branch", () => {
+    expect(branchNamePrompt).toContain("diff");
+    expect(branchNamePrompt).toContain("untracked");
+    expect(branchNamePrompt).toContain("kebab-case");
+    expect(branchNameSchema.required).toEqual(["branch"]);
   });
 });
