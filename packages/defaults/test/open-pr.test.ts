@@ -1,59 +1,46 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@tml/core";
 import { openPrStep } from "../src/steps/open-pr.ts";
-import { FakeForge, FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
+import { FakeForge, FakeGit, fakeCtx } from "./fake-ctx.ts";
 
-const reads = { branchName: "tml/ship-abc1234", reviewSummary: "fixed an off-by-one" };
-
-function withDescription(): FakeHarness {
-  const agent = new FakeHarness();
-  agent.result = {
-    ok: true,
-    summary: "wrote pr",
-    output: { title: "fix: off-by-one in pager", body: "Fixes the boundary case." },
-  };
-  return agent;
-}
+const reads = {
+  branchName: "tml/ship-abc1234",
+  prTitle: "fix: off-by-one in pager",
+  prBody: "Fixes the boundary case.",
+  reviewSummary: "fixed an off-by-one",
+};
 
 describe("open-pr step", () => {
-  test("writes a description, then commits → pushes → opens (in that order)", async () => {
+  test("pushes the branch and opens the PR, folding the review into the body", async () => {
     const git = new FakeGit();
-    git.stagedFiles = ["src/pager.ts"];
     const forge = new FakeForge();
-    const { ctx } = fakeCtx({ git, forge, agent: withDescription(), reads });
+    const { ctx } = fakeCtx({ git, forge, reads });
 
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
-    expect(git.calls).toEqual([
-      "stageAll",
-      "commit fix: off-by-one in pager",
-      "push tml/ship-abc1234", // pushes the ship branch (= PR head)
-    ]);
+    // No commit — the work and fixes were committed by the commit Steps already.
+    expect(git.calls).toEqual(["push tml/ship-abc1234"]);
     expect(forge.opened).toHaveLength(1);
     expect(forge.opened[0]).toEqual({
       head: "tml/ship-abc1234",
       base: "main",
       title: "fix: off-by-one in pager",
-      body: "Fixes the boundary case.",
+      body: "Fixes the boundary case.\n\n## Review\n\nfixed an off-by-one",
     });
     expect(result.pullRequest.number).toBe(1);
-    expect(result.pullRequest.body).toContain("boundary case");
   });
 
-  test("pushes existing commits when there is nothing new to commit", async () => {
+  test("omits the review section when the summary is empty", async () => {
     const git = new FakeGit();
     const forge = new FakeForge();
-    const { ctx, logs } = fakeCtx({ git, forge, agent: withDescription(), reads });
+    const { ctx } = fakeCtx({ git, forge, reads: { ...reads, reviewSummary: "" } });
 
-    const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
+    await openPrStep().run(ctx);
 
-    expect(git.calls).toEqual(["stageAll", "push tml/ship-abc1234"]);
-    expect(logs).toContain("no uncommitted changes to commit; pushing existing commits");
-    expect(forge.opened).toHaveLength(1);
-    expect(result.pullRequest.number).toBe(1);
+    expect(forge.opened[0]?.body).toBe("Fixes the boundary case.");
   });
 
-  test("is idempotent: an existing PR short-circuits commit/push/open", async () => {
+  test("is idempotent: an existing PR is reused after pushing local commits", async () => {
     const git = new FakeGit();
     const forge = new FakeForge();
     const prior: PullRequest = {
@@ -69,27 +56,12 @@ describe("open-pr step", () => {
       threads: [],
     };
     forge.existing = prior;
-    const { ctx } = fakeCtx({ git, forge, agent: withDescription(), reads });
+    const { ctx } = fakeCtx({ git, forge, reads });
 
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
     expect(result.pullRequest).toEqual(prior);
-    expect(git.calls).toEqual([]); // nothing committed or pushed
+    expect(git.calls).toEqual(["push tml/ship-abc1234"]); // update the existing PR's branch
     expect(forge.opened).toEqual([]); // nothing opened
-  });
-
-  test("throws if the agent output is not a { title, body }", async () => {
-    const agent = new FakeHarness();
-    agent.result = { ok: true, summary: "oops", output: { title: 123 } };
-    const { ctx } = fakeCtx({ agent, reads });
-
-    let error: unknown;
-    await openPrStep()
-      .run(ctx)
-      .catch((e: unknown) => {
-        error = e;
-      });
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain("title, body");
   });
 });

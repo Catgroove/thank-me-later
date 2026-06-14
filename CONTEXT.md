@@ -160,6 +160,13 @@ How the `branch` Step gets a Ship branch when you aren't on a feature branch (AD
 a custom policy.
 _Avoid_: Branch strategy, naming scheme
 
+**Commit group**:
+A set of Steps whose combined changes land in one commit, so the Run leaves a clean history that
+separates the author's change from tml's fixes (ADR-0013). Spelled `commitGroup(...steps)`, it is a
+commit Step placed after the wrapped Steps; grouping is positional (a commit captures everything
+since the previous one) and a group that changed nothing makes no commit.
+_Avoid_: Squash, checkpoint (that is the resume journal), stage
+
 **Flow signal**:
 A value a Step *returns* to control the Pipeline: skip the Step, cancel the Run early,
 retry the Step, or goto another Step. Distinct from Ask, which is an *awaited* escalation

@@ -1,13 +1,17 @@
-// `tmlDefaults` — the blessed default pipeline as a Plugin (ADR-0006). The eight Steps in
-// order: branch → format → lint → typecheck → test → review → open-pr → ci-wait. No
-// Providers (the host wires Forge + Harness) and no models (portable by referencing nothing).
-// The Branch mode (ADR-0012) selects how the first Step gets a feature branch; it defaults to
-// `ai`.
+// `tmlDefaults` — the blessed default pipeline as a Plugin (ADR-0006). In order:
+//   branch → describe → commit(the change) → {format,lint,typecheck,test}+commit
+//          → review+commit → open-pr → ci-wait
+// The work lands as a clean history — your change, then tml's fixes in their own commits (ADR-0010).
+// No Providers (the host wires Forge + Harness) and no models (portable by referencing nothing).
+// The Branch mode (ADR-0012) selects how the first Step gets a feature branch; it defaults to `ai`.
 
 import { definePlugin, type Plugin } from "@tml/core";
+import { prTitle } from "./artifacts.ts";
+import { type BranchMode, branchStep } from "./steps/branch.ts";
 import { ciWaitStep } from "./steps/ci-wait.ts";
 import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
-import { type BranchMode, branchStep } from "./steps/branch.ts";
+import { commitGroup, commitStep } from "./steps/commit.ts";
+import { describeStep } from "./steps/describe.ts";
 import { openPrStep } from "./steps/open-pr.ts";
 import { reviewStep } from "./steps/review.ts";
 
@@ -21,11 +25,10 @@ export function tmlDefaults(opts: DefaultsOptions = {}): Plugin {
     name: "@tml/defaults",
     steps: [
       branchStep(opts.branch),
-      formatStep(),
-      lintStep(),
-      typecheckStep(),
-      testStep(),
-      reviewStep(),
+      describeStep(),
+      commitStep("commit-change", prTitle), // your work, subject = the PR title
+      ...commitGroup(formatStep(), lintStep(), typecheckStep(), testStep()),
+      ...commitGroup(reviewStep()),
       openPrStep(),
       ciWaitStep(),
     ],
