@@ -99,10 +99,114 @@ describe("createCliRenderer", () => {
       { type: "step:finished", step: "lint" },
       { type: "run:finished" },
     ]);
-    // The second header is preceded by a committed blank line; the first is not.
-    const blankBefore = (name: string) => `\x1b[2K\n\r\x1b[2K  ▸ ${name}`;
+    // The second header is preceded by a committed blank line (a bare `\n` after the
+    // cleared live line); the first follows its cleared line immediately, with no blank.
+    const blankBefore = (name: string) => `\x1b[2K\n  ▸ ${name}`;
     expect(out).toContain(blankBefore("lint"));
     expect(out).not.toContain(blankBefore("branch"));
+  });
+
+  test("streams prose on a single live line, sealing filled lines into scrollback", () => {
+    const out = renderRaw(
+      [
+        { type: "run:started", pipeline: ["describe"] },
+        { type: "step:started", step: "describe" },
+        {
+          type: "agent:progress",
+          step: "describe",
+          progress: { kind: "text", text: "alpha bravo charlie delta echo" },
+        },
+      ],
+      { columns: 20 },
+    );
+    // Filled lines seal into scrollback (committed above)...
+    expect(out).toContain("alpha bravo");
+    expect(out).toContain("charlie delta");
+    // ...and only the volatile last line stays live, with the spinner trailing it inline.
+    expect(out).toMatch(/echo [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+  });
+
+  test("does not drop pending prose when the terminal is resized mid-stream", () => {
+    let out = "";
+    let columns = 20;
+    const originalColumns = Object.getOwnPropertyDescriptor(process.stdout, "columns");
+    Object.defineProperty(process.stdout, "columns", { configurable: true, get: () => columns });
+    try {
+      const renderer = createCliRenderer({
+        write: (chunk) => {
+          out += chunk;
+        },
+        term: "xterm",
+        intervalMs: 0,
+        now: () => 0,
+      });
+      let view = initialView;
+      const send = (event: RunEvent): void => {
+        view = present(view, event);
+        renderer.render(view, event);
+      };
+
+      send({ type: "run:started", pipeline: ["describe"] });
+      send({ type: "step:started", step: "describe" });
+      send({
+        type: "agent:progress",
+        step: "describe",
+        progress: { kind: "text", text: "alpha bravo charlie delta echo" },
+      });
+      columns = 80;
+      send({
+        type: "agent:progress",
+        step: "describe",
+        progress: { kind: "text", text: " foxtrot golf" },
+      });
+      send({ type: "step:finished", step: "describe" });
+      send({ type: "run:finished" });
+      renderer.close();
+    } finally {
+      if (originalColumns === undefined) {
+        Reflect.deleteProperty(process.stdout, "columns");
+      } else {
+        Object.defineProperty(process.stdout, "columns", originalColumns);
+      }
+    }
+
+    expect(out).toContain("alpha bravo\n");
+    expect(out).toContain("charlie delta\n");
+    expect(out).toContain("echo foxtrot golf\n");
+  });
+
+  test("never moves the cursor up — the live region is one line (tmux-/resize-safe)", () => {
+    // The whole point of the rewrite: zero `\x1b[<n>A`, so a viewport scrolled under us
+    // (tmux copy mode) or a resize can't desync the cursor and smear the live region.
+    const out = renderRaw(
+      [
+        { type: "run:started", pipeline: ["describe", "lint"] },
+        { type: "step:started", step: "describe" },
+        {
+          type: "agent:progress",
+          step: "describe",
+          progress: { kind: "text", text: "alpha bravo charlie delta echo foxtrot golf hotel" },
+        },
+        {
+          type: "agent:progress",
+          step: "describe",
+          progress: { kind: "tool", name: "bash", phase: "start", detail: "git diff" },
+        },
+        {
+          type: "agent:progress",
+          step: "describe",
+          progress: { kind: "text", text: "more words streamed after the tool call as well" },
+        },
+        { type: "step:finished", step: "describe" },
+        { type: "step:started", step: "lint" },
+        { type: "step:skipped", step: "lint" },
+        { type: "run:finished" },
+      ],
+      { columns: 24 },
+    );
+    // Cursor-up is ESC `[` <optional digits> `A`; scan for it without a control char in a regex.
+    const movesCursorUp = out.split("\x1b[").some((part) => /^[0-9]*A/.test(part));
+    expect(movesCursorUp).toBe(false);
   });
 
   test("emits ANSI cursor control for the live region", () => {
