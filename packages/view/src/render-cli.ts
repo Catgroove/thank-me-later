@@ -245,7 +245,10 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
       lastView = view;
       switch (event.type) {
         case "run:started":
-          paint([`▶ ${event.pipeline.join(" → ")}`], liveLine(view));
+          paint(
+            ["▶ pipeline", ...event.pipeline.map((step) => `${STEP_INDENT}${step}`)],
+            liveLine(view),
+          );
           return;
         case "step:started": {
           stepStart = now();
