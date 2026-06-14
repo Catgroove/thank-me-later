@@ -26,11 +26,28 @@ function defaultRenderer(): Renderer {
     : createPlainRenderer((line: string) => console.log(line));
 }
 
+// 128 + signal number: the conventional exit code for a signal-terminated process.
+const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
+
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const buildConfig = deps.buildConfig ?? buildShipConfig;
   const engineFor = deps.engineFor ?? createEngine;
   const renderer = deps.renderer ?? defaultRenderer();
+
+  // On a signal (Ctrl-C, kill) Bun terminates the process without running the `finally`
+  // below, so the renderer's teardown never fires and the terminal is left with a hidden
+  // cursor and/or an open synchronized-output region — the renderer is the sole owner of
+  // that state (ADR-0011). Restore it on the way out, then re-exit with the conventional
+  // code. opentui self-registers these inside its renderer; pi leaves it to the caller —
+  // our renderer-owns-ANSI / CLI-owns-lifecycle split puts it here. Handlers are torn down
+  // in `finally` so repeated in-process calls (tests) don't accumulate listeners.
+  const signals = Object.keys(SIGNAL_EXIT);
+  const onSignal = (signal: string): void => {
+    renderer.close();
+    process.exit(SIGNAL_EXIT[signal] ?? 1);
+  };
+  for (const signal of signals) process.on(signal, onSignal);
 
   // tml ship runs in place: the pipeline branches, commits, and pushes in the user's own checkout
   // (ADR-0010), so the Providers and `ctx.git` all bind to `cwd`.
@@ -52,6 +69,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   } finally {
+    for (const signal of signals) process.off(signal, onSignal);
     renderer.close(); // stop the spinner timer / clear the live region on every path
   }
 }
