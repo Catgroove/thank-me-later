@@ -44,8 +44,11 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // in `finally` so repeated in-process calls (tests) don't accumulate listeners.
   const signals = Object.keys(SIGNAL_EXIT);
   const onSignal = (signal: string): void => {
-    renderer.close();
-    process.exit(SIGNAL_EXIT[signal] ?? 1);
+    try {
+      renderer.close();
+    } finally {
+      process.exit(SIGNAL_EXIT[signal] ?? 1);
+    }
   };
   for (const signal of signals) process.on(signal, onSignal);
 

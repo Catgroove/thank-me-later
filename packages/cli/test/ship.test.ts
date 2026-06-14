@@ -144,6 +144,53 @@ describe("ship() run lifecycle", () => {
     expect(process.listenerCount("SIGINT")).toBe(before); // no leaked handlers
   });
 
+  test("exits with the signal code even if terminal teardown throws", async () => {
+    let started!: () => void;
+    const startedAt = new Promise<void>((resolve) => (started = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+
+    let throwOnClose = true;
+    const renderer: Renderer = {
+      render(_view, event) {
+        if (event.type === "run:started") started();
+      },
+      close() {
+        if (throwOnClose) throw new Error("close failed");
+      },
+    };
+    const engine: Engine = {
+      async *run(): AsyncGenerator<RunEvent> {
+        yield { type: "run:started", pipeline: [] };
+        await gate;
+      },
+    };
+
+    const realExit = process.exit.bind(process);
+    let exitCode: number | undefined;
+    process.exit = ((code?: number): never => {
+      exitCode = code;
+      throw new Error("__exit__");
+    }) as typeof process.exit;
+
+    const before = process.listenerCount("SIGTERM");
+    const run = ship({ buildConfig: () => dummyConfig, engineFor: () => engine, renderer });
+    try {
+      await startedAt;
+
+      const onSignal = process.listeners("SIGTERM").at(-1) as (signal: string) => void;
+      expect(() => onSignal("SIGTERM")).toThrow("__exit__");
+      expect(exitCode).toBe(143);
+    } finally {
+      throwOnClose = false;
+      process.exit = realExit;
+      release();
+      await run;
+    }
+
+    expect(process.listenerCount("SIGTERM")).toBe(before);
+  });
+
   test("returns 1 when engine setup throws", async () => {
     const code = await ship({
       buildConfig: () => dummyConfig,
