@@ -44,7 +44,9 @@ describe("createPlainRenderer", () => {
     ]);
 
     expect(lines).toEqual([
-      "▶ run started: format → lint",
+      "▶ run started:",
+      "  format",
+      "  lint",
       "  ▸ format",
       "    Running the formatter.", // coalesced, flushed at the tool boundary
       "    ⚙ bash · bun run fmt",
@@ -64,7 +66,7 @@ describe("createPlainRenderer", () => {
       { type: "agent:progress", step: "x", progress: { kind: "text", text: "c" } },
       { type: "step:finished", step: "x" },
     ]);
-    expect(lines).toEqual(["▶ run started: x", "  ▸ x", "    abc", "  ✓ x"]);
+    expect(lines).toEqual(["▶ run started:", "  x", "  ▸ x", "    abc", "  ✓ x"]);
   });
 
   test("flushes text between consecutive tools, never re-printing earlier prose", () => {
@@ -87,7 +89,8 @@ describe("createPlainRenderer", () => {
       { type: "step:finished", step: "x" },
     ]);
     expect(lines).toEqual([
-      "▶ run started: x",
+      "▶ run started:",
+      "  x",
       "  ▸ x",
       "    first.",
       "    ⚙ read · a.ts",

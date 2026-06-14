@@ -24,7 +24,8 @@ export function createPlainRenderer(writeLine: (line: string) => void): Renderer
     render(view: ViewState, event: RunEvent): void {
       switch (event.type) {
         case "run:started":
-          writeLine(`▶ run started: ${event.pipeline.join(" → ")}`);
+          writeLine("▶ run started:");
+          for (const step of event.pipeline) writeLine(`  ${step}`);
           return;
         case "step:started":
           flushedLen = 0; // the fold reset view.text for the new step
