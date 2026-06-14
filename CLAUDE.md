@@ -20,6 +20,7 @@ packages/
   defaults/  @tml/defaults  — the blessed default pipeline (just a plugin)
   github/    @tml/github    — Forge provider
   pi/        @tml/pi        — pi host adapter
+  view/      @tml/view      — presentation: event fold + CLI/plain renderers
   cli/       tml            — CLI/TUI binary
 docs/
   ARCHITECTURE.md           — every locked design decision, at a glance

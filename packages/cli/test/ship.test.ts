@@ -40,11 +40,15 @@ describe("buildShipConfig", () => {
 
     expect(config.pipeline.map((s) => s.name)).toEqual([
       "branch",
+      "describe",
+      "commit-change",
       "format",
       "lint",
       "typecheck",
       "test",
+      "commit(format+lint+typecheck+test)",
       "review",
+      "commit(review)",
       "open-pr",
       "ci-wait",
     ]);

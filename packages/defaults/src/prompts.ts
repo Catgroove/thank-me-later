@@ -44,14 +44,18 @@ export const branchNameSchema = {
   additionalProperties: false,
 } as const;
 
-/** The prompt for the PR title + body; the harness returns it as structured `{ title, body }`. */
-export function prDescriptionPrompt(review: string): string {
-  return (
+/**
+ * The prompt for the PR title + body; the harness returns it as structured `{ title, body }`.
+ * `describe` runs this before review (so there are no notes yet); `review` notes are folded into
+ * the body later by `open-pr`. Reviewer notes are appended only when provided.
+ */
+export function prDescriptionPrompt(review?: string): string {
+  const base =
     "Write a pull request title and body for the changes on this branch (compute the diff " +
-    "yourself with git). The title must be a Conventional Commits subject (e.g. " +
-    '"feat(scope): summary"). The body should explain what changed and why, in Markdown.\n\n' +
-    `Reviewer notes from this run:\n${review}`
-  );
+    "yourself with git, including staged, unstaged, and untracked changes). The title must be a " +
+    'Conventional Commits subject (e.g. "feat(scope): summary"). The body should explain what ' +
+    "changed and why, in Markdown.";
+  return review ? `${base}\n\nReviewer notes from this run:\n${review}` : base;
 }
 
 /** JSON Schema for the PR description the harness parses back out of the reply. */

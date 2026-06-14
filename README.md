@@ -1,18 +1,25 @@
 # thank-me-later (tml)
 
-An extensible "ship it" CLI. Run it when an agent finishes a unit of work and it conducts
-a code-defined pipeline — branch, checks, review, open PR, wait on CI. _Spend time now,
-thank me later._
+A fully customizable, extensible "ship it" CLI that comes with sane defaults. Run it when an
+agent finishes a unit of work and it conducts a code-defined pipeline — branch, checks, review,
+open PR, wait on CI. The pipeline and every step are plain TypeScript: use the blessed defaults,
+or reorder, replace, and extend them. _Spend time now, thank me later._
 
-> **Status: walking skeleton.** The monorepo is scaffolded and `tml ship` prints
-> `Hello World`. The real engine, providers, and default pipeline are not built yet.
+> **Status: functional.** `tml ship` runs the default pipeline end-to-end against GitHub
+> (`gh`) and the pi agent. The TUI, resume/checkpoint, PR-comment handling, and loading a custom
+> `tml.config.ts` aren't built yet.
 
 ## Quick start
 
 ```sh
 bun install
-bunx tml ship      # → Hello World
+bunx tml ship      # run the pipeline in your checkout
 ```
+
+`tml ship` runs **in place** in your current checkout, from any starting state. It puts the
+work on a feature branch (AI-named by default), then commits a clean history — your change,
+then the gate's fixes as their own commits — as it formats, lints, type-checks, tests, and
+reviews (the agent applies fixes), before pushing and opening a PR and watching CI.
 
 ## Commands
 
@@ -28,11 +35,12 @@ bun test           # Bun's test runner
 
 | Package | Description |
 | --- | --- |
-| `@tml/core` | Engine: step contract, lifecycle model _(placeholder)_ |
-| `@tml/defaults` | Blessed default pipeline plugin _(placeholder)_ |
-| `@tml/github` | Forge provider _(placeholder)_ |
-| `@tml/pi` | pi host adapter _(placeholder)_ |
-| `tml` | CLI/TUI binary |
+| `@tml/core` | Engine: step contract, artifacts, providers (Git/Forge/Harness), event stream |
+| `@tml/defaults` | The blessed default pipeline plugin — branch modes, checks, review, commits, PR, CI |
+| `@tml/github` | GitHub Forge provider (via `gh`) |
+| `@tml/pi` | pi Harness adapter |
+| `@tml/view` | Presentation: folds the event stream into view state + CLI/plain renderers |
+| `tml` | CLI binary (`tml ship`) |
 
 ## Docs
 
