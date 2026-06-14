@@ -81,26 +81,6 @@ const STEP_INDENT = "  "; // step headers / results
 const BODY_INDENT = "    "; // a step's commands and prose
 const SPINNER_RESERVE = 2; // room the trailing " <spinner>" needs on the live line
 
-/** Wrap `text` to `width` columns on spaces, prefixing each line with `indent`. */
-function wrap(text: string, width: number, indent: string): string[] {
-  const lines: string[] = [];
-  for (const paragraph of text.split("\n")) {
-    let line = "";
-    for (const word of paragraph.split(/\s+/).filter((w) => w !== "")) {
-      if (line === "") {
-        line = word;
-      } else if (line.length + 1 + word.length <= width) {
-        line += ` ${word}`;
-      } else {
-        lines.push(indent + line);
-        line = word;
-      }
-    }
-    if (line !== "") lines.push(indent + line);
-  }
-  return lines;
-}
-
 export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   const write = options.write ?? ((chunk: string) => void process.stdout.write(chunk));
   const now = options.now ?? (() => Date.now());
@@ -111,11 +91,10 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
 
   // The single live line currently on screen — the cursor sits on it. "" means none.
   let lastLive = "";
-  // The active step's prose run: `runStart` is where the current run begins in `view.text`
-  // (advanced past each committed tool's text), `proseCommitted` counts how many of the
-  // run's wrapped lines have already sealed into scrollback. Both reset on step start.
-  let runStart = 0;
-  let proseCommitted = 0;
+  // Absolute offset into the active step's `view.text` up to which prose has sealed into
+  // scrollback. The still-live tail is rewrapped from here, so terminal resizes can only
+  // affect uncommitted text; already-sealed text is never recomputed or duplicated.
+  let proseCommittedLen = 0;
   let frame = 0;
   let stepStart: number | undefined;
   let anyStep = false; // a blank line separates each step from the previous one
@@ -134,17 +113,67 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
     return Math.max(1, Math.min(termColumns(), MAX_WIDTH) - BODY_INDENT.length - SPINNER_RESERVE);
   }
 
-  /** The current prose run (from `runStart`) wrapped to the body width. */
-  function wrapRun(view: ViewState): string[] {
-    return wrap(view.text.slice(runStart), wrapWidth(), BODY_INDENT);
+  interface WrappedLine {
+    readonly line: string;
+    /** Absolute source offset just after the last word rendered on this line. */
+    readonly end: number;
+  }
+
+  /**
+   * Wrap prose on spaces while keeping source offsets for each rendered line. Offsets let us
+   * seal completed lines by character position instead of by wrapped-line count, so a resize
+   * cannot make future rewraps skip or duplicate prose that was already committed.
+   */
+  function wrapWithOffsets(text: string, width: number, indent: string, base = 0): WrappedLine[] {
+    const lines: WrappedLine[] = [];
+    let paragraphStart = 0;
+    for (const paragraph of text.split("\n")) {
+      let line = "";
+      let lineEnd = base + paragraphStart;
+      for (const match of paragraph.matchAll(/\S+/g)) {
+        const word = match[0];
+        const wordEnd = base + paragraphStart + (match.index ?? 0) + word.length;
+        if (line === "") {
+          line = word;
+          lineEnd = wordEnd;
+        } else if (line.length + 1 + word.length <= width) {
+          line += ` ${word}`;
+          lineEnd = wordEnd;
+        } else {
+          lines.push({ line: indent + line, end: lineEnd });
+          line = word;
+          lineEnd = wordEnd;
+        }
+      }
+      if (line !== "") lines.push({ line: indent + line, end: lineEnd });
+      paragraphStart += paragraph.length + 1;
+    }
+    return lines;
+  }
+
+  /** The not-yet-sealed prose tail wrapped to the current body width. */
+  function pendingProse(view: ViewState): WrappedLine[] {
+    return wrapWithOffsets(
+      view.text.slice(proseCommittedLen),
+      wrapWidth(),
+      BODY_INDENT,
+      proseCommittedLen,
+    );
+  }
+
+  /** Mark all currently pending prose as committed (used at hard boundaries). */
+  function commitPendingProse(view: ViewState): string[] {
+    const pending = pendingProse(view).map((entry) => entry.line);
+    proseCommittedLen = view.text.length;
+    return pending;
   }
 
   /** The single live line for `view`: the volatile last prose line + spinner, or a bare spinner. */
   function liveLine(view: ViewState): string {
     if (view.status !== "running" || view.activeStep === undefined) return "";
     const spinner = glyphs.frames[frame % glyphs.frames.length];
-    const wrapped = wrapRun(view);
-    const tail = wrapped.length > 0 ? wrapped[wrapped.length - 1] : "";
+    const wrapped = pendingProse(view);
+    const tail = wrapped.length > 0 ? (wrapped[wrapped.length - 1]?.line ?? "") : "";
     return clip(tail === "" ? `${BODY_INDENT}${spinner}` : `${tail} ${spinner}`);
   }
 
@@ -220,8 +249,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           return;
         case "step:started": {
           stepStart = now();
-          runStart = 0;
-          proseCommitted = 0;
+          proseCommittedLen = 0;
           const header = `${STEP_INDENT}${glyphs.started} ${event.step}`;
           paint(anyStep ? ["", header] : [header], liveLine(view));
           anyStep = true;
@@ -233,20 +261,20 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
             // final) plus the ⚙ line, then start a fresh prose run past this text — the agent
             // may keep talking, and a new run keeps wrapping independent of committed lines.
             const { name, detail } = event.progress;
-            const remaining = wrapRun(view).slice(proseCommitted);
+            const remaining = commitPendingProse(view);
             const toolLine = `${BODY_INDENT}${glyphs.tool} ${name}${detail ? ` · ${detail}` : ""}`;
-            runStart = view.text.length;
-            proseCommitted = 0;
             paint([...remaining, toolLine], liveLine(view));
           } else if (event.progress.kind === "text") {
             // Greedy wrap makes every line but the last final: seal those into scrollback and
             // keep the last one live. Most deltas only grow the last line → just repaint it.
-            const wrapped = wrapRun(view);
-            const sealUpto = Math.max(0, wrapped.length - 1);
-            const newlySealed = wrapped.slice(proseCommitted, sealUpto);
+            const wrapped = pendingProse(view);
+            const newlySealed = wrapped.slice(0, -1);
             if (newlySealed.length > 0) {
-              proseCommitted = sealUpto;
-              paint(newlySealed, liveLine(view));
+              proseCommittedLen = newlySealed[newlySealed.length - 1]?.end ?? proseCommittedLen;
+              paint(
+                newlySealed.map((entry) => entry.line),
+                liveLine(view),
+              );
             } else {
               paintLive(view);
             }
@@ -256,8 +284,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           return;
         }
         case "step:finished": {
-          const remaining = wrapRun(view).slice(proseCommitted);
-          proseCommitted += remaining.length;
+          const remaining = commitPendingProse(view);
           paint(
             [...remaining, `${STEP_INDENT}${glyphs.done} ${event.step}${elapsed()}`],
             liveLine(view),
@@ -265,8 +292,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           return;
         }
         case "step:skipped": {
-          const remaining = wrapRun(view).slice(proseCommitted);
-          proseCommitted += remaining.length;
+          const remaining = commitPendingProse(view);
           paint(
             [...remaining, `${STEP_INDENT}${glyphs.skipped} ${event.step} (skipped)`],
             liveLine(view),
@@ -275,14 +301,14 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
         }
         case "run:finished":
           stopTimer();
-          paint([...wrapRun(view).slice(proseCommitted), "■ run finished"], "");
+          paint([...commitPendingProse(view), "■ run finished"], "");
           showCursor();
           return;
         case "run:cancelled":
           stopTimer();
           paint(
             [
-              ...wrapRun(view).slice(proseCommitted),
+              ...commitPendingProse(view),
               `◼ run cancelled${event.step ? ` at ${event.step}` : ""}`,
             ],
             "",
@@ -293,7 +319,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           stopTimer();
           paint(
             [
-              ...wrapRun(view).slice(proseCommitted),
+              ...commitPendingProse(view),
               `${glyphs.failed} run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`,
             ],
             "",

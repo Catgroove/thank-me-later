@@ -126,6 +126,55 @@ describe("createCliRenderer", () => {
     expect(out).toMatch(/echo [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
+  test("does not drop pending prose when the terminal is resized mid-stream", () => {
+    let out = "";
+    let columns = 20;
+    const originalColumns = Object.getOwnPropertyDescriptor(process.stdout, "columns");
+    Object.defineProperty(process.stdout, "columns", { configurable: true, get: () => columns });
+    try {
+      const renderer = createCliRenderer({
+        write: (chunk) => {
+          out += chunk;
+        },
+        term: "xterm",
+        intervalMs: 0,
+        now: () => 0,
+      });
+      let view = initialView;
+      const send = (event: RunEvent): void => {
+        view = present(view, event);
+        renderer.render(view, event);
+      };
+
+      send({ type: "run:started", pipeline: ["describe"] });
+      send({ type: "step:started", step: "describe" });
+      send({
+        type: "agent:progress",
+        step: "describe",
+        progress: { kind: "text", text: "alpha bravo charlie delta echo" },
+      });
+      columns = 80;
+      send({
+        type: "agent:progress",
+        step: "describe",
+        progress: { kind: "text", text: " foxtrot golf" },
+      });
+      send({ type: "step:finished", step: "describe" });
+      send({ type: "run:finished" });
+      renderer.close();
+    } finally {
+      if (originalColumns === undefined) {
+        Reflect.deleteProperty(process.stdout, "columns");
+      } else {
+        Object.defineProperty(process.stdout, "columns", originalColumns);
+      }
+    }
+
+    expect(out).toContain("alpha bravo\n");
+    expect(out).toContain("charlie delta\n");
+    expect(out).toContain("echo foxtrot golf\n");
+  });
+
   test("never moves the cursor up — the live region is one line (tmux-/resize-safe)", () => {
     // The whole point of the rewrite: zero `\x1b[<n>A`, so a viewport scrolled under us
     // (tmux copy mode) or a resize can't desync the cursor and smear the live region.
