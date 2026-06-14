@@ -21,6 +21,8 @@ work on a feature branch (AI-named by default), then commits a clean history —
 then the gate's fixes as their own commits — as it formats, lints, type-checks, tests, and
 reviews (the agent applies fixes), before pushing and opening a PR and watching CI.
 
+tml is built with tml: every change to this repo ships through `tml ship`.
+
 ## Commands
 
 ```sh
