@@ -47,6 +47,11 @@ describe("createGit (real git, against a throwaway temp repo)", () => {
     expect(after.unstaged).toEqual([]);
   });
 
+  test("headSha returns the abbreviated HEAD commit sha", async () => {
+    const g = createGit(dir);
+    expect(await g.headSha()).toMatch(/^[0-9a-f]{7,}$/);
+  });
+
   test("defaultBranch reads origin/HEAD, stripping the origin/ prefix", async () => {
     const g = createGit(dir);
     await setup(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");

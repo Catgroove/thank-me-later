@@ -19,6 +19,8 @@ export interface Git {
   currentBranch(): Promise<string>;
   /** The repo's default branch (the PR base) — resolved from `origin/HEAD`. */
   defaultBranch(): Promise<string>;
+  /** The abbreviated SHA of the current `HEAD` commit (for deriving branch names). */
+  headSha(): Promise<string>;
   createBranch(name: string): Promise<void>;
   checkout(name: string): Promise<void>;
   stageAll(): Promise<void>;
@@ -65,6 +67,10 @@ export function createGit(cwd: string): Git {
         }
         return "main";
       }
+    },
+
+    async headSha() {
+      return (await git(cwd, ["rev-parse", "--short", "HEAD"])).trim();
     },
 
     async createBranch(name) {
