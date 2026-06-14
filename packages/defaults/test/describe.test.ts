@@ -21,9 +21,23 @@ describe("describe step", () => {
     expect(agent.tasks).toHaveLength(1);
   });
 
-  test("throws if the agent doesn't return a { title, body }", async () => {
+  test("trims the agent-provided title and body", async () => {
     const agent = new FakeHarness();
-    agent.result = { ok: true, summary: "oops", output: { title: 123 } };
+    agent.result = {
+      ok: true,
+      summary: "described",
+      output: { title: "  feat: add --json flag  ", body: "\nAdds JSON output.\n" },
+    };
+    const { ctx } = fakeCtx({ agent });
+
+    const result = await describeStep().run(ctx);
+
+    expect(result).toEqual({ prTitle: "feat: add --json flag", prBody: "Adds JSON output." });
+  });
+
+  test("throws if the agent doesn't return a usable { title, body }", async () => {
+    const agent = new FakeHarness();
+    agent.result = { ok: true, summary: "oops", output: { title: "   ", body: "body" } };
     const { ctx } = fakeCtx({ agent });
 
     const error = await describeStep()

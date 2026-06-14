@@ -12,7 +12,9 @@ import { prDescriptionPrompt, prDescriptionSchema } from "../prompts.ts";
 function asDescription(output: unknown): { title: string; body: string } {
   if (typeof output === "object" && output !== null) {
     const { title, body } = output as Record<string, unknown>;
-    if (typeof title === "string" && typeof body === "string") return { title, body };
+    if (typeof title === "string" && typeof body === "string" && title.trim().length > 0) {
+      return { title: title.trim(), body: body.trim() };
+    }
   }
   throw new Error("describe: the agent did not return a { title, body } description");
 }

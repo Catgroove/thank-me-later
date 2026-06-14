@@ -9,7 +9,8 @@ import { branchName, prBody, prTitle, pullRequest, reviewSummary } from "../arti
 
 /** Append the review summary to the description body as its own section, when there is one. */
 function withReview(body: string, review: string): string {
-  return review.trim().length > 0 ? `${body}\n\n## Review\n\n${review}` : body;
+  const notes = review.trim();
+  return notes.length > 0 ? `${body}\n\n## Review\n\n${notes}` : body;
 }
 
 export function openPrStep(): Step {
@@ -20,10 +21,12 @@ export function openPrStep(): Step {
     async run(ctx) {
       const head = ctx.read(branchName);
 
+      // Push before the idempotency check so a re-run that created new local commits updates the
+      // already-open PR instead of silently leaving those commits only in the checkout.
+      await ctx.git.push({ branch: head }); // push the feature branch we ship under (ADR-0012)
+
       const existing = await ctx.forge.findPullRequest(head);
       if (existing) return { pullRequest: existing };
-
-      await ctx.git.push({ branch: head }); // push the feature branch we ship under (ADR-0012)
 
       const base = await ctx.git.defaultBranch();
       const title = ctx.read(prTitle);

@@ -21,13 +21,16 @@ export function commitStep(name: string, message: CommitMessage): Step {
     name,
     consumes: fromArtifact ? [message] : [],
     async run(ctx) {
+      const subject = (fromArtifact ? ctx.read(message) : message).trim();
+      if (subject.length === 0) throw new Error(`${name}: commit message must not be empty`);
+
       await ctx.git.stageAll();
       const { staged } = await ctx.git.status();
       if (staged.length === 0) {
         ctx.log("nothing to commit");
         return skip();
       }
-      await ctx.git.commit(fromArtifact ? ctx.read(message) : message);
+      await ctx.git.commit(subject);
       return {};
     },
   });

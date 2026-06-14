@@ -40,7 +40,7 @@ describe("open-pr step", () => {
     expect(forge.opened[0]?.body).toBe("Fixes the boundary case.");
   });
 
-  test("is idempotent: an existing PR short-circuits push/open", async () => {
+  test("is idempotent: an existing PR is reused after pushing local commits", async () => {
     const git = new FakeGit();
     const forge = new FakeForge();
     const prior: PullRequest = {
@@ -61,7 +61,7 @@ describe("open-pr step", () => {
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
     expect(result.pullRequest).toEqual(prior);
-    expect(git.calls).toEqual([]); // nothing pushed
+    expect(git.calls).toEqual(["push tml/ship-abc1234"]); // update the existing PR's branch
     expect(forge.opened).toEqual([]); // nothing opened
   });
 });

@@ -39,6 +39,19 @@ describe("commitStep", () => {
     expect(git.calls).toEqual(["stageAll"]); // staged, found nothing, did not commit
     expect(logs).toContain("nothing to commit");
   });
+
+  test("fails before staging when the commit message is empty", async () => {
+    const git = new FakeGit();
+    const { ctx } = fakeCtx({ git });
+
+    const error = await commitStep("commit-empty", "  ")
+      .run(ctx)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("commit message");
+    expect(git.calls).toEqual([]);
+  });
 });
 
 describe("commitGroup", () => {
