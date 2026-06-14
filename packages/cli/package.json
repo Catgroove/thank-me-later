@@ -10,6 +10,7 @@
     "@tml/core": "workspace:*",
     "@tml/defaults": "workspace:*",
     "@tml/github": "workspace:*",
-    "@tml/pi": "workspace:*"
+    "@tml/pi": "workspace:*",
+    "@tml/view": "workspace:*"
   }
 }

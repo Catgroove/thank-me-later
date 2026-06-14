@@ -5,6 +5,7 @@
 // Capture command (2026-06-14):
 //   pi -p --mode json --no-session --no-tools "say hi in one word"
 //   pi -p --mode json --no-session --tools ls "list files with ls, then say done"
+//   pi -p --mode json --no-session --tools bash,read "run 'echo hi'…then read a.txt…"
 // Refresh these if pi's JSONL shape drifts (the opt-in live smoke catches that).
 
 /** A no-tools run: thinking + text noise, one `text_delta` ("Hi"), clean `agent_end`. */
@@ -43,6 +44,22 @@ export const TOOL_LINES: readonly string[] = [
   `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"done"}}`,
   `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stopReason":"stop"}}`,
   `{"type":"turn_end"}`,
+  `{"type":"agent_end","messages":[]}`,
+];
+
+/**
+ * A real bash + read tool-using run, captured to learn the per-tool `args` field names that
+ * `tool.detail` is mapped from (the `ls` run above has empty `args`). Trimmed to the fields
+ * the mapper reads (`type`/`toolName`/`args`); the real `toolCallId`s and result snapshots are
+ * elided. bash carries `args.command`, read carries `args.path`.
+ */
+export const TOOL_DETAIL_LINES: readonly string[] = [
+  `{"type":"agent_start"}`,
+  `{"type":"tool_execution_start","toolName":"bash","args":{"command":"echo hi","timeout":10}}`,
+  `{"type":"tool_execution_end","toolName":"bash"}`,
+  `{"type":"tool_execution_start","toolName":"read","args":{"path":"a.txt"}}`,
+  `{"type":"tool_execution_end","toolName":"read"}`,
+  `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"done"}}`,
   `{"type":"agent_end","messages":[]}`,
 ];
 

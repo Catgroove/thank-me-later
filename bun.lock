@@ -25,6 +25,7 @@
         "@tml/defaults": "workspace:*",
         "@tml/github": "workspace:*",
         "@tml/pi": "workspace:*",
+        "@tml/view": "workspace:*",
       },
     },
     "packages/core": {
@@ -53,6 +54,16 @@
     },
     "packages/pi": {
       "name": "@tml/pi",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@tml/core": "workspace:*",
+      },
+      "peerDependencies": {
+        "@tml/core": "workspace:*",
+      },
+    },
+    "packages/view": {
+      "name": "@tml/view",
       "version": "0.0.0",
       "devDependencies": {
         "@tml/core": "workspace:*",
@@ -206,6 +217,8 @@
     "@tml/github": ["@tml/github@workspace:packages/github"],
 
     "@tml/pi": ["@tml/pi@workspace:packages/pi"],
+
+    "@tml/view": ["@tml/view@workspace:packages/view"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

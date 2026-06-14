@@ -47,12 +47,33 @@ export function toProgress(event: PiEvent): AgentProgress | null {
     return null; // toolcall_*, thinking_*, text_start/end → ignored
   }
   if (event.type === "tool_execution_start" && typeof event.toolName === "string") {
-    return { kind: "tool", name: event.toolName, phase: "start" };
+    const detail = toolDetail(event.args);
+    return detail === undefined
+      ? { kind: "tool", name: event.toolName, phase: "start" }
+      : { kind: "tool", name: event.toolName, phase: "start", detail };
   }
   if (event.type === "tool_execution_end" && typeof event.toolName === "string") {
     return { kind: "tool", name: event.toolName, phase: "end" };
   }
   return null;
+}
+
+const DETAIL_MAX = 80;
+
+/**
+ * Extract `AgentProgress.tool.detail` — a short human label for the tool call — from pi's
+ * `tool_execution_start.args` (field names captured from a real `pi --mode json` run,
+ * 2026-06-14): bash → `command`, read/write/edit → `path`. Collapsed to a single trimmed
+ * line and truncated; absent when there is no usable string argument.
+ */
+function toolDetail(args: unknown): string | undefined {
+  if (typeof args !== "object" || args === null) return undefined;
+  const record = args as Record<string, unknown>;
+  const raw = record.command ?? record.path;
+  if (typeof raw !== "string") return undefined;
+  const line = raw.replace(/\s+/g, " ").trim();
+  if (line === "") return undefined;
+  return line.length > DETAIL_MAX ? `${line.slice(0, DETAIL_MAX - 1)}…` : line;
 }
 
 /** True for the terminal event of a successful run. */

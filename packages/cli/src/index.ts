@@ -6,41 +6,16 @@ import {
   createWorktree,
   type Engine,
   type EngineOptions,
-  type RunEvent,
   type Worktree,
 } from "@tml/core";
+import {
+  createCliRenderer,
+  createPlainRenderer,
+  initialView,
+  present,
+  type Renderer,
+} from "@tml/view";
 import { buildShipConfig } from "./config.ts";
-
-function formatEvent(event: RunEvent): string {
-  switch (event.type) {
-    case "run:started":
-      return `▶ run started: ${event.pipeline.join(" → ")}`;
-    case "step:started":
-      return `  ▸ ${event.step}`;
-    case "step:log":
-      return `    · ${event.message}`;
-    case "agent:progress": {
-      const p = event.progress;
-      return p.kind === "text"
-        ? `    · ${p.text}`
-        : `    ⚙ ${p.name} ${p.phase}${p.detail ? `: ${p.detail}` : ""}`;
-    }
-    case "artifact:written":
-      return `    + ${event.artifact}`;
-    case "step:skipped":
-      return `  ⤼ ${event.step} (skipped)`;
-    case "step:finished":
-      return `  ✓ ${event.step}`;
-    case "ask:pending":
-      return `  ? ${event.step}: ${event.prompt}`;
-    case "run:finished":
-      return "■ run finished";
-    case "run:cancelled":
-      return `◼ run cancelled${event.step ? ` at ${event.step}` : ""}`;
-    case "run:failed":
-      return `✗ run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`;
-  }
-}
 
 /** Seams, injected by tests; production uses the real worktree, config, and engine. */
 export interface ShipDeps {
@@ -48,7 +23,15 @@ export interface ShipDeps {
   setupWorktree?: (cwd: string) => Promise<Worktree>;
   buildConfig?: (worktree: Worktree) => Config;
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
-  log?: (line: string) => void;
+  /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
+  renderer?: Renderer;
+}
+
+/** A TTY live region when stdout is a terminal; clean append-only lines otherwise (ADR-0011). */
+function defaultRenderer(): Renderer {
+  return process.stdout.isTTY
+    ? createCliRenderer()
+    : createPlainRenderer((line: string) => console.log(line));
 }
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
@@ -56,7 +39,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   const setupWorktree = deps.setupWorktree ?? createWorktree;
   const buildConfig = deps.buildConfig ?? buildShipConfig;
   const engineFor = deps.engineFor ?? createEngine;
-  const log = deps.log ?? ((line: string) => console.log(line));
+  const renderer = deps.renderer ?? defaultRenderer();
 
   // Snapshot the live checkout into a disposable worktree and run the pipeline there, so the
   // user's checkout is untouched; dispose it whatever the outcome (ADR-0010).
@@ -64,10 +47,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   try {
     worktree = await setupWorktree(cwd);
     const engine = engineFor(buildConfig(worktree), { cwd: worktree.path });
+    let view = initialView;
     let failed = false;
     let cancelled = false;
+    // Fold each event into the shared ViewState, then let the renderer draw it (ADR-0011).
     for await (const event of engine.run()) {
-      log(formatEvent(event));
+      view = present(view, event);
+      renderer.render(view, event);
       if (event.type === "run:failed") failed = true;
       if (event.type === "run:cancelled") cancelled = true;
     }
@@ -77,6 +63,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   } finally {
+    renderer.close(); // stop the spinner timer / clear the live region on every path
     await worktree?.dispose();
   }
 }
