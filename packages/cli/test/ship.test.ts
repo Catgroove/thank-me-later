@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Config, Engine, RunEvent, Worktree } from "@tml/core";
+import type { Config, Engine, RunEvent } from "@tml/core";
 import { createPlainRenderer } from "@tml/view";
 import { buildShipConfig } from "../src/config.ts";
 import { ship } from "../src/index.ts";
@@ -14,20 +14,6 @@ async function runCli(...args: string[]) {
     proc.exited,
   ]);
   return { stdout, stderr, exitCode };
-}
-
-function spyWorktree(): { worktree: Worktree; disposed: () => boolean } {
-  let wasDisposed = false;
-  return {
-    worktree: {
-      path: "/tmp/wt",
-      dispose() {
-        wasDisposed = true;
-        return Promise.resolve();
-      },
-    },
-    disposed: () => wasDisposed,
-  };
 }
 
 function engineYielding(events: RunEvent[]): Engine {
@@ -49,8 +35,8 @@ describe("tml CLI", () => {
 });
 
 describe("buildShipConfig", () => {
-  test("pairs the default pipeline with the GitHub Forge + pi Harness", () => {
-    const config = buildShipConfig({ path: "/tmp/wt", dispose: () => Promise.resolve() });
+  test("pairs the default pipeline (ai branch mode) with the GitHub Forge + pi Harness", () => {
+    const config = buildShipConfig("/repo");
 
     expect(config.pipeline.map((s) => s.name)).toEqual([
       "branch",
@@ -67,14 +53,12 @@ describe("buildShipConfig", () => {
   });
 });
 
-describe("ship() worktree lifecycle", () => {
-  test("runs in the worktree and disposes it on success (exit 0)", async () => {
-    const { worktree, disposed } = spyWorktree();
+describe("ship() run lifecycle", () => {
+  test("runs in the checkout and returns 0 on success", async () => {
     const lines: string[] = [];
 
     const code = await ship({
       cwd: "/repo",
-      setupWorktree: () => Promise.resolve(worktree),
       buildConfig: () => dummyConfig,
       engineFor: () =>
         engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]),
@@ -82,43 +66,31 @@ describe("ship() worktree lifecycle", () => {
     });
 
     expect(code).toBe(0);
-    expect(disposed()).toBe(true);
     expect(lines).toContain("■ run finished");
   });
 
-  test("returns 1 and still disposes the worktree when the run fails", async () => {
-    const { worktree, disposed } = spyWorktree();
-
+  test("returns 1 when the run fails", async () => {
     const code = await ship({
-      setupWorktree: () => Promise.resolve(worktree),
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:failed", step: "test", error: "boom" }]),
       renderer: createPlainRenderer(() => {}),
     });
 
     expect(code).toBe(1);
-    expect(disposed()).toBe(true);
   });
 
-  test("returns 130 (SIGINT) on cancellation and disposes", async () => {
-    const { worktree, disposed } = spyWorktree();
-
+  test("returns 130 (SIGINT) on cancellation", async () => {
     const code = await ship({
-      setupWorktree: () => Promise.resolve(worktree),
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:cancelled" }]),
       renderer: createPlainRenderer(() => {}),
     });
 
     expect(code).toBe(130);
-    expect(disposed()).toBe(true);
   });
 
-  test("disposes the worktree even when engine setup throws", async () => {
-    const { worktree, disposed } = spyWorktree();
-
+  test("returns 1 when engine setup throws", async () => {
     const code = await ship({
-      setupWorktree: () => Promise.resolve(worktree),
       buildConfig: () => dummyConfig,
       engineFor: () => {
         throw new Error("engine construction failed");
@@ -127,6 +99,5 @@ describe("ship() worktree lifecycle", () => {
     });
 
     expect(code).toBe(1);
-    expect(disposed()).toBe(true);
   });
 });

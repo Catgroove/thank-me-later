@@ -27,6 +27,23 @@ export const reviewPrompt =
   "diff yourself with git). Look for correctness bugs, missed edge cases, and unintended " +
   "changes; apply safe fixes in place and summarise what you found and changed.";
 
+/** The prompt for the AI branch name; the harness returns it as structured `{ branch }`. */
+export const branchNamePrompt =
+  "Suggest a single git branch name for the work being shipped (compute the diff yourself " +
+  "with git, including staged, unstaged, and untracked changes). Use a Conventional-Commits " +
+  "type prefix (feat/, fix/, chore/, etc.) and kebab-case, e.g. feat/add-json-flag. Set the " +
+  "branch field to only the branch name.";
+
+/** JSON Schema for the branch name the harness parses back out of the reply. */
+export const branchNameSchema = {
+  type: "object",
+  properties: {
+    branch: { type: "string" },
+  },
+  required: ["branch"],
+  additionalProperties: false,
+} as const;
+
 /** The prompt for the PR title + body; the harness returns it as structured `{ title, body }`. */
 export function prDescriptionPrompt(review: string): string {
   return (

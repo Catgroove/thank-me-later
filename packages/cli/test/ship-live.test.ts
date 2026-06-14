@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 // hermetic (no git mutations, no `gh`, no `pi`, no network). Set TML_SHIP_LIVE=1 AND point
 // TML_SHIP_LIVE_REPO at a *disposable* repo that has an authenticated `gh` remote and `pi`
 // available — this actually creates a branch, commits, pushes, and opens a PR there. It
-// catches drift the hermetic fakes can't (worktree plumbing, provider argv/JSONL, gh wiring).
+// catches drift the hermetic fakes can't (in-place git plumbing, provider argv/JSONL, gh wiring).
 const LIVE = process.env.TML_SHIP_LIVE === "1";
 const REPO = process.env.TML_SHIP_LIVE_REPO;
 
@@ -21,7 +21,7 @@ describe("tml ship — live smoke (opt-in)", () => {
     return;
   }
 
-  test("runs the full pipeline in a worktree and finishes", async () => {
+  test("runs the full pipeline in the checkout and finishes", async () => {
     const proc = Bun.spawn(["bun", "run", ENTRY, "ship"], {
       cwd: REPO,
       stdout: "pipe",

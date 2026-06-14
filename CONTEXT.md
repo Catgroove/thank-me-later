@@ -146,12 +146,19 @@ Abort is an *outside* interrupt (a person hits Ctrl-C), whereas `cancel()` is an
 *in-pipeline* decision a Step returns. Same English word, two mechanisms.
 _Avoid_: Cancel (reserve for the Flow signal), kill, interrupt, stop
 
-**Worktree**:
-The disposable git worktree under `.tml/` into which tml snapshots the current state
-(committed + staged + unstaged) and runs the Pipeline, leaving the user's live checkout
-untouched so they keep working. Agent auto-fixes and formatter rewrites are quarantined
-here. Resume reattaches to the same Worktree.
-_Avoid_: Sandbox, clone, scratch dir
+**Ship branch**:
+The feature branch tml ships the work on. If you're already on a feature branch, that's the Ship
+branch. Otherwise the Branch mode produces one, and the Pipeline commits and pushes it from your
+checkout (tml runs in place — ADR-0010). The PR opens with the Ship branch as its head and the
+repo's default branch as its base.
+_Avoid_: Feature branch (too generic), ship-<sha> (only the `auto` mode's name shape)
+
+**Branch mode**:
+How the `branch` Step gets a Ship branch when you aren't on a feature branch (ADR-0012): `ai`
+(the default — the agent names it from the diff), `auto` (a deterministic `tml/ship-<sha>`), or
+`require` (refuse; you must already be on one). Selectable per pipeline; the Step is swappable for
+a custom policy.
+_Avoid_: Branch strategy, naming scheme
 
 **Flow signal**:
 A value a Step *returns* to control the Pipeline: skip the Step, cancel the Run early,

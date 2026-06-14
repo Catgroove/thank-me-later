@@ -18,12 +18,17 @@ function withDescription(): FakeHarness {
 describe("open-pr step", () => {
   test("writes a description, then commits → pushes → opens (in that order)", async () => {
     const git = new FakeGit();
+    git.stagedFiles = ["src/pager.ts"];
     const forge = new FakeForge();
     const { ctx } = fakeCtx({ git, forge, agent: withDescription(), reads });
 
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
-    expect(git.calls).toEqual(["stageAll", "commit fix: off-by-one in pager", "push -u"]);
+    expect(git.calls).toEqual([
+      "stageAll",
+      "commit fix: off-by-one in pager",
+      "push tml/ship-abc1234", // pushes the ship branch (= PR head)
+    ]);
     expect(forge.opened).toHaveLength(1);
     expect(forge.opened[0]).toEqual({
       head: "tml/ship-abc1234",
@@ -33,6 +38,19 @@ describe("open-pr step", () => {
     });
     expect(result.pullRequest.number).toBe(1);
     expect(result.pullRequest.body).toContain("boundary case");
+  });
+
+  test("pushes existing commits when there is nothing new to commit", async () => {
+    const git = new FakeGit();
+    const forge = new FakeForge();
+    const { ctx, logs } = fakeCtx({ git, forge, agent: withDescription(), reads });
+
+    const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
+
+    expect(git.calls).toEqual(["stageAll", "push tml/ship-abc1234"]);
+    expect(logs).toContain("no uncommitted changes to commit; pushing existing commits");
+    expect(forge.opened).toHaveLength(1);
+    expect(result.pullRequest.number).toBe(1);
   });
 
   test("is idempotent: an existing PR short-circuits commit/push/open", async () => {
