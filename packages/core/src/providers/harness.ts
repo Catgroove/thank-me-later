@@ -16,6 +16,8 @@ export type AgentProgress =
       readonly kind: "tool";
       readonly name: string;
       readonly phase: "start" | "end";
+      // A short, single-line human label for the call (bash → the command, read → the path),
+      // for the presentation layer (ADR-0011) — never structured data. Harnesses populate it.
       readonly detail?: string;
     };
 

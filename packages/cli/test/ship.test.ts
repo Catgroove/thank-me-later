@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Config, Engine, RunEvent, Worktree } from "@tml/core";
+import { createPlainRenderer } from "@tml/view";
 import { buildShipConfig } from "../src/config.ts";
 import { ship } from "../src/index.ts";
 
@@ -77,7 +78,7 @@ describe("ship() worktree lifecycle", () => {
       buildConfig: () => dummyConfig,
       engineFor: () =>
         engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]),
-      log: (l) => lines.push(l),
+      renderer: createPlainRenderer((l) => lines.push(l)),
     });
 
     expect(code).toBe(0);
@@ -92,7 +93,7 @@ describe("ship() worktree lifecycle", () => {
       setupWorktree: () => Promise.resolve(worktree),
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:failed", step: "test", error: "boom" }]),
-      log: () => {},
+      renderer: createPlainRenderer(() => {}),
     });
 
     expect(code).toBe(1);
@@ -106,7 +107,7 @@ describe("ship() worktree lifecycle", () => {
       setupWorktree: () => Promise.resolve(worktree),
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:cancelled" }]),
-      log: () => {},
+      renderer: createPlainRenderer(() => {}),
     });
 
     expect(code).toBe(130);
@@ -122,7 +123,7 @@ describe("ship() worktree lifecycle", () => {
       engineFor: () => {
         throw new Error("engine construction failed");
       },
-      log: () => {},
+      renderer: createPlainRenderer(() => {}),
     });
 
     expect(code).toBe(1);

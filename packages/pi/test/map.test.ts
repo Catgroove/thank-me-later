@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { isAgentEnd, parseModels, parsePiEvent, type PiEvent, toProgress } from "../src/map.ts";
-import { NO_AGENT_END_LINES, NO_TOOLS_LINES, TOOL_LINES } from "./fixtures.ts";
+import { NO_AGENT_END_LINES, NO_TOOLS_LINES, TOOL_DETAIL_LINES, TOOL_LINES } from "./fixtures.ts";
 
 const events = (lines: readonly string[]): PiEvent[] =>
   lines.map(parsePiEvent).filter((e): e is PiEvent => e !== null);
@@ -61,6 +61,61 @@ describe("toProgress", () => {
       .map(toProgress)
       .filter((p) => p !== null);
     expect(progress).toEqual([{ kind: "text", text: "Hi" }]);
+  });
+
+  test("populates tool.detail from args (bash → command, read → path)", () => {
+    const start = parsePiEvent(
+      `{"type":"tool_execution_start","toolName":"bash","args":{"command":"bun run fmt","timeout":10}}`,
+    );
+    const read = parsePiEvent(
+      `{"type":"tool_execution_start","toolName":"read","args":{"path":"src/index.ts"}}`,
+    );
+    expect(start && toProgress(start)).toEqual({
+      kind: "tool",
+      name: "bash",
+      phase: "start",
+      detail: "bun run fmt",
+    });
+    expect(read && toProgress(read)).toEqual({
+      kind: "tool",
+      name: "read",
+      phase: "start",
+      detail: "src/index.ts",
+    });
+  });
+
+  test("collapses whitespace to a single line and truncates long detail", () => {
+    const multiline = parsePiEvent(
+      `{"type":"tool_execution_start","toolName":"bash","args":{"command":"echo a\\n   echo b"}}`,
+    );
+    const long = parsePiEvent(
+      `{"type":"tool_execution_start","toolName":"bash","args":{"command":"${"x".repeat(200)}"}}`,
+    );
+    const multiProgress = multiline && toProgress(multiline);
+    const longProgress = long && toProgress(long);
+    expect(multiProgress).toMatchObject({ detail: "echo a echo b" });
+    expect((multiProgress as { detail: string }).detail).not.toContain("\n");
+    const detail = (longProgress as { detail: string }).detail;
+    expect(detail.length).toBe(80);
+    expect(detail.endsWith("…")).toBe(true);
+  });
+
+  test("omits detail when args carry no usable string (e.g. ls with empty args)", () => {
+    const ls = parsePiEvent(`{"type":"tool_execution_start","toolName":"ls","args":{}}`);
+    expect(ls && toProgress(ls)).toEqual({ kind: "tool", name: "ls", phase: "start" });
+  });
+
+  test("the detail fixture maps the real captured bash/read args", () => {
+    const progress = events(TOOL_DETAIL_LINES)
+      .map(toProgress)
+      .filter((p) => p !== null);
+    expect(progress).toEqual([
+      { kind: "tool", name: "bash", phase: "start", detail: "echo hi" },
+      { kind: "tool", name: "bash", phase: "end" },
+      { kind: "tool", name: "read", phase: "start", detail: "a.txt" },
+      { kind: "tool", name: "read", phase: "end" },
+      { kind: "text", text: "done" },
+    ]);
   });
 
   test("the tool fixture yields tool start/end then the final text, in stream order", () => {
