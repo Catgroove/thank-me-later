@@ -6,7 +6,7 @@
 import { defineStep, type Step } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";
 
-/** Poll cadence for CI (seconds / ms). Modest defaults; tune as real runs inform us. */
+/** CI poll cadence, in milliseconds: poll every 10s, give up after 30min. Tune as runs inform us. */
 const EVERY_MS = 10_000;
 const TIMEOUT_MS = 30 * 60_000;
 
