@@ -7,6 +7,9 @@
   },
   "type": "module",
   "dependencies": {
-    "@tml/core": "workspace:*"
+    "@tml/core": "workspace:*",
+    "@tml/defaults": "workspace:*",
+    "@tml/github": "workspace:*",
+    "@tml/pi": "workspace:*"
   }
 }

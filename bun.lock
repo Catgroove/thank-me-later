@@ -22,6 +22,9 @@
       },
       "dependencies": {
         "@tml/core": "workspace:*",
+        "@tml/defaults": "workspace:*",
+        "@tml/github": "workspace:*",
+        "@tml/pi": "workspace:*",
       },
     },
     "packages/core": {
