@@ -17,6 +17,8 @@ export interface GitStatus {
 
 export interface Git {
   currentBranch(): Promise<string>;
+  /** The repo's default branch (the PR base) — resolved from `origin/HEAD`. */
+  defaultBranch(): Promise<string>;
   createBranch(name: string): Promise<void>;
   checkout(name: string): Promise<void>;
   stageAll(): Promise<void>;
@@ -43,6 +45,27 @@ export function createGit(cwd: string): Git {
 
   return {
     currentBranch: branch,
+
+    async defaultBranch() {
+      try {
+        // `origin/HEAD` records the remote's default branch as `origin/<name>`.
+        const ref = (
+          await git(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        ).trim();
+        return ref.replace(/^origin\//, "");
+      } catch {
+        // No remote / `origin/HEAD` unset: fall back to a conventional default.
+        for (const candidate of ["main", "master"]) {
+          try {
+            await git(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${candidate}`]);
+            return candidate;
+          } catch {
+            // not present — try the next candidate
+          }
+        }
+        return "main";
+      }
+    },
 
     async createBranch(name) {
       await git(cwd, ["checkout", "-b", name]);

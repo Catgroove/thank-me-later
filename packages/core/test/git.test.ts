@@ -47,6 +47,18 @@ describe("createGit (real git, against a throwaway temp repo)", () => {
     expect(after.unstaged).toEqual([]);
   });
 
+  test("defaultBranch reads origin/HEAD, stripping the origin/ prefix", async () => {
+    const g = createGit(dir);
+    await setup(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
+    expect(await g.defaultBranch()).toBe("trunk");
+  });
+
+  test("defaultBranch falls back to a conventional branch when origin/HEAD is unset", async () => {
+    const g = createGit(dir);
+    await setup(dir, "branch", "-M", "main"); // no remote in this temp repo
+    expect(await g.defaultBranch()).toBe("main");
+  });
+
   test("a failing git invocation rejects with the stderr", async () => {
     const g = createGit(dir);
     let caught: unknown;
