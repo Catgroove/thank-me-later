@@ -10,7 +10,7 @@ import {
 } from "../src/queries.ts";
 
 describe("argv builders", () => {
-  test("prListArgs requests only the number across all states", () => {
+  test("prListArgs requests number and state across all states", () => {
     expect(prListArgs("feat/x")).toEqual([
       "pr",
       "list",
@@ -19,7 +19,7 @@ describe("argv builders", () => {
       "--state",
       "all",
       "--json",
-      "number",
+      "number,state",
     ]);
   });
 

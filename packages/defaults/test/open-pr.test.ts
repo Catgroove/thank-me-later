@@ -64,4 +64,31 @@ describe("open-pr step", () => {
     expect(git.calls).toEqual(["push tml/ship-abc1234"]); // update the existing PR's branch
     expect(forge.opened).toEqual([]); // nothing opened
   });
+
+  test.each(["merged", "closed"] as const)(
+    "opens a fresh PR when the head's only PR is %s (not reused)",
+    async (state) => {
+      const git = new FakeGit();
+      const forge = new FakeForge();
+      forge.existing = {
+        number: 7,
+        url: "https://forge.test/pr/7",
+        head: "tml/ship-abc1234",
+        base: "main",
+        title: "prior",
+        body: "prior body",
+        state,
+        mergeable: "unknown",
+        checks: [],
+        threads: [],
+      };
+      const { ctx } = fakeCtx({ git, forge, reads });
+
+      const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
+
+      expect(forge.opened).toHaveLength(1); // spent PR — a new one is opened
+      expect(result.pullRequest.number).toBe(1);
+      expect(result.pullRequest.state).toBe("open");
+    },
+  );
 });

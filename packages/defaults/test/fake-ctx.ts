@@ -25,6 +25,7 @@ export class FakeGit implements Git {
   defaultBranchName = "main";
   currentBranchName = "HEAD";
   headShaValue = "abc1234";
+  readonly headShaByRef = new Map<string, string>();
   commitSha = "0".repeat(40);
   stagedFiles: string[] = [];
   unstagedFiles: string[] = [];
@@ -35,11 +36,15 @@ export class FakeGit implements Git {
   defaultBranch(): Promise<string> {
     return Promise.resolve(this.defaultBranchName);
   }
-  headSha(): Promise<string> {
-    return Promise.resolve(this.headShaValue);
+  headSha(ref = "HEAD"): Promise<string> {
+    return Promise.resolve(this.headShaByRef.get(ref) ?? this.headShaValue);
   }
-  createBranch(name: string): Promise<void> {
-    this.calls.push(`createBranch ${name}`);
+  fetch(branch: string): Promise<void> {
+    this.calls.push(`fetch ${branch}`);
+    return Promise.resolve();
+  }
+  createBranch(name: string, opts?: { from?: string }): Promise<void> {
+    this.calls.push(opts?.from ? `createBranch ${name} from ${opts.from}` : `createBranch ${name}`);
     return Promise.resolve();
   }
   checkout(name: string): Promise<void> {

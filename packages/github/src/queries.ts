@@ -71,9 +71,9 @@ function graphqlArgs(query: string, prNumber: number): string[] {
   ];
 }
 
-/** Resolve a PR number for a head branch (idempotency hook); `--json number` only. */
+/** Resolve PR numbers for a head branch (idempotency hook); include state to prefer an open PR. */
 export function prListArgs(head: string): string[] {
-  return ["pr", "list", "--head", head, "--state", "all", "--json", "number"];
+  return ["pr", "list", "--head", head, "--state", "all", "--json", "number,state"];
 }
 
 export function prCreateArgs(input: OpenPullRequestInput): string[] {

@@ -52,6 +52,18 @@ describe("createGit (real git, against a throwaway temp repo)", () => {
     expect(await g.headSha()).toMatch(/^[0-9a-f]{7,}$/);
   });
 
+  test("fetch updates the origin tracking ref, which headSha can read", async () => {
+    await setup(dir, "branch", "-M", "main");
+    await setup(dir, "init", "--bare", "-q", "remote.git");
+    await setup(dir, "remote", "add", "origin", "remote.git");
+    await setup(dir, "push", "-u", "origin", "main", "-q");
+    const g = createGit(dir);
+
+    await g.fetch("main");
+
+    expect(await g.headSha("origin/main")).toBe(await g.headSha());
+  });
+
   test("defaultBranch reads origin/HEAD, stripping the origin/ prefix", async () => {
     const g = createGit(dir);
     await setup(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
