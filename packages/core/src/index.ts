@@ -7,15 +7,18 @@ export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
 export type { Ctx } from "./context.ts";
 export { defineStep, type Step, type StepRun } from "./step.ts";
+export { type Config, type ModelMap, type Pipeline, type Providers } from "./pipeline.ts";
 export {
-  type Config,
-  defineConfig,
-  definePlugin,
-  type ModelMap,
-  type Pipeline,
+  type Assembly,
+  createAssembly,
+  type ForgeFactory,
+  type HarnessFactory,
+  type PipelineBuilder,
   type Plugin,
-  type Providers,
-} from "./pipeline.ts";
+  type ResolvedKnobs,
+  type Selection,
+  type Tml,
+} from "./assembly.ts";
 export { type CommitResult, createGit, type Git, type GitStatus } from "./providers/git.ts";
 export type {
   CheckRun,

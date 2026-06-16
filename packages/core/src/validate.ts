@@ -58,7 +58,14 @@ export function validatePipeline(pipeline: Pipeline, models?: ModelMap): void {
   // actually uses the agent is *not* checked: the engine can't see inside `run`, and a model
   // on a non-agent Step is merely inert.)
   if (models !== undefined) {
-    for (const key of Object.keys(models)) {
+    if (typeof models !== "object" || models === null || Array.isArray(models)) {
+      throw new AssemblyError("models must be an object of step-name → model id.");
+    }
+    for (const [key, value] of Object.entries(models)) {
+      if (value !== undefined && typeof value !== "string") {
+        const where = key === "default" ? "models.default" : `models["${key}"]`;
+        throw new AssemblyError(`${where} must be a string model id.`);
+      }
       if (key === "default" || seenSteps.has(key)) continue;
       const names = [...seenSteps];
       const near = names.find((name) => withinEditDistanceOne(key, name));

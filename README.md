@@ -1,13 +1,13 @@
 # thank-me-later (tml)
 
 A fully customizable, extensible "ship it" CLI that comes with sane defaults. Run it when an
-agent finishes a unit of work and it conducts a code-defined pipeline — branch, checks, review,
-open PR, wait on CI. The pipeline and every step are plain TypeScript: use the blessed defaults,
-or reorder, replace, and extend them. _Spend time now, thank me later._
+agent finishes a unit of work and it conducts a pipeline — branch, checks, review, open PR, wait
+on CI. The defaults run **zero-config in any language**; tune them with a `tml.json` (declarative
+knobs) or extend them with a local plugin (`export default (tml) => …`). _Spend time now, thank me later._
 
 > **Status: functional.** `tml ship` runs the default pipeline end-to-end against GitHub
-> (`gh`) and the pi agent. The TUI, resume/checkpoint, PR-comment handling, and loading a custom
-> `tml.config.ts` aren't built yet.
+> (`gh`) and the pi agent, configurable via `tml.json` + local plugins. The TUI,
+> resume/checkpoint, and PR-comment handling aren't built yet.
 
 ## Quick start
 
@@ -22,6 +22,35 @@ then the gate's fixes as their own commits — as it formats, lints, type-checks
 reviews (the agent applies fixes), before pushing and opening a PR and watching CI.
 
 tml is built with tml: every change to this repo ships through `tml ship`.
+
+## Configuration
+
+`tml ship` is **zero-config** — it runs the default pipeline anywhere, in any language. To tune
+it, add a `tml.json` (repo root, or `~/.config/tml/tml.json` for machine-wide defaults; the two
+deep-merge, project winning):
+
+```jsonc
+{
+  "$schema": "https://tml.dev/config.json",
+  "branch": "require",                          // ai | auto | require
+  "models": { "default": "haiku", "review": "opus" },
+  "disable": ["typecheck"],                     // drop a default Step
+  "plugins": ["./.tml/deep-review.ts"]          // local paths only (for now)
+}
+```
+
+JSON only **toggles and selects** (providers by name, `branch`, `models`, `disable`). To add or
+reorder Steps, write a **local plugin** — a TypeScript file that never imports `@tml/core`:
+
+```ts
+// .tml/deep-review.ts
+export default (tml) => {
+  tml.pipeline.insertAfter("review", tml.defineStep({
+    name: "deep-review",
+    run: (ctx) => ctx.agent.run("Second, security-focused pass over the diff.").then(() => ({})),
+  }));
+};
+```
 
 ## Commands
 

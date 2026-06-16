@@ -2,12 +2,13 @@
 // same @tml/core primitives (ARCHITECTURE). The pipeline is
 //   branch → describe → commit(the change) → {format,lint,typecheck,test}+commit
 //          → review+commit → open-pr → ci-wait
-// assembled by `tmlDefaults()`. Steps and artifact tokens are also exported so plugin
-// authors can reuse or replace individual pieces. The plugin names no models (portable by
-// referencing nothing) and supplies no Providers — the host wires Forge + Harness.
+// assembled by the `tmlDefaults` Plugin (an injected-API `(tml) => …`). Steps and artifact
+// tokens are also exported so plugin authors can reuse or replace individual pieces. The plugin
+// names no models (portable by referencing nothing) and supplies no Providers — the host wires
+// Forge + Harness by name.
 
 export { branchName, prBody, prTitle, pullRequest, reviewSummary } from "./artifacts.ts";
-export { type DefaultsOptions, tmlDefaults } from "./plugin.ts";
+export { default, tmlDefaults } from "./plugin.ts";
 export { type BranchMode, branchNameFor, branchStep } from "./steps/branch.ts";
 export { ciWaitStep } from "./steps/ci-wait.ts";
 export { checkStep, formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";

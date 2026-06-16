@@ -28,12 +28,14 @@ covers the local, pre-PR portion.
 _Avoid_: Session, job, build
 
 **Checkpoint journal**:
-The gitignored `.tml/` record of a Run's accumulated Artifacts and completed Steps,
-written at each step boundary. On resume, completed Steps are replayed from the journal
-(Artifacts restored, execution skipped) and the Run continues at the first incomplete
-Step — so an expensive agent step is never paid for twice. Requires Artifacts to be
-serializable.
-_Avoid_: State file, cache, checkpoint db
+The record of a Run's accumulated Artifacts and completed Steps, written at each step
+boundary to a per-machine state directory *outside the working tree*
+(`~/.local/state/tml/<checkout-key>/`, keyed by the checkout's absolute path so two
+clones of one repo never collide) — never committed, never littering the repo. On
+resume, completed Steps are replayed from the journal (Artifacts restored, execution
+skipped) and the Run continues at the first incomplete Step — so an expensive agent step
+is never paid for twice. Requires Artifacts to be serializable.
+_Avoid_: State file, cache, checkpoint db, session
 
 **Trigger**:
 What initiates a Run. The one canonical, in-the-box Trigger is an explicit ship action —
@@ -57,7 +59,9 @@ The principle that tml — not the agent — owns the control loop. tml decides 
 next; steps may delegate work to an agent but do not seize control.
 
 **Provider**:
-A pluggable external capability a Step calls into, configured in `tml.config.ts`. The two
+A pluggable external capability a Step calls into, selected by name in `tml.json` from a
+registry the binary ships (`"harness": "pi"`, `"forge": "github"`); Plugins can register
+more. The two
 kinds — Harness (run an agent task) and Forge (the external code-host; GitHub first) — are
 *distinct, typed domain interfaces*, deliberately NOT collapsed into one generic interface
 (that would forfeit the type safety behind [[0003-declared-artifacts]]). What they share
@@ -108,11 +112,14 @@ identity of the producing Step, which keeps plugins decoupled.
 _Avoid_: Output, result, value, payload (when referring to this shared, declared data)
 
 **Plugin**:
-An npm package that extends the Pipeline — contributing Steps, Providers, or UI
-components — and is composed explicitly in `tml.config.ts`. The blessed default
-pipeline (`@tml/defaults`) is itself just a Plugin built on the same primitives; it is
-not privileged by the core, only by convention. Contrast with Adapter (host
-integration).
+A TypeScript module that extends the Pipeline — contributing Steps, Providers, or UI
+components. A Plugin is authored against an *injected* API (`export default (tml) => {…}`)
+and **never imports `@tml/core`**; it is referenced by **local path** from `tml.json`
+(`"plugins": ["./.tml/deep-review.ts"]`) and evaluated by the binary's embedded runtime, so
+it needs nothing installed in the target repo, in any language. The blessed default pipeline
+(`@tml/defaults`) is itself just a Plugin built on the same primitives — bundled into the
+binary and loaded first, but not privileged by the core, only by convention. Contrast with
+Adapter (host integration).
 _Avoid_: Extension, addon, module
 
 **Adapter**:
