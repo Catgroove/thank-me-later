@@ -131,6 +131,23 @@ describe("createPlainRenderer", () => {
     ]);
   });
 
+  test("keeps a readable gap after long results-block labels", () => {
+    const lines = renderLines([
+      { type: "run:started", pipeline: ["security-review"] },
+      { type: "step:started", step: "security-review" },
+      {
+        type: "artifact:written",
+        step: "security-review",
+        artifact: "reviewSummary",
+        rendered: "line one\nline two",
+      },
+      { type: "step:finished", step: "security-review" },
+      { type: "run:finished" },
+    ]);
+    expect(lines).toContain("  security-review  line one");
+    expect(lines).toContain("                   line two");
+  });
+
   test("reports a failure with its step and error", () => {
     const lines = renderLines([
       { type: "run:started", pipeline: ["test"] },

@@ -45,13 +45,18 @@ export function createPlainRenderer(
     );
     if (narrative.length === 0 && view.prUrl === undefined) return;
     writeLine(`  ── results ${"─".repeat(20)}`);
-    const cont = " ".repeat(2 + LABEL_WIDTH);
+    const labelWidth = Math.max(
+      LABEL_WIDTH,
+      ...narrative.map((step) => step.name.length + 2),
+      view.prUrl !== undefined ? "pr".length + 2 : 0,
+    );
+    const cont = " ".repeat(2 + labelWidth);
     for (const step of narrative) {
       const [first, ...rest] = (step.rendered ?? "").split("\n");
-      writeLine(`  ${step.name.padEnd(LABEL_WIDTH)}${first ?? ""}`);
+      writeLine(`  ${step.name.padEnd(labelWidth)}${first ?? ""}`);
       for (const line of rest) writeLine(`${cont}${line}`);
     }
-    if (view.prUrl !== undefined) writeLine(`  ${"pr".padEnd(LABEL_WIDTH)}${view.prUrl}`);
+    if (view.prUrl !== undefined) writeLine(`  ${"pr".padEnd(labelWidth)}${view.prUrl}`);
   }
 
   return {

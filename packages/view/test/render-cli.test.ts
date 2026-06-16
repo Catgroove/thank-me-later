@@ -133,6 +133,27 @@ describe("createCliRenderer", () => {
     expect(out).toMatch(/echo [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
+  test("verbose seals pending prose before a log line", () => {
+    const out = renderRaw(
+      [
+        { type: "run:started", pipeline: ["check"] },
+        { type: "step:started", step: "check" },
+        {
+          type: "agent:progress",
+          step: "check",
+          progress: { kind: "text", text: "about to poll" },
+        },
+        { type: "step:log", step: "check", message: "ci: pending" },
+        { type: "step:finished", step: "check" },
+      ],
+      { verbose: true },
+    );
+    const prose = out.indexOf("about to poll\n");
+    const log = out.indexOf("· ci: pending\n");
+    expect(prose).toBeGreaterThanOrEqual(0);
+    expect(log).toBeGreaterThan(prose);
+  });
+
   test("verbose does not drop pending prose when the terminal is resized mid-stream", () => {
     let out = "";
     let columns = 20;

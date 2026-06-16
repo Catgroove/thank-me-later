@@ -116,11 +116,11 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   const now = options.now ?? (() => Date.now());
   const intervalMs = options.intervalMs ?? 80;
   const term = options.term ?? process.env.TERM;
-  const glyphs = term === "dumb" ? DUMB : UNICODE;
+  const dumb = term === undefined || term === "" || term === "dumb";
+  const glyphs = dumb ? DUMB : UNICODE;
   const verbose = options.verbose ?? false;
   const color =
-    options.color ??
-    (term !== "dumb" && process.env.NO_COLOR === undefined && !!process.stdout.isTTY);
+    options.color ?? (!dumb && process.env.NO_COLOR === undefined && !!process.stdout.isTTY);
   const termColumns = (): number => options.columns ?? process.stdout.columns ?? 80;
 
   // SGR helpers — identities when color is off, so plain output (and tests) is untouched.
@@ -326,17 +326,22 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
     const head = `${glyphs.rule}${glyphs.rule} ${RESULTS_HEAD}`;
     const fill = Math.max(0, Math.min(termColumns(), MAX_WIDTH) - STEP_INDENT.length - head.length);
     lines.push(dim(`${STEP_INDENT}${head}${glyphs.rule.repeat(fill)}`));
-    const gutter = STEP_INDENT.length + LABEL_WIDTH;
+    const labelWidth = Math.max(
+      LABEL_WIDTH,
+      ...narrative.map((step) => step.name.length + 2),
+      view.prUrl !== undefined ? "pr".length + 2 : 0,
+    );
+    const gutter = STEP_INDENT.length + labelWidth;
     const cont = " ".repeat(gutter);
     const width = Math.max(1, Math.min(termColumns(), MAX_WIDTH) - gutter);
     for (const step of narrative) {
-      const label = `${STEP_INDENT}${step.name.padEnd(LABEL_WIDTH)}`;
+      const label = `${STEP_INDENT}${step.name.padEnd(labelWidth)}`;
       wrap(step.rendered, width).forEach((segment, i) =>
         lines.push((i === 0 ? label : cont) + segment),
       );
     }
     if (view.prUrl !== undefined)
-      lines.push(`${STEP_INDENT}${"pr".padEnd(LABEL_WIDTH)}${cyan(view.prUrl)}`);
+      lines.push(`${STEP_INDENT}${"pr".padEnd(labelWidth)}${cyan(view.prUrl)}`);
     return lines;
   }
 
@@ -440,7 +445,11 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
         }
         case "step:log":
           // A step's log line: transient in quiet mode, sealed (dimmed) in verbose.
-          if (verbose) paint([dim(`${BODY_INDENT}· ${event.message}`)], liveLine(view));
+          if (verbose)
+            paint(
+              [...commitPendingProse(view), dim(`${BODY_INDENT}· ${event.message}`)],
+              liveLine(view),
+            );
           else paintLive(view);
           return;
         case "step:finished":
