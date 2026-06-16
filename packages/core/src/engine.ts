@@ -1,10 +1,10 @@
 // The headless engine. `createEngine` validates the assembled Pipeline up front
-// (ADR-0003) and returns a Run whose `run()` is the single event stream
-// (ADR-0002). The engine is the Conductor: it owns the loop, threads declared
-// artifacts between Steps, drives flow signals, and supplies `ctx` — including
-// `ctx.git` natively (ADR-0007), bound to the Run's working dir.
+// and returns a Run whose `run()` is the single event stream. The engine is the
+// Conductor: it owns the loop, threads declared artifacts between Steps, drives
+// flow signals, and supplies `ctx` — including `ctx.git` natively, bound to the
+// Run's working dir.
 //
-// Events are emitted *live* over an internal queue (ADR-0008): a background
+// Events are emitted *live* over an internal queue: a background
 // driver runs the pipeline and `push`es events as they happen — including
 // `agent:progress` mid-Step — while the generator yields them concurrently. A
 // Run is cancellable via an `AbortSignal`; an aborted Run ends with
@@ -15,7 +15,7 @@ import type { Ctx } from "./context.ts";
 import type { RunEvent } from "./events.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
-import type { Config, Providers } from "./pipeline.ts";
+import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import { until } from "./pending.ts";
 import { type EventQueue, createEventQueue } from "./queue.ts";
 import { isFlowSignal } from "./signals.ts";
@@ -38,7 +38,7 @@ export interface EngineOptions {
   git?: Git;
   /** Inline responder for `ctx.ask`. Defaults to the unimplemented headless path. */
   ask?: (prompt: string) => Promise<string>;
-  /** External abort: cancels the Run, ending it with `run:cancelled` (ADR-0008). */
+  /** External abort: cancels the Run, ending it with `run:cancelled`. */
   signal?: AbortSignal;
 }
 
@@ -47,7 +47,7 @@ export interface Engine {
 }
 
 export function createEngine(config: Config, opts: EngineOptions = {}): Engine {
-  validatePipeline(config.pipeline); // throws AssemblyError before any side effect
+  validatePipeline(config.pipeline, config.models); // throws AssemblyError before any side effect
   return {
     run() {
       return runPipeline(config, opts);
@@ -88,7 +88,7 @@ async function drive(
   queue: EventQueue<RunEvent>,
   signal: AbortSignal,
 ): Promise<void> {
-  const { pipeline, providers } = config;
+  const { pipeline, providers, models } = config;
   const git = opts.git ?? createGit(opts.cwd ?? process.cwd());
   const ask =
     opts.ask ??
@@ -105,6 +105,34 @@ async function drive(
 
   queue.push({ type: "run:started", pipeline: pipeline.map((s) => s.name) });
 
+  // Validate configured model ids against the live Harness *before* the first Step,
+  // but only when the Harness can list its models — otherwise we can't, so we don't.
+  // Name-key validity was already checked synchronously at assembly (validate.ts).
+  if (models !== undefined && providers.agent.listModels !== undefined) {
+    let available: Set<string>;
+    try {
+      available = new Set(await providers.agent.listModels());
+    } catch (error) {
+      if (signal.aborted) return cancelled(queue);
+      queue.push({ type: "run:failed", error: errorMessage(error) });
+      queue.close();
+      return;
+    }
+    if (signal.aborted) return cancelled(queue);
+    // An empty list is not a usable allowlist (the Harness can't, or won't, enumerate) — skip
+    // rather than reject every id. Only a non-empty list validates configured ids.
+    for (const [key, id] of available.size === 0 ? [] : Object.entries(models)) {
+      if (id === undefined || available.has(id)) continue;
+      const where = key === "default" ? "models.default" : `models["${key}"]`;
+      queue.push({
+        type: "run:failed",
+        error: `${where} is "${id}", which the Harness does not list as an available model.`,
+      });
+      queue.close();
+      return;
+    }
+  }
+
   let i = 0;
   while (i < pipeline.length) {
     const step = pipeline[i];
@@ -112,7 +140,7 @@ async function drive(
     if (signal.aborted) return cancelled(queue, step.name);
 
     queue.push({ type: "step:started", step: step.name });
-    const ctx = makeContext(step, store, providers, git, queue, ask, signal);
+    const ctx = makeContext(step, store, providers, git, queue, ask, signal, models);
 
     let result: Awaited<ReturnType<Step["run"]>>;
     try {
@@ -206,8 +234,8 @@ async function drive(
   queue.close();
 }
 
-function cancelled(queue: EventQueue<RunEvent>, step: string): void {
-  queue.push({ type: "run:cancelled", step });
+function cancelled(queue: EventQueue<RunEvent>, step?: string): void {
+  queue.push(step === undefined ? { type: "run:cancelled" } : { type: "run:cancelled", step });
   queue.close();
 }
 
@@ -219,6 +247,7 @@ function makeContext(
   queue: EventQueue<RunEvent>,
   ask: (prompt: string) => Promise<string>,
   signal: AbortSignal,
+  models: ModelMap | undefined,
 ): Ctx {
   const read = (artifact: Artifact<unknown, string>): unknown => {
     if (!store.has(artifact.name)) {
@@ -234,8 +263,12 @@ function makeContext(
   const configured = providers.agent;
   const agent: Harness = {
     run(task: string, runOpts?: AgentRunOpts) {
+      // Resolve the model most-specific-first: an in-code per-call `{ model }` wins, else the
+      // per-Step config, else the run-wide default, else nothing (the Harness's own default).
+      const model = runOpts?.model ?? models?.[step.name] ?? models?.default;
       return configured.run(task, {
         ...runOpts,
+        ...(model !== undefined ? { model } : {}),
         onProgress: (progress) => {
           runOpts?.onProgress?.(progress);
           queue.push({ type: "agent:progress", step: step.name, progress });

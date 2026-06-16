@@ -1,6 +1,6 @@
 // Pure mapping from pi's `--mode json` JSONL events onto core's `AgentProgress`.
 // No I/O, no `pi`, no `cwd` — just parsed-value → value, so it is unit-tested
-// directly against fixtures. (ADR-0009; spec 0005.)
+// directly against fixtures. (spec 0005.)
 //
 // pi streams many event kinds; we surface only two as progress:
 //   • assistant text  — `message_update` → `assistantMessageEvent.type === "text_delta"`

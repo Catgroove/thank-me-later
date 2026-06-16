@@ -1,6 +1,6 @@
 // `open-pr` — push the branch and open the PR. The work and the fixes were already committed by the
 // commit Steps before this point, so `open-pr` no longer commits; it pushes what's there and opens
-// the PR. Idempotent (ADR-0004): if a PR already exists for this head branch, reuse it and skip the
+// the PR. Idempotent: if a PR already exists for this head branch, reuse it and skip the
 // open, so a re-run never double-opens. The title + body come from `describe`; the review summary is
 // folded into the body here. The base is the repo's default branch.
 
@@ -23,7 +23,7 @@ export function openPrStep(): Step {
 
       // Push before the idempotency check so a re-run that created new local commits updates the
       // already-open PR instead of silently leaving those commits only in the checkout.
-      await ctx.git.push({ branch: head }); // push the feature branch we ship under (ADR-0012)
+      await ctx.git.push({ branch: head }); // push the feature branch we ship under
 
       const existing = await ctx.forge.findPullRequest(head);
       if (existing) return { pullRequest: existing };

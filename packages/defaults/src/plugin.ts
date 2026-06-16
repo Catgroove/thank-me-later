@@ -1,9 +1,9 @@
-// `tmlDefaults` — the blessed default pipeline as a Plugin (ADR-0006). In order:
+// `tmlDefaults` — the blessed default pipeline as a Plugin. In order:
 //   branch → describe → commit(the change) → {format,lint,typecheck,test}+commit
 //          → review+commit → open-pr → ci-wait
-// The work lands as a clean history — your change, then tml's fixes in their own commits (ADR-0010).
+// The work lands as a clean history — your change, then tml's fixes in their own commits.
 // No Providers (the host wires Forge + Harness) and no models (portable by referencing nothing).
-// The Branch mode (ADR-0012) selects how the first Step gets a feature branch; it defaults to `ai`.
+// The Branch mode selects how the first Step gets a feature branch; it defaults to `ai`.
 
 import { definePlugin, type Plugin } from "@tml/core";
 import { prTitle } from "./artifacts.ts";

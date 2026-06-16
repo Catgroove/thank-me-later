@@ -1,7 +1,7 @@
 // Structured output for a harness with no native schema flag: inline the schema
 // into the prompt, then parse the JSON back out of the agent's free-text reply.
 // Pure (string + schema → value), unit-tested directly. (AgentRunOpts.schema
-// contract; ADR-0009. Lifts into @tml/core if a second harness needs it.)
+// contract. Lifts into @tml/core if a second harness needs it.)
 //
 // Models wrap JSON in prose and ```json fences inconsistently, so we try, in order:
 // fenced ```json blocks, then the last bare balanced {…} object; then validate the

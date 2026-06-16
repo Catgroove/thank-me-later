@@ -1,7 +1,7 @@
-// The single structured event stream the headless engine emits during a Run
-// (ADR-0002). The standalone TUI, CLI logs, and host Adapters are all consumers
-// of this one stream; the engine itself renders nothing. Events are emitted live
-// as they occur — including `agent:progress` mid-Step (ADR-0008) — not batched at
+// The single structured event stream the headless engine emits during a Run.
+// The standalone TUI, CLI logs, and host Adapters are all consumers of this one
+// stream; the engine itself renders nothing. Events are emitted live as they
+// occur — including `agent:progress` mid-Step — not batched at
 // Step boundaries. `run:finished` means success; `run:failed` carries a failure;
 // `run:cancelled` is an external Abort (distinct from the `cancel()` flow signal).
 // The `type` is the discriminant, so there is no redundant `ok` flag.

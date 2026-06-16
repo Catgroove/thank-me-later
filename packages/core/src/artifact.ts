@@ -1,4 +1,4 @@
-// Artifact tokens — the typed handles Steps declare and read (ADR-0006).
+// Artifact tokens — the typed handles Steps declare and read.
 //
 // `defineArtifact` *declares* an artifact (its name + value type); a Step
 // *produces its value* at runtime. Steps reference artifacts by token, never by

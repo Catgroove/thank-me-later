@@ -1,4 +1,4 @@
-// Commits, as steps. tml ship runs in place (ADR-0010) and lands the work as a clean history so a
+// Commits, as steps. tml ship runs in place and lands the work as a clean history so a
 // reviewer can tell *your change* from *what tml changed on top of it*:
 //
 //   commit-change   — your work (subject = the `describe` title)

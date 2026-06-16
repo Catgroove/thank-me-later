@@ -1,4 +1,4 @@
-// Forge — the external code-host Provider (GitHub first; ADR-0005). The canonical
+// Forge — the external code-host Provider (GitHub first). The canonical
 // dev-lifecycle entities (PullRequest, CheckRun, ReviewThread, mergeable) live
 // here in core as first-class types; a host adapter maps a specific Forge onto
 // them. Reads are hybrid: getPullRequest returns a full snapshot for
@@ -43,7 +43,7 @@ export interface OpenPullRequestInput {
 }
 
 export interface Forge {
-  /** Idempotency hook (ADR-0004): is there already a PR for this head branch? */
+  /** Idempotency hook: is there already a PR for this head branch? */
   findPullRequest(head: string): Promise<PullRequest | null>;
   openPullRequest(input: OpenPullRequestInput): Promise<PullRequest>;
   /** Full snapshot, for reconstructing Run state from the Forge. */

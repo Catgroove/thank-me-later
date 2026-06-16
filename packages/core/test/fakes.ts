@@ -89,6 +89,8 @@ export interface FakeHarnessOptions {
 
 export class FakeHarness implements Harness {
   readonly tasks: string[] = [];
+  /** The resolved `model` each `run` received (parallel to `tasks`); `undefined` = harness default. */
+  readonly runModels: (string | undefined)[] = [];
   /** Set true once an in-flight `run` observes its `signal` aborting. */
   aborted = false;
   private readonly result: AgentResult;
@@ -105,6 +107,7 @@ export class FakeHarness implements Harness {
 
   run(task: string, opts?: AgentRunOpts): Promise<AgentResult> {
     this.tasks.push(task);
+    this.runModels.push(opts?.model);
     // Stream progress live, before resolving — proves consumers see it mid-Step.
     for (const item of this.progress) opts?.onProgress?.(item);
 

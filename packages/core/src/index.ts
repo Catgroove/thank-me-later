@@ -11,6 +11,7 @@ export {
   type Config,
   defineConfig,
   definePlugin,
+  type ModelMap,
   type Pipeline,
   type Plugin,
   type Providers,

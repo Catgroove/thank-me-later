@@ -39,7 +39,7 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
   }
 
   return {
-    // ADR-0004 idempotency hook: list resolves the number, then reuse the snapshot.
+    // Idempotency hook: list resolves the number, then reuse the snapshot.
     async findPullRequest(head: string): Promise<PullRequest | null> {
       const rows = JSON.parse(await run(prListArgs(head))) as GhPrListRow[];
       const first = rows[0];

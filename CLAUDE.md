@@ -48,6 +48,9 @@ bunx tml ship          # run the pipeline
   (tiers, caches, generic mega-interfaces) for hypothetical needs. See `docs/adr/`.
 - **Plugins peer-depend on `@tml/core`** and import only its curated public surface.
 - Steps stay mostly-pure and unit-testable; side effects go through Providers.
+- **Never reference ADRs in code.** No `ADR-NNNN` citations in source or test files (comments
+  included). Code comments explain the rationale in their own words; ADRs live in `docs/adr/`
+  and are referenced only from other docs. ADR numbers churn and rot when cited from code.
 
 ## Where to read more
 

@@ -19,7 +19,7 @@ export interface ShipDeps {
   renderer?: Renderer;
 }
 
-/** A TTY live region when stdout is a terminal; clean append-only lines otherwise (ADR-0011). */
+/** A TTY live region when stdout is a terminal; clean append-only lines otherwise. */
 function defaultRenderer(): Renderer {
   return process.stdout.isTTY
     ? createCliRenderer()
@@ -38,7 +38,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // On a signal (Ctrl-C, kill) Bun terminates the process without running the `finally`
   // below, so the renderer's teardown never fires and the terminal is left with a hidden
   // cursor and/or an open synchronized-output region — the renderer is the sole owner of
-  // that state (ADR-0011). Restore it on the way out, then re-exit with the conventional
+  // that state. Restore it on the way out, then re-exit with the conventional
   // code. opentui self-registers these inside its renderer; pi leaves it to the caller —
   // our renderer-owns-ANSI / CLI-owns-lifecycle split puts it here. Handlers are torn down
   // in `finally` so repeated in-process calls (tests) don't accumulate listeners.
@@ -53,13 +53,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   for (const signal of signals) process.on(signal, onSignal);
 
   // tml ship runs in place: the pipeline branches, commits, and pushes in the user's own checkout
-  // (ADR-0010), so the Providers and `ctx.git` all bind to `cwd`.
+  // so the Providers and `ctx.git` all bind to `cwd`.
   try {
     const engine = engineFor(buildConfig(cwd), { cwd });
     let view = initialView;
     let failed = false;
     let cancelled = false;
-    // Fold each event into the shared ViewState, then let the renderer draw it (ADR-0011).
+    // Fold each event into the shared ViewState, then let the renderer draw it.
     for await (const event of engine.run()) {
       view = present(view, event);
       renderer.render(view, event);

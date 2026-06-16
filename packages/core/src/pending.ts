@@ -1,11 +1,11 @@
-// Eventually-consistent results and the single primitive that drives them
-// (ADR-0005). Synchronous Provider operations just return a Promise; only
+// Eventually-consistent results and the single primitive that drives them.
+// Synchronous Provider operations just return a Promise; only
 // operations that settle over time — CI checks, an agent task finishing, a PR
 // becoming mergeable — return a Pending, which `until` polls to resolution. The
 // sync/async/pollable distinction therefore lives in the *result type*, not in
 // a per-Provider loop.
 //
-// `until` is abort-aware (ADR-0008): an `AbortSignal` stops it promptly —
+// `until` is abort-aware: an `AbortSignal` stops it promptly —
 // mid-sleep, not just between polls — so a long ci-wait can be cancelled.
 
 export type PollResult<T> = { done: true; value: T } | { done: false };

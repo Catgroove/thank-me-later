@@ -1,5 +1,5 @@
 // createPiHarness — composes the spawn seam, argv builder, JSONL mapper, and
-// schema parser into core's `Harness` (ADR-0009; spec 0005). The provider stays
+// schema parser into core's `Harness` (spec 0005). The provider stays
 // thin: `run` spawns `pi --mode json`, streams stdout through pure mappers to fire
 // `onProgress` live and accumulate the answer, then resolves an `AgentResult` when
 // the agent's turn ends. The only state is the (injectable) spawn seam.
@@ -60,7 +60,10 @@ export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harne
       const proc = spawn(listModelsArgs(), { cwd });
       let out = "";
       for await (const line of proc.stdout) out += `${line}\n`;
-      await proc.done;
+      const { exitCode, stderr } = await proc.done;
+      if (exitCode !== 0) {
+        throw new Error(`pi --list-models failed (exit ${exitCode}): ${stderr.trim()}`);
+      }
       return parseModels(out);
     },
   };

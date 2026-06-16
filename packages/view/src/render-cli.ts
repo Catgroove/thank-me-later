@@ -1,4 +1,4 @@
-// TTY renderer: a scroll-safe live region over `ViewState` (ADR-0011). Each step opens
+// TTY renderer: a scroll-safe live region over `ViewState`. Each step opens
 // with a `▸ <name>` header; its activity commits to scrollback underneath it as it happens
 // — coalesced prose and one `⚙ <tool> · <detail>` line per command — and the step closes
 // with `✓ <name>  (<elapsed>)`. The fold stays pure and clockless; this owns the clock and
@@ -27,7 +27,7 @@
 // in-flight prose run may re-wrap — never a cursor smear, just a possible reflow seam.
 //
 // `ship()` only constructs this when `process.stdout.isTTY`; a spinner never reaches a
-// non-TTY (ADR-0011). A dumb terminal (no `TERM`) still gets the ASCII glyph set.
+// non-TTY. A dumb terminal (no `TERM`) still gets the ASCII glyph set.
 
 import type { RunEvent } from "@tml/core";
 import type { ViewState } from "./present.ts";
