@@ -14,6 +14,9 @@ export type RunEvent =
   | { type: "step:log"; step: string; message: string }
   | { type: "agent:progress"; step: string; progress: AgentProgress }
   | { type: "artifact:written"; step: string; artifact: string }
+  // The Run's pull request is open on the Forge — freshly opened, or rediscovered on a re-run.
+  // Carries the URL so a consumer can surface a clickable link at the end of the Run.
+  | { type: "pr:opened"; url: string }
   | { type: "step:skipped"; step: string }
   | { type: "step:finished"; step: string }
   | { type: "ask:pending"; step: string; prompt: string }

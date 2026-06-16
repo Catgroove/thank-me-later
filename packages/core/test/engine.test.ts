@@ -228,3 +228,46 @@ describe("engine — live emission", () => {
     expect(order.at(-1)).toBe("run:finished");
   });
 });
+
+describe("engine — pr:opened", () => {
+  test("emits pr:opened with the URL when a Step opens a PR", async () => {
+    const open = defineStep({
+      name: "open-pr",
+      async run(ctx) {
+        await ctx.forge.openPullRequest({ head: "feat/x", base: "main", title: "t", body: "b" });
+        return {};
+      },
+    });
+    const events = await collect(engineFor([open]));
+    expect(events).toContainEqual({ type: "pr:opened", url: "https://forge.test/pr/1" });
+  });
+
+  test("emits pr:opened when a re-run rediscovers an existing PR via findPullRequest", async () => {
+    const forge = new FakeForge();
+    await forge.openPullRequest({ head: "feat/x", base: "main", title: "t", body: "b" });
+    const reuse = defineStep({
+      name: "open-pr",
+      async run(ctx) {
+        await ctx.forge.findPullRequest("feat/x");
+        return {};
+      },
+    });
+    const engine = createEngine({
+      pipeline: [reuse],
+      providers: { forge, agent: new FakeHarness() },
+    });
+    const events = await collect(engine);
+    expect(events).toContainEqual({ type: "pr:opened", url: "https://forge.test/pr/1" });
+  });
+
+  test("no PR found (findPullRequest → null) emits no pr:opened", async () => {
+    const miss = defineStep({
+      name: "open-pr",
+      async run(ctx) {
+        await ctx.forge.findPullRequest("feat/none");
+        return {};
+      },
+    });
+    expect(types(await collect(engineFor([miss])))).not.toContain("pr:opened");
+  });
+});
