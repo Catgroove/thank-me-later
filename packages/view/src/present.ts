@@ -28,6 +28,8 @@ export interface ViewState {
   readonly tool?: ToolView;
   readonly status: "running" | "finished" | "cancelled" | "failed";
   readonly error?: string;
+  /** The Run's pull request URL, once opened — surfaced on the final line. */
+  readonly prUrl?: string;
 }
 
 /** The empty starting state, before any event has been folded in. */
@@ -93,6 +95,8 @@ export function present(view: ViewState, event: RunEvent): ViewState {
         error: event.error,
         tool: undefined,
       };
+    case "pr:opened":
+      return { ...view, prUrl: event.url };
     case "step:log":
     case "artifact:written":
     case "ask:pending":

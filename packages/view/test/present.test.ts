@@ -139,4 +139,15 @@ describe("present", () => {
     ].reduce(present, base);
     expect(after).toEqual(base);
   });
+
+  test("pr:opened records the PR URL for the run-end line", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["open-pr"] },
+      { type: "step:started", step: "open-pr" },
+      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "step:finished", step: "open-pr" },
+      { type: "run:finished" },
+    ]);
+    expect(view.prUrl).toBe("https://forge.test/pr/7");
+  });
 });

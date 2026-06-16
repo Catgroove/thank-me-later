@@ -243,6 +243,8 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   return {
     render(view: ViewState, event: RunEvent): void {
       lastView = view;
+      // The PR link, appended to whichever run-end line we emit so it survives the CI wait.
+      const prSuffix = view.prUrl ? ` · ${view.prUrl}` : "";
       switch (event.type) {
         case "run:started":
           paint(
@@ -304,7 +306,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
         }
         case "run:finished":
           stopTimer();
-          paint([...commitPendingProse(view), "■ run finished"], "");
+          paint([...commitPendingProse(view), `■ run finished${prSuffix}`], "");
           showCursor();
           return;
         case "run:cancelled":
@@ -312,7 +314,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           paint(
             [
               ...commitPendingProse(view),
-              `◼ run cancelled${event.step ? ` at ${event.step}` : ""}`,
+              `◼ run cancelled${event.step ? ` at ${event.step}` : ""}${prSuffix}`,
             ],
             "",
           );
@@ -323,12 +325,13 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           paint(
             [
               ...commitPendingProse(view),
-              `${glyphs.failed} run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`,
+              `${glyphs.failed} run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}${prSuffix}`,
             ],
             "",
           );
           showCursor();
           return;
+        case "pr:opened": // held in view.prUrl; surfaced on the run-end line, not live
         case "step:log":
         case "artifact:written":
         case "ask:pending":

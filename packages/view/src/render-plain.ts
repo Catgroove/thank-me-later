@@ -20,6 +20,9 @@ export function createPlainRenderer(writeLine: (line: string) => void): Renderer
     if (segment !== "") writeLine(`    ${segment}`);
   }
 
+  // The PR link, appended to whichever run-end line we emit so it survives the CI wait.
+  const prSuffix = (view: ViewState): string => (view.prUrl ? ` · ${view.prUrl}` : "");
+
   return {
     render(view: ViewState, event: RunEvent): void {
       switch (event.type) {
@@ -47,6 +50,9 @@ export function createPlainRenderer(writeLine: (line: string) => void): Renderer
           flushText(view);
           writeLine(`    + ${event.artifact}`);
           return;
+        case "pr:opened":
+          // Held in view.prUrl; surfaced on the run-end line, not inline.
+          return;
         case "ask:pending":
           flushText(view);
           writeLine(`  ? ${event.step}: ${event.prompt}`);
@@ -61,15 +67,17 @@ export function createPlainRenderer(writeLine: (line: string) => void): Renderer
           return;
         case "run:finished":
           flushText(view);
-          writeLine("■ run finished");
+          writeLine(`■ run finished${prSuffix(view)}`);
           return;
         case "run:cancelled":
           flushText(view);
-          writeLine(`◼ run cancelled${event.step ? ` at ${event.step}` : ""}`);
+          writeLine(`◼ run cancelled${event.step ? ` at ${event.step}` : ""}${prSuffix(view)}`);
           return;
         case "run:failed":
           flushText(view);
-          writeLine(`✗ run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`);
+          writeLine(
+            `✗ run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}${prSuffix(view)}`,
+          );
           return;
       }
     },

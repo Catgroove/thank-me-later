@@ -108,4 +108,31 @@ describe("createPlainRenderer", () => {
     ]);
     expect(lines.at(-1)).toBe("✗ run failed at test: boom");
   });
+
+  test("appends the PR link to the run-end line, surviving the steps after open-pr", () => {
+    const lines = renderLines([
+      { type: "run:started", pipeline: ["open-pr", "ci-wait"] },
+      { type: "step:started", step: "open-pr" },
+      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "step:finished", step: "open-pr" },
+      { type: "step:started", step: "ci-wait" },
+      { type: "step:finished", step: "ci-wait" },
+      { type: "run:finished" },
+    ]);
+    // pr:opened itself prints nothing inline; the URL only shows on the final line.
+    expect(lines).not.toContain("    + https://forge.test/pr/7");
+    expect(lines.at(-1)).toBe("■ run finished · https://forge.test/pr/7");
+  });
+
+  test("appends the PR link to a failure line too (PR opened, then CI failed)", () => {
+    const lines = renderLines([
+      { type: "run:started", pipeline: ["open-pr", "ci-wait"] },
+      { type: "step:started", step: "open-pr" },
+      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "step:finished", step: "open-pr" },
+      { type: "step:started", step: "ci-wait" },
+      { type: "run:failed", step: "ci-wait", error: "checks red" },
+    ]);
+    expect(lines.at(-1)).toBe("✗ run failed at ci-wait: checks red · https://forge.test/pr/7");
+  });
 });
