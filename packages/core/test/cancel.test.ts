@@ -18,7 +18,7 @@ function neverSettlingAgentStep(name: string) {
   });
 }
 
-describe("engine — cancellation (ADR-0008)", () => {
+describe("engine — cancellation", () => {
   test("an external abort mid-Step ends the Run with run:cancelled", async () => {
     const step = neverSettlingAgentStep("agentic");
     const harness = new FakeHarness({ blockUntilAborted: true });

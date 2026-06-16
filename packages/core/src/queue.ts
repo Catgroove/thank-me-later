@@ -1,5 +1,5 @@
 // A minimal one-producer / one-consumer async queue that backs the engine's live
-// event stream (ADR-0008). The pipeline driver `push`es RunEvents as they happen;
+// event stream. The pipeline driver `push`es RunEvents as they happen;
 // the run generator iterates. It is *pull-based*, so a slow consumer applies
 // natural backpressure on iteration — there is no callback that can outrun a TUI.
 //

@@ -1,5 +1,5 @@
 // The presenter — a pure reducer that folds the engine's fine-grained event stream
-// (ADR-0002/0008) into a `ViewState` (ADR-0011). No I/O, no clock, no ANSI: elapsed
+// into a `ViewState`. No I/O, no clock, no ANSI: elapsed
 // time and drawing are the renderers' concern. The CLI renders it now, the TUI next,
 // Adapters later — all share this fold, so they cannot drift. It mirrors the engine's
 // other reducers: a `switch (event.type)` returning a new state, never mutating input.
@@ -46,7 +46,7 @@ export function present(view: ViewState, event: RunEvent): ViewState {
         steps: event.pipeline.map((name) => ({ name, status: "pending" })),
       };
     case "step:started":
-      // Flip the step to active and reset the per-step buffers (ADR-0011).
+      // Flip the step to active and reset the per-step buffers.
       return {
         ...view,
         steps: setStatus(view.steps, event.step, "active"),
@@ -96,7 +96,7 @@ export function present(view: ViewState, event: RunEvent): ViewState {
     case "step:log":
     case "artifact:written":
     case "ask:pending":
-      // Carry no display state in v1 (ADR-0011: current-tool + coalesced prose only).
+      // Carry no display state in v1 (current-tool + coalesced prose only).
       return view;
   }
 }

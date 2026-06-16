@@ -1,5 +1,5 @@
 // Plain (non-TTY) renderer: append-only, no spinner, no cursor codes — the output
-// pipes and CI get. It is thin over `ViewState` (ADR-0011): the coalesced assistant
+// pipes and CI get. It is thin over `ViewState`: the coalesced assistant
 // text lives in `view.text` (the shared fold did the coalescing); this renderer only
 // decides *when* to flush it (at tool/step boundaries) and emits labelled lines for
 // step transitions and tool activity. One line per call to `writeLine`.

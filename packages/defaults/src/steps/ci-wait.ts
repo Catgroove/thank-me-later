@@ -1,7 +1,7 @@
 // `ci-wait` — the last Step: poll the Forge's checks for the opened PR until they settle,
 // then report each conclusion. Report-only in this release: a red check is logged, not a Run
 // failure — reacting to it (re-entry / respond-comments) is deferred work. `getChecks` is a
-// Pending the engine's `until` polls (ADR-0009); `ctx.signal` cancels the wait.
+// Pending the engine's `until` polls; `ctx.signal` cancels the wait.
 
 import { defineStep, type Step } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";

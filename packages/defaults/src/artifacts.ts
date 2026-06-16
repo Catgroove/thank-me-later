@@ -1,4 +1,4 @@
-// The typed artifacts that flow between the default pipeline's Steps (ADR-0003/0006).
+// The typed artifacts that flow between the default pipeline's Steps.
 // `branch` produces the branch name; `describe` produces the PR title + body (the title also
 // becomes the work's commit subject); `review` produces the review summary `open-pr` folds into
 // the body; `open-pr` produces the PullRequest that `ci-wait` polls.

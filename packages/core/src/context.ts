@@ -1,8 +1,8 @@
 // The Run context handed to every Step's `run`. Reads are typed to the Step's
 // declared `consumes` (the `C` tuple), so a Step can only read artifacts it
 // declared — and the engine has already guaranteed at assembly time that a
-// producer exists. Providers are the three distinct, typed domain interfaces
-// (ADR-0005); `until` is the engine-owned temporal primitive; `ask` escalates a
+// producer exists. Providers are the three distinct, typed domain interfaces;
+// `until` is the engine-owned temporal primitive; `ask` escalates a
 // decision (free-text in this release).
 
 import type { Artifact } from "./artifact.ts";
@@ -21,7 +21,7 @@ export interface Ctx<
   readonly forge: Forge;
   readonly agent: Harness;
 
-  /** Aborts when the Run is cancelled; observed by `until` and the agent (ADR-0008). */
+  /** Aborts when the Run is cancelled; observed by `until` and the agent. */
   readonly signal: AbortSignal;
 
   /** Drive an eventually-consistent Provider result to resolution. */

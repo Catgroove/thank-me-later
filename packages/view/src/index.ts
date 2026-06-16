@@ -1,7 +1,7 @@
-// @tml/view — the shared presentation layer (ADR-0011): a pure fold from core's
+// @tml/view — the shared presentation layer: a pure fold from core's
 // `RunEvent` stream into a `ViewState`, plus thin renderers that draw it. The CLI
 // renders it now, the OpenTUI TUI next, host Adapters later — all consume the *same*
-// fold, so they cannot drift. No presentation logic lives in `@tml/core` (ADR-0002);
+// fold, so they cannot drift. No presentation logic lives in `@tml/core`;
 // this package peer-depends on core and imports only its public `RunEvent`.
 
 export { initialView, present, type StepView, type ToolView, type ViewState } from "./present.ts";

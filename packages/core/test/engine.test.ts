@@ -181,7 +181,7 @@ describe("engine — flow signals, ask, and failure", () => {
   });
 });
 
-describe("engine — live emission (ADR-0008)", () => {
+describe("engine — live emission", () => {
   test("agent:progress reaches the consumer before the Step finishes", async () => {
     // The Step blocks on `gate` until the test sees an `agent:progress` event.
     // Under buffer-then-flush the consumer would never see progress (the Step is

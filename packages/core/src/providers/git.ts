@@ -1,9 +1,9 @@
-// Git — the local VCS Provider (ADR-0005). One of three distinct, typed Provider
+// Git — the local VCS Provider. One of three distinct, typed Provider
 // interfaces, deliberately not collapsed into a generic Provider.
 //
 // `createGit(cwd)` is the real implementation: it shells out to the system `git`
-// against a caller-supplied repo directory. Production binds it to the live checkout
-// (ADR-0010); tests pass a throwaway temp repo.
+// against a caller-supplied repo directory. Production binds it to the live checkout;
+// tests pass a throwaway temp repo.
 
 export interface CommitResult {
   readonly sha: string;

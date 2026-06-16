@@ -1,8 +1,8 @@
 // `branch` — the first Step: make sure the work lands on a feature branch before anything is
-// committed or pushed. tml ship runs in place (ADR-0010), so this operates on the live checkout.
+// committed or pushed. tml ship runs in place, so this operates on the live checkout.
 //
 // If you are already on a feature branch, tml ships under it. Otherwise (you're on the default
-// branch or a detached HEAD) the Branch mode decides how to get one (ADR-0012):
+// branch or a detached HEAD) the Branch mode decides how to get one:
 //   • ai      — the agent reads the diff and names the branch (the default)
 //   • auto    — synthesize a deterministic `tml/ship-<sha>` name, no agent call
 //   • require — refuse: you must already be on a feature branch
