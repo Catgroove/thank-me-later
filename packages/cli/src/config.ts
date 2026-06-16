@@ -19,28 +19,32 @@ export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<C
   assembly.tml.registerForge("github", createGitHubForge);
   assembly.tml.registerHarness("pi", createPiHarness);
 
-  // Defaults first (it seeds the pipeline), then global+project plugins patch over it.
-  const plugins: Plugin[] = [tmlDefaults, ...(await loadPlugins(loaded.pluginPaths))];
-  for (const plugin of plugins) await plugin(assembly.tml);
+  // Defaults first (it seeds the pipeline), then global+project plugins patch over it. Load and
+  // execute local plugins one-at-a-time so module evaluation and patching both follow tml.json order.
+  await tmlDefaults(assembly.tml);
+  for (const path of loaded.pluginPaths) {
+    const plugin = await loadPlugin(path);
+    try {
+      await plugin(assembly.tml);
+    } catch (error) {
+      throw new Error(`tml: plugin ${path} failed: ${errorMessage(error)}`);
+    }
+  }
 
   return assembly.build();
 }
 
-async function loadPlugins(paths: string[]): Promise<Plugin[]> {
-  return Promise.all(
-    paths.map(async (path) => {
-      let mod: { default?: unknown };
-      try {
-        mod = (await import(path)) as { default?: unknown };
-      } catch (error) {
-        throw new Error(`tml: failed to load plugin ${path}: ${errorMessage(error)}`);
-      }
-      if (typeof mod.default !== "function") {
-        throw new Error(`tml: plugin ${path} must \`export default\` a function: (tml) => { … }`);
-      }
-      return mod.default as Plugin;
-    }),
-  );
+async function loadPlugin(path: string): Promise<Plugin> {
+  let mod: { default?: unknown };
+  try {
+    mod = (await import(path)) as { default?: unknown };
+  } catch (error) {
+    throw new Error(`tml: failed to load plugin ${path}: ${errorMessage(error)}`);
+  }
+  if (typeof mod.default !== "function") {
+    throw new Error(`tml: plugin ${path} must \`export default\` a function: (tml) => { … }`);
+  }
+  return mod.default as Plugin;
 }
 
 function errorMessage(error: unknown): string {

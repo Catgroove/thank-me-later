@@ -63,6 +63,10 @@ describe("createAssembly", () => {
     a.tml.pipeline.append(step("a"), step("b"), step("c"));
     expect(a.build().pipeline.map((s) => s.name)).toEqual(["a", "c"]);
 
+    const duplicate = seeded({ disable: ["b", "b"] });
+    duplicate.tml.pipeline.append(step("a"), step("b"));
+    expect(duplicate.build().pipeline.map((s) => s.name)).toEqual(["a"]);
+
     const bad = seeded({ disable: ["ghost"] });
     bad.tml.pipeline.append(step("a"));
     expect(() => bad.build()).toThrow(AssemblyError);
