@@ -59,9 +59,21 @@ export function branchStep(mode: BranchMode = "ai"): Step {
 
       // Create a branch, off the freshly fetched default branch when the current one is spent,
       // else off the current HEAD (which, on the default branch, is already the base).
+      let fetchedBase = false;
+      const fetchBase = async (): Promise<void> => {
+        if (!spent || fetchedBase) return;
+        await ctx.git.fetch(base);
+        fetchedBase = true;
+      };
       const create = async (name: string): Promise<void> => {
         if (spent) {
-          await ctx.git.fetch(base);
+          if (name === current) {
+            throw new Error(
+              `tml ship: ${current}'s PR is spent, but the new branch name resolved to the ` +
+                "same branch. Choose a fresh branch name.",
+            );
+          }
+          await fetchBase();
           await ctx.git.createBranch(name, { from: `origin/${base}` });
         } else {
           await ctx.git.createBranch(name);
@@ -80,7 +92,8 @@ export function branchStep(mode: BranchMode = "ai"): Step {
                   "`git switch -c feat/your-change`.",
           );
         case "auto": {
-          const name = branchNameFor(await ctx.git.headSha());
+          await fetchBase();
+          const name = branchNameFor(await ctx.git.headSha(spent ? `origin/${base}` : undefined));
           await create(name);
           return { branchName: name };
         }

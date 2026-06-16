@@ -39,11 +39,12 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
   }
 
   return {
-    // Idempotency hook: list resolves the number, then reuse the snapshot.
+    // Idempotency hook: list resolves the number, then reuse the snapshot. Prefer an open PR when
+    // the same head branch has older closed/merged PRs, so callers don't mistake it for spent.
     async findPullRequest(head: string): Promise<PullRequest | null> {
       const rows = JSON.parse(await run(prListArgs(head))) as GhPrListRow[];
-      const first = rows[0];
-      return first === undefined ? null : getPullRequest(first.number);
+      const row = rows.find((r) => r.state.toUpperCase() === "OPEN") ?? rows[0];
+      return row === undefined ? null : getPullRequest(row.number);
     },
 
     async openPullRequest(input: OpenPullRequestInput): Promise<PullRequest> {

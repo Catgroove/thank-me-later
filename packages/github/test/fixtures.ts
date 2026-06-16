@@ -1,7 +1,7 @@
 // Captured `gh` JSON responses, as typed consts, so the suite is hermetic.
 //
 // Refresh against a real repo with:
-//   gh pr list --head <branch> --state all --json number
+//   gh pr list --head <branch> --state all --json number,state
 //   gh api graphql -F owner=<o> -F repo=<r> -F number=<n> -f query="$SNAPSHOT_QUERY"
 //   gh api graphql -F owner=<o> -F repo=<r> -F number=<n> -f query="$CHECKS_QUERY"
 //   gh pr create --head <branch> --base main --title t --body b   (prints the PR URL)
@@ -174,7 +174,7 @@ export const checksEmpty: GhGraphQlResponse<ChecksData> = {
 
 // --- `gh pr list` rows ----------------------------------------------------------
 
-export const prListHit: GhPrListRow[] = [{ number: 42 }];
+export const prListHit: GhPrListRow[] = [{ number: 42, state: "OPEN" }];
 export const prListEmpty: GhPrListRow[] = [];
 
 // --- `gh pr create` stdout ------------------------------------------------------

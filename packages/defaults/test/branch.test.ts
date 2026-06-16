@@ -70,19 +70,20 @@ describe("branch step", () => {
     },
   );
 
-  test("cuts a fresh branch off primary (auto mode) when the current branch's PR is merged", async () => {
+  test("cuts a fresh auto-named branch off primary when the current auto branch's PR is merged", async () => {
     const git = new FakeGit();
-    git.currentBranchName = "feat/old";
+    git.currentBranchName = "tml/ship-deadbee";
     git.defaultBranchName = "main";
     git.headShaValue = "deadbee";
+    git.headShaByRef.set("origin/main", "basebee");
     const forge = new FakeForge();
     forge.existing = prInState("merged");
     const { ctx } = fakeCtx({ git, forge });
 
     const result = await branchStep("auto").run(ctx);
 
-    expect(result).toEqual({ branchName: "tml/ship-deadbee" });
-    expect(git.calls).toEqual(["fetch main", "createBranch tml/ship-deadbee from origin/main"]);
+    expect(result).toEqual({ branchName: "tml/ship-basebee" });
+    expect(git.calls).toEqual(["fetch main", "createBranch tml/ship-basebee from origin/main"]);
   });
 
   test("require mode refuses when the current branch's PR is spent", async () => {

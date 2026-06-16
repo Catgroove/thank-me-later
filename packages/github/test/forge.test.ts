@@ -61,8 +61,27 @@ describe("findPullRequest", () => {
       "--state",
       "all",
       "--json",
-      "number",
+      "number,state",
     ]);
+  });
+
+  test("prefers an open PR when older spent PRs use the same head branch", async () => {
+    const { forge, calls } = forgeWith((args) => {
+      if (isPrList(args)) {
+        return JSON.stringify([
+          { number: 41, state: "MERGED" },
+          { number: 42, state: "OPEN" },
+        ]);
+      }
+      if (isSnapshot(args) && args.includes("number=42"))
+        return JSON.stringify(snapshotOpenResponse);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    const pr = await forge.findPullRequest("feat/x");
+
+    expect(pr?.number).toBe(42);
+    expect(calls).toHaveLength(2);
   });
 
   test("returns null when no PR exists for the head", async () => {

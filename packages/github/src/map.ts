@@ -82,9 +82,11 @@ export interface ChecksData {
   };
 }
 
-/** A row of `gh pr list --json number`. */
+/** A row of `gh pr list --json number,state`. */
 export interface GhPrListRow {
   readonly number: number;
+  /** OPEN | CLOSED | MERGED */
+  readonly state: string;
 }
 
 // --- Mappers (raw JSON → core entities) -----------------------------------------
