@@ -112,4 +112,10 @@ describe("createAssembly", () => {
     expect(a.build().pipeline.map((s) => s.name)).toEqual(["a"]);
     expect(a.build().pipeline.map((s) => s.name)).toEqual(["a"]);
   });
+
+  test("a model configured for a disabled Step is dropped with the Step", () => {
+    const a = seeded({ disable: ["b"], models: { default: "haiku", b: "opus" } });
+    a.tml.pipeline.append(step("a"), step("b"));
+    expect(a.build().models).toEqual({ default: "haiku" });
+  });
 });

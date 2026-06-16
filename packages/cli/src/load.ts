@@ -1,4 +1,4 @@
-// Locate, parse, and merge `tml.json` — the declarative config (ADR-0015). Two layers:
+// Locate, parse, and merge `tml.json` — the declarative config. Two layers:
 //   • global   — $XDG_CONFIG_HOME/tml/tml.json  (or ~/.config/tml/tml.json)
 //   • project  — <git-root>/tml.json            (walking up from cwd; falls back to cwd)
 // They deep-merge with the project winning per key; the `plugins` arrays concatenate (global
@@ -8,7 +8,7 @@
 // which is the zero-config path: `tml ship` then runs the bundled defaults unchanged.
 //
 // This module is pure IO + shape-checking; it does NOT import or run plugins (that is the
-// assembly step in `config.ts`). Remote/published plugins are deferred (ADR-0015): a non-path
+// assembly step in `config.ts`). Remote/published plugins are deferred: a non-path
 // `plugins` entry is a clear error, not an npm fetch.
 
 import { existsSync, readFileSync } from "node:fs";
@@ -115,15 +115,11 @@ function validate(data: unknown, path: string): RawConfig {
       );
     }
   }
+  assertString(obj, "$schema", path);
   assertString(obj, "harness", path);
   assertString(obj, "forge", path);
   assertString(obj, "branch", path);
-  if (
-    obj.models !== undefined &&
-    (typeof obj.models !== "object" || obj.models === null || Array.isArray(obj.models))
-  ) {
-    throw new Error(`tml: "models" in ${path} must be an object of step-name → model id.`);
-  }
+  assertModels(obj, path);
   assertStringArray(obj, "disable", path);
   assertStringArray(obj, "plugins", path);
   return obj as RawConfig;
@@ -140,6 +136,18 @@ function assertStringArray(obj: Record<string, unknown>, key: string, path: stri
   if (value === undefined) return;
   if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
     throw new Error(`tml: "${key}" in ${path} must be an array of strings.`);
+  }
+}
+
+function assertModels(obj: Record<string, unknown>, path: string): void {
+  const value = obj.models;
+  if (value === undefined) return;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`tml: "models" in ${path} must be an object of step-name → model id.`);
+  }
+  const badKey = Object.entries(value).find(([, model]) => typeof model !== "string")?.[0];
+  if (badKey !== undefined) {
+    throw new Error(`tml: "models.${badKey}" in ${path} must be a string model id.`);
   }
 }
 
