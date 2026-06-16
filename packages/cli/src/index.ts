@@ -8,12 +8,14 @@ import {
   present,
   type Renderer,
 } from "@tml/view";
-import { buildShipConfig } from "./config.ts";
+import { assembleShipConfig } from "./config.ts";
+import { loadTmlConfig } from "./load.ts";
 
 /** Seams, injected by tests; production uses the real config and engine against the checkout. */
 export interface ShipDeps {
   cwd?: string;
-  buildConfig?: (cwd: string) => Config;
+  /** Build the Config for `cwd`. Async in production (it imports local plugins). */
+  buildConfig?: (cwd: string) => Config | Promise<Config>;
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
   /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
   renderer?: Renderer;
@@ -31,7 +33,8 @@ const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 14
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
-  const buildConfig = deps.buildConfig ?? buildShipConfig;
+  const buildConfig =
+    deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
   const engineFor = deps.engineFor ?? createEngine;
   const renderer = deps.renderer ?? defaultRenderer();
 
@@ -55,7 +58,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // tml ship runs in place: the pipeline branches, commits, and pushes in the user's own checkout
   // so the Providers and `ctx.git` all bind to `cwd`.
   try {
-    const engine = engineFor(buildConfig(cwd), { cwd });
+    const engine = engineFor(await buildConfig(cwd), { cwd });
     let view = initialView;
     let failed = false;
     let cancelled = false;

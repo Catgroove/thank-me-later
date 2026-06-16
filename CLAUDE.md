@@ -43,10 +43,13 @@ bunx tml ship          # run the pipeline
 
 ## Conventions
 
-- **Code, not config.** Pipelines and plugins are TypeScript (`tml.config.ts`), never YAML.
+- **Data for knobs, code for behavior.** Config is `tml.json` (declarative: providers, models,
+  branch, disable, plugins). Pipelines and Plugins are TypeScript, authored against an injected
+  API and never importing `@tml/core`. No YAML pipeline DSL. See `docs/adr/` (ADR-0015).
 - **Keep it simple.** Lean on model capability over machinery; don't add abstractions
   (tiers, caches, generic mega-interfaces) for hypothetical needs. See `docs/adr/`.
-- **Plugins peer-depend on `@tml/core`** and import only its curated public surface.
+- **Plugins author against the injected `tml` API** (`export default (tml) => {…}`); they never
+  import `@tml/core`, and are referenced by local path from `tml.json`.
 - Steps stay mostly-pure and unit-testable; side effects go through Providers.
 - **Never reference ADRs in code.** No `ADR-NNNN` citations in source or test files (comments
   included). Code comments explain the rationale in their own words; ADRs live in `docs/adr/`

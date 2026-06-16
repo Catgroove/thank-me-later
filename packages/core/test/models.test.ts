@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { createEngine } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
-import { defineConfig, type ModelMap, type Pipeline } from "../src/pipeline.ts";
+import type { ModelMap, Pipeline } from "../src/pipeline.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
 import { FakeForge, FakeHarness } from "./fakes.ts";
@@ -24,13 +24,11 @@ async function runWith(
   models: ModelMap | undefined,
   harness: FakeHarness,
 ): Promise<RunEvent[]> {
-  const engine = createEngine(
-    defineConfig({
-      pipeline,
-      providers: { forge: new FakeForge(), agent: harness },
-      ...(models !== undefined ? { models } : {}),
-    }),
-  );
+  const engine = createEngine({
+    pipeline,
+    providers: { forge: new FakeForge(), agent: harness },
+    ...(models !== undefined ? { models } : {}),
+  });
   const events: RunEvent[] = [];
   for await (const event of engine.run()) events.push(event);
   return events;
@@ -78,12 +76,11 @@ describe("model selection — the resolution cascade", () => {
 });
 
 describe("model selection — assembly-time validation", () => {
-  const cfg = (pipeline: Pipeline, models: ModelMap) =>
-    defineConfig({
-      pipeline,
-      providers: { forge: new FakeForge(), agent: new FakeHarness() },
-      models,
-    });
+  const cfg = (pipeline: Pipeline, models: ModelMap) => ({
+    pipeline,
+    providers: { forge: new FakeForge(), agent: new FakeHarness() },
+    models,
+  });
 
   test("a models key matching no Step throws AssemblyError before the stream starts", () => {
     expect(() => createEngine(cfg([agentStep("review")], { typo: "opus" }))).toThrow(AssemblyError);
@@ -136,13 +133,11 @@ describe("model selection — run-start value validation (gated on listModels)",
         return Promise.resolve({ ok: true, summary: "done" });
       },
     };
-    const engine = createEngine(
-      defineConfig({
-        pipeline: [agentStep("review")],
-        providers: { forge: new FakeForge(), agent: harness },
-        models: { review: "anything-goes" },
-      }),
-    );
+    const engine = createEngine({
+      pipeline: [agentStep("review")],
+      providers: { forge: new FakeForge(), agent: harness },
+      models: { review: "anything-goes" },
+    });
     const events: RunEvent[] = [];
     for await (const event of engine.run()) events.push(event);
     expect(events.at(-1)?.type).toBe("run:finished");

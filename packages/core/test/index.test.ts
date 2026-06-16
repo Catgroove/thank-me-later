@@ -8,8 +8,7 @@ describe("public surface (@tml/core)", () => {
     const fns = [
       "defineArtifact",
       "defineStep",
-      "definePlugin",
-      "defineConfig",
+      "createAssembly",
       "createEngine",
       "createGit",
       "until",

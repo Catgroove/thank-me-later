@@ -1,8 +1,26 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Config, Engine, RunEvent } from "@tml/core";
 import { createPlainRenderer, type Renderer } from "@tml/view";
-import { buildShipConfig } from "../src/config.ts";
+import { assembleShipConfig } from "../src/config.ts";
+import type { Loaded } from "../src/load.ts";
 import { ship } from "../src/index.ts";
+
+const tempDirs: string[] = [];
+function pluginFile(source: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "tml-ship-"));
+  tempDirs.push(dir);
+  const path = join(dir, "plugin.ts");
+  writeFileSync(path, source);
+  return path;
+}
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+const NO_CONFIG: Loaded = { selection: {}, pluginPaths: [] };
 
 const ENTRY = new URL("../src/index.ts", import.meta.url).pathname;
 
@@ -34,9 +52,9 @@ describe("tml CLI", () => {
   });
 });
 
-describe("buildShipConfig", () => {
-  test("pairs the default pipeline (ai branch mode) with the GitHub Forge + pi Harness", () => {
-    const config = buildShipConfig("/repo");
+describe("assembleShipConfig", () => {
+  test("zero-config: the default pipeline with the GitHub Forge + pi Harness", async () => {
+    const config = await assembleShipConfig("/repo", NO_CONFIG);
 
     expect(config.pipeline.map((s) => s.name)).toEqual([
       "branch",
@@ -54,6 +72,36 @@ describe("buildShipConfig", () => {
     ]);
     expect(typeof config.providers.forge.openPullRequest).toBe("function");
     expect(typeof config.providers.agent.run).toBe("function");
+    expect(config.models).toBeUndefined();
+  });
+
+  test("honors tml.json selection: disable drops a step, models flows through", async () => {
+    const config = await assembleShipConfig("/repo", {
+      selection: { disable: ["typecheck"], models: { review: "opus" } },
+      pluginPaths: [],
+    });
+    expect(config.pipeline.map((s) => s.name)).not.toContain("typecheck");
+    expect(config.pipeline.map((s) => s.name)).toContain("lint");
+    expect(config.models).toEqual({ review: "opus" });
+  });
+
+  test("loads a local plugin by path and applies its pipeline patch", async () => {
+    const path = pluginFile(
+      `export default (tml) => {
+         tml.pipeline.insertAfter("review", tml.defineStep({ name: "deep-review", run: () => Promise.resolve({}) }));
+       };`,
+    );
+    const config = await assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] });
+    const names = config.pipeline.map((s) => s.name);
+    expect(names).toContain("deep-review");
+    expect(names.indexOf("deep-review")).toBe(names.indexOf("review") + 1);
+  });
+
+  test("rejects a plugin whose default export is not a function", async () => {
+    const path = pluginFile(`export default 42;`);
+    expect(assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] })).rejects.toThrow(
+      /must .export default. a function/,
+    );
   });
 });
 
