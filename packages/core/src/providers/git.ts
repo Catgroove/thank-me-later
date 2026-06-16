@@ -21,7 +21,14 @@ export interface Git {
   defaultBranch(): Promise<string>;
   /** The abbreviated SHA of the current `HEAD` commit (for deriving branch names). */
   headSha(): Promise<string>;
-  createBranch(name: string): Promise<void>;
+  /** Fetch `branch` from `origin`, updating its remote-tracking ref. */
+  fetch(branch: string): Promise<void>;
+  /**
+   * Create and check out a new branch. Without `from`, it branches off the current `HEAD`;
+   * with `from` (e.g. `origin/main`), it branches off that start point without inheriting its
+   * upstream. Either way the uncommitted work is carried onto the new branch.
+   */
+  createBranch(name: string, opts?: { from?: string }): Promise<void>;
   checkout(name: string): Promise<void>;
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
@@ -74,8 +81,15 @@ export function createGit(cwd: string): Git {
       return (await git(cwd, ["rev-parse", "--short", "HEAD"])).trim();
     },
 
-    async createBranch(name) {
-      await git(cwd, ["checkout", "-b", name]);
+    async fetch(branch) {
+      await git(cwd, ["fetch", "origin", branch]);
+    },
+
+    async createBranch(name, opts) {
+      // `--no-track` keeps the new branch from adopting the start point's upstream (e.g. we don't
+      // want a branch cut off `origin/main` to track `origin/main`); `open-pr` sets the upstream.
+      const startPoint = opts?.from ? ["--no-track", opts.from] : [];
+      await git(cwd, ["checkout", "-b", name, ...startPoint]);
     },
 
     async checkout(name) {

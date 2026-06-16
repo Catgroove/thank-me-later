@@ -154,17 +154,26 @@ Abort is an *outside* interrupt (a person hits Ctrl-C), whereas `cancel()` is an
 _Avoid_: Cancel (reserve for the Flow signal), kill, interrupt, stop
 
 **Ship branch**:
-The feature branch tml ships the work on. If you're already on a feature branch, that's the Ship
-branch. Otherwise the Branch mode produces one, and the Pipeline commits and pushes it from your
-checkout (tml runs in place — ADR-0010). The PR opens with the Ship branch as its head and the
-repo's default branch as its base.
+The feature branch tml ships the work on. If you're already on a feature branch that isn't spent,
+that's the Ship branch. Otherwise (the default branch, a detached `HEAD`, or a spent branch) the
+Branch mode produces one, and the Pipeline commits and pushes it from your checkout (tml runs in
+place — ADR-0010). The PR opens with the Ship branch as its head and the repo's default branch as
+its base.
 _Avoid_: Feature branch (too generic), ship-<sha> (only the `auto` mode's name shape)
 
+**Spent branch**:
+A feature branch whose PR has already merged or closed — so it's the wrong place for new work
+(you stayed on it instead of switching back to the default branch). The `branch` Step detects this
+by asking the Forge for the branch's PR state (a squash-merge never makes the feature commits
+ancestors of the default branch, so git alone can't tell), then cuts a fresh Ship branch off the
+freshly fetched default branch.
+_Avoid_: Stale branch, dead branch, merged branch (only one of the spent states)
+
 **Branch mode**:
-How the `branch` Step gets a Ship branch when you aren't on a feature branch (ADR-0012): `ai`
-(the default — the agent names it from the diff), `auto` (a deterministic `tml/ship-<sha>`), or
-`require` (refuse; you must already be on one). Selectable per pipeline; the Step is swappable for
-a custom policy.
+How the `branch` Step gets a Ship branch when you aren't on a usable feature branch (ADR-0012):
+`ai` (the default — the agent names it from the diff), `auto` (a deterministic `tml/ship-<sha>`),
+or `require` (refuse; you must already be on one). Selectable per pipeline; the Step is swappable
+for a custom policy.
 _Avoid_: Branch strategy, naming scheme
 
 **Commit group**:

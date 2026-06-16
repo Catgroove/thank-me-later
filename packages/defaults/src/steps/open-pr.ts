@@ -1,7 +1,8 @@
 // `open-pr` — push the branch and open the PR. The work and the fixes were already committed by the
 // commit Steps before this point, so `open-pr` no longer commits; it pushes what's there and opens
-// the PR. Idempotent: if a PR already exists for this head branch, reuse it and skip the
-// open, so a re-run never double-opens. The title + body come from `describe`; the review summary is
+// the PR. Idempotent: if an open PR already exists for this head branch, reuse it and skip the
+// open, so a re-run never double-opens (a merged/closed PR is spent — open a fresh one). The title
+// + body come from `describe`; the review summary is
 // folded into the body here. The base is the repo's default branch.
 
 import { defineStep, type Step } from "@tml/core";
@@ -25,8 +26,9 @@ export function openPrStep(): Step {
       // already-open PR instead of silently leaving those commits only in the checkout.
       await ctx.git.push({ branch: head }); // push the feature branch we ship under
 
+      // Reuse only an open PR. A merged/closed PR for this head is spent — open a fresh one.
       const existing = await ctx.forge.findPullRequest(head);
-      if (existing) return { pullRequest: existing };
+      if (existing && existing.state === "open") return { pullRequest: existing };
 
       const base = await ctx.git.defaultBranch();
       const title = ctx.read(prTitle);

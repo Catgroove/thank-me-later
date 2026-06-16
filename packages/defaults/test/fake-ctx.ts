@@ -38,8 +38,12 @@ export class FakeGit implements Git {
   headSha(): Promise<string> {
     return Promise.resolve(this.headShaValue);
   }
-  createBranch(name: string): Promise<void> {
-    this.calls.push(`createBranch ${name}`);
+  fetch(branch: string): Promise<void> {
+    this.calls.push(`fetch ${branch}`);
+    return Promise.resolve();
+  }
+  createBranch(name: string, opts?: { from?: string }): Promise<void> {
+    this.calls.push(opts?.from ? `createBranch ${name} from ${opts.from}` : `createBranch ${name}`);
     return Promise.resolve();
   }
   checkout(name: string): Promise<void> {
