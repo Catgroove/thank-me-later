@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createEngine } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
-import { defineConfig } from "../src/pipeline.ts";
 import { defineStep } from "../src/step.ts";
 import { FakeForge, FakeHarness } from "./fakes.ts";
 
@@ -24,10 +23,10 @@ describe("engine — cancellation", () => {
     const harness = new FakeHarness({ blockUntilAborted: true });
     const controller = new AbortController();
     const engine = createEngine(
-      defineConfig({
+      {
         pipeline: [step, neverSettlingAgentStep("after")],
         providers: { forge: new FakeForge(), agent: harness },
-      }),
+      },
       { signal: controller.signal },
     );
 
@@ -47,9 +46,10 @@ describe("engine — cancellation", () => {
   test("abandoning the generator (break) aborts the in-flight agent", async () => {
     const step = neverSettlingAgentStep("agentic");
     const harness = new FakeHarness({ blockUntilAborted: true });
-    const engine = createEngine(
-      defineConfig({ pipeline: [step], providers: { forge: new FakeForge(), agent: harness } }),
-    );
+    const engine = createEngine({
+      pipeline: [step],
+      providers: { forge: new FakeForge(), agent: harness },
+    });
 
     for await (const event of engine.run()) {
       if (event.type === "step:started") break; // breaking calls generator.return()

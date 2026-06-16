@@ -1,12 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { validatePipeline } from "@tml/core";
+import { createAssembly, type Forge, type Harness, type Step, validatePipeline } from "@tml/core";
 import { tmlDefaults } from "../src/plugin.ts";
 
+// Run the default Plugin over a real assembly (with stand-in providers seeded, as the host does)
+// and read back the assembled pipeline.
+function assemble(branch?: string): Step[] {
+  const a = createAssembly(branch !== undefined ? { branch } : {}, "/repo");
+  a.tml.registerForge("github", () => ({}) as unknown as Forge);
+  a.tml.registerHarness("pi", () => ({}) as unknown as Harness);
+  void tmlDefaults(a.tml);
+  return a.build().pipeline;
+}
+
 describe("tmlDefaults plugin", () => {
-  test("assembles the Steps in pipeline order, with commits interleaved", () => {
-    const plugin = tmlDefaults();
-    expect(plugin.name).toBe("@tml/defaults");
-    expect(plugin.steps?.map((s) => s.name)).toEqual([
+  test("appends the Steps in pipeline order, with commits interleaved", () => {
+    expect(assemble().map((s) => s.name)).toEqual([
       "branch",
       "describe",
       "commit-change",
@@ -23,6 +31,12 @@ describe("tmlDefaults plugin", () => {
   });
 
   test("the assembled pipeline passes assembly validation (every consumed artifact has a producer)", () => {
-    expect(() => validatePipeline(tmlDefaults().steps ?? [])).not.toThrow();
+    expect(() => validatePipeline(assemble())).not.toThrow();
+  });
+
+  test("the branch knob selects the Branch mode; an invalid value is rejected", () => {
+    expect(() => assemble("require")).not.toThrow();
+    expect(() => assemble("auto")).not.toThrow();
+    expect(() => assemble("nonsense")).toThrow(/branch/);
   });
 });

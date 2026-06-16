@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { defineArtifact } from "../src/artifact.ts";
 import { createEngine, type Engine, NotImplementedError } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
-import { defineConfig, type Pipeline } from "../src/pipeline.ts";
+import type { Pipeline } from "../src/pipeline.ts";
 import { cancel, goto, retry, skip } from "../src/signals.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
@@ -13,7 +13,7 @@ const derived = defineArtifact<number>()("derived");
 
 function engineFor(pipeline: Pipeline, ask?: (p: string) => Promise<string>): Engine {
   return createEngine(
-    defineConfig({ pipeline, providers: { forge: new FakeForge(), agent: new FakeHarness() } }),
+    { pipeline, providers: { forge: new FakeForge(), agent: new FakeHarness() } },
     ask ? { ask } : {},
   );
 }
@@ -204,9 +204,10 @@ describe("engine — live emission", () => {
     const harness = new FakeHarness({
       progress: [{ kind: "text", text: "thinking…" }],
     });
-    const engine = createEngine(
-      defineConfig({ pipeline: [agentic], providers: { forge: new FakeForge(), agent: harness } }),
-    );
+    const engine = createEngine({
+      pipeline: [agentic],
+      providers: { forge: new FakeForge(), agent: harness },
+    });
 
     const events: RunEvent[] = [];
     for await (const event of engine.run()) {
