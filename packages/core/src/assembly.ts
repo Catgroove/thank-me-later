@@ -125,7 +125,7 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
       const out = [...steps];
 
       // `disable` is the ONLY pipeline mutation JSON can cause; an unknown name is an error.
-      for (const name of selection.disable ?? []) {
+      for (const name of new Set(selection.disable ?? [])) {
         const i = out.findIndex((s) => s.name === name);
         if (i < 0) {
           throw new AssemblyError(

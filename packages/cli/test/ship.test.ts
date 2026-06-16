@@ -99,9 +99,26 @@ describe("assembleShipConfig", () => {
 
   test("rejects a plugin whose default export is not a function", async () => {
     const path = pluginFile(`export default 42;`);
-    expect(assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] })).rejects.toThrow(
-      /must .export default. a function/,
-    );
+    try {
+      await assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] });
+      throw new Error("assembleShipConfig unexpectedly resolved");
+    } catch (error) {
+      expect(error instanceof Error ? error.message : String(error)).toMatch(
+        /must `export default` a function/,
+      );
+    }
+  });
+
+  test("names the plugin path when a plugin throws while patching", async () => {
+    const path = pluginFile(`export default () => { throw new Error("boom"); };`);
+    try {
+      await assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] });
+      throw new Error("assembleShipConfig unexpectedly resolved");
+    } catch (error) {
+      expect(error instanceof Error ? error.message : String(error)).toMatch(
+        new RegExp(`${path.replace(/[/\\]/g, ".")}.*boom`),
+      );
+    }
   });
 });
 
