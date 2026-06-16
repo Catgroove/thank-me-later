@@ -1,36 +1,35 @@
-// TTY renderer: a scroll-safe live region over `ViewState`. Each step opens
-// with a `▸ <name>` header; its activity commits to scrollback underneath it as it happens
-// — coalesced prose and one `⚙ <tool> · <detail>` line per command — and the step closes
-// with `✓ <name>  (<elapsed>)`. The fold stays pure and clockless; this owns the clock and
-// ANSI. The layout mirrors the plain renderer's, so both modes read alike.
+// TTY renderer: a scroll-safe live region over `ViewState`, results-forward by default.
 //
-// The hard rule that keeps this correct under `tmux` scroll and terminal resize: the only
-// mutable surface is the *single bottom line* the cursor sits on. We never move the cursor
-// up (`\x1b[A`). A live region that floats above committed content needs relative cursor
-// movement, and that math desyncs the instant the viewport scrolls under us (the cursor is
-// our only position reference) — which smears spinner frames into scrollback. So instead:
-//   1. Permanent lines are *appended* (`<line>\n`) and scroll into history untouched, the
-//      way any normal program's output does — inherently scroll- and resize-safe.
-//   2. The live line is rewritten in place with `\r` (column 0) + `\x1b[2K` (clear *that*
-//      line) only — no vertical movement, so scrolling can't desync it.
-//   3. Streaming prose can't live in a multi-line floating region, so it rides the live
-//      line: completed wrapped lines seal into scrollback as they fill (greedy wrap makes
-//      every line but the last final), and only the volatile last line stays live, with the
-//      spinner trailing it. When there's no pending prose the live line is a bare spinner.
+// Quiet mode (the default) separates signal from noise. While a step runs, its agent chatter,
+// tool calls, and log lines ride the *transient* live line — a spinner + the active step name +
+// whatever is happening right now — and are then discarded. Only durable content seals into
+// scrollback: each step's result line (`✓ <step>  <artifact>  (<elapsed>)`), an end-of-run
+// results block (the narrative artifacts + the PR URL), and — on failure — the failing step's
+// retained trail so the user can see what broke. Verbose mode (`--verbose`) instead seals the
+// full trail as it happens (a `▸ <step>` header, prose, `⚙` tool lines, `· log` lines), which is
+// what every run used to do.
+//
+// The hard rule that keeps this correct under `tmux` scroll and terminal resize: the only mutable
+// surface is the *single bottom line* the cursor sits on. We never move the cursor up (`\x1b[A`).
+// A live region that floats above committed content needs relative cursor movement, and that math
+// desyncs the instant the viewport scrolls under us — smearing frames into scrollback. So instead:
+//   1. Permanent lines are *appended* (`<line>\n`) and scroll into history untouched, the way any
+//      normal program's output does — inherently scroll- and resize-safe.
+//   2. The live line is rewritten in place with `\r` (column 0) + `\x1b[2K` (clear *that* line)
+//      only — no vertical movement, so scrolling can't desync it.
+//   3. Quiet mode never seals mid-stream, so the live line is the sole churn. Verbose mode seals
+//      completed wrapped prose lines as they fill (greedy wrap makes every line but the last
+//      final) and keeps only the volatile last line live, with the spinner trailing it.
 //   4. Every frame is wrapped in synchronized output (DEC 2026, `?2026h`/`l`) so it paints
 //      atomically; the cursor is hidden while a live line is up and shown on close.
 //
-// This trades away the original separate spinner-on-its-own-line below streaming prose: a
-// multi-line live region needs vertical movement (or opentui's native scroll-region/footer
-// machinery), which we don't want here. The one residual rough edge is a terminal *resize*
-// mid-stream: already-committed lines stay wrapped at the old width (cosmetic), and the
-// in-flight prose run may re-wrap — never a cursor smear, just a possible reflow seam.
-//
-// `ship()` only constructs this when `process.stdout.isTTY`; a spinner never reaches a
-// non-TTY. A dumb terminal (no `TERM`) still gets the ASCII glyph set.
+// Color (dim for transient/structural lines, bold/green/red/cyan for results and outcomes) is an
+// SGR overlay gated on `color`; `clip` measures visible width so codes never break the single-line
+// math. `ship()` only constructs this when `process.stdout.isTTY`; a dumb terminal (no `TERM`)
+// still gets the ASCII glyph set and no color.
 
 import type { RunEvent } from "@tml/core";
-import type { ViewState } from "./present.ts";
+import type { StepView, ViewState } from "./present.ts";
 import type { Renderer } from "./renderer.ts";
 
 const SYNC_ON = "\x1b[?2026h";
@@ -49,6 +48,7 @@ interface Glyphs {
   readonly failed: string;
   readonly skipped: string;
   readonly tool: string;
+  readonly rule: string;
 }
 const UNICODE: Glyphs = {
   frames: BRAILLE,
@@ -57,6 +57,7 @@ const UNICODE: Glyphs = {
   failed: "✗",
   skipped: "⤼",
   tool: "⚙",
+  rule: "─",
 };
 const DUMB: Glyphs = {
   frames: ASCII,
@@ -65,6 +66,7 @@ const DUMB: Glyphs = {
   failed: "[x]",
   skipped: "[-]",
   tool: "*",
+  rule: "-",
 };
 
 export interface CliRendererOptions {
@@ -74,38 +76,107 @@ export interface CliRendererOptions {
   readonly now?: () => number;
   /** Spinner animation interval in ms; 0 disables the timer (tests). */
   readonly intervalMs?: number;
+  /** Seal the full per-step trail instead of discarding it (the `--verbose` flag). */
+  readonly verbose?: boolean;
+  /** ANSI color/hierarchy; defaults to on for a real, color-capable TTY. */
+  readonly color?: boolean;
 }
 
 const MAX_WIDTH = 100;
-const STEP_INDENT = "  "; // step headers / results
-const BODY_INDENT = "    "; // a step's commands and prose
+const STEP_INDENT = "  "; // step headers / results / the results block
+const BODY_INDENT = "    "; // a step's commands, prose, and failure dump
+const LABEL_WIDTH = 8; // the results block's left label gutter
 const SPINNER_RESERVE = 2; // room the trailing " <spinner>" needs on the live line
+const RESULTS_HEAD = "results "; // after the two leading rule glyphs
+const INLINE_MAX = 56; // a longer (or multi-line) artifact is narrative — it goes to the block
+
+/** A long or multi-line artifact reads as narrative: shown in the results block, not inline. */
+function isNarrative(rendered: string): boolean {
+  return rendered.includes("\n") || rendered.length > INLINE_MAX;
+}
+
+const ESC = "\x1b";
+
+// Length of the SGR escape sequence (`ESC [ … m`) starting at `i`, or 0 if none does. Used to
+// step over zero-width color codes when measuring/truncating by visible columns — a manual scan
+// instead of a regex, which can't carry a control character.
+function sgrAt(line: string, i: number): number {
+  if (line[i] !== ESC || line[i + 1] !== "[") return 0;
+  let j = i + 2;
+  while (j < line.length && line[j] !== "m") {
+    const c = line[j] ?? "";
+    if (c !== ";" && (c < "0" || c > "9")) return 0; // not an SGR sequence after all
+    j += 1;
+  }
+  return j < line.length ? j - i + 1 : 0; // include the trailing `m`
+}
 
 export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   const write = options.write ?? ((chunk: string) => void process.stdout.write(chunk));
   const now = options.now ?? (() => Date.now());
   const intervalMs = options.intervalMs ?? 80;
   const term = options.term ?? process.env.TERM;
-  const glyphs = term === "dumb" ? DUMB : UNICODE;
+  const dumb = term === undefined || term === "" || term === "dumb";
+  const glyphs = dumb ? DUMB : UNICODE;
+  const verbose = options.verbose ?? false;
+  const color =
+    options.color ?? (!dumb && process.env.NO_COLOR === undefined && !!process.stdout.isTTY);
   const termColumns = (): number => options.columns ?? process.stdout.columns ?? 80;
+
+  // SGR helpers — identities when color is off, so plain output (and tests) is untouched.
+  const sgr = (codes: string, s: string): string => (color ? `\x1b[${codes}m${s}\x1b[0m` : s);
+  const dim = (s: string): string => sgr("2", s);
+  const bold = (s: string): string => sgr("1", s);
+  const red = (s: string): string => sgr("31", s);
+  const green = (s: string): string => sgr("32", s);
+  const cyan = (s: string): string => sgr("36", s);
 
   // The single live line currently on screen — the cursor sits on it. "" means none.
   let lastLive = "";
-  // Absolute offset into the active step's `view.text` up to which prose has sealed into
-  // scrollback. The still-live tail is rewrapped from here, so terminal resizes can only
-  // affect uncommitted text; already-sealed text is never recomputed or duplicated.
+  // Verbose-only: absolute offset into the active step's `view.text` up to which prose has sealed
+  // into scrollback. The still-live tail is rewrapped from here, so a resize only affects
+  // uncommitted text. Quiet mode never seals prose, so this stays 0.
   let proseCommittedLen = 0;
   let frame = 0;
   let stepStart: number | undefined;
-  let anyStep = false; // a blank line separates each step from the previous one
+  let anyStep = false; // verbose: a blank line separates each step's header from the previous one
   let lastView: ViewState | undefined;
   let cursorHidden = false;
   let timer: ReturnType<typeof setInterval> | undefined;
 
-  /** Truncate to the terminal width so a line can't soft-wrap and break the single-line math. */
+  function visibleLen(line: string): number {
+    let n = 0;
+    for (let i = 0; i < line.length; ) {
+      const len = sgrAt(line, i);
+      if (len > 0) i += len;
+      else {
+        n += 1;
+        i += 1;
+      }
+    }
+    return n;
+  }
+
+  /** Truncate to the terminal's visible width (ignoring SGR codes) so a line can't soft-wrap. */
   function clip(line: string): string {
     const width = termColumns();
-    return line.length > width ? line.slice(0, width) : line;
+    if (visibleLen(line) <= width) return line;
+    let out = "";
+    let shown = 0;
+    for (let i = 0; i < line.length; ) {
+      const len = sgrAt(line, i);
+      if (len > 0) {
+        out += line.slice(i, i + len);
+        i += len;
+        continue;
+      }
+      if (shown >= width) break;
+      out += line[i];
+      shown += 1;
+      i += 1;
+    }
+    if (out.includes(ESC)) out += `${ESC}[0m`; // close any SGR left open by truncation
+    return out;
   }
 
   /** Content width for prose, leaving room for the indent and the trailing spinner. */
@@ -120,8 +191,8 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   }
 
   /**
-   * Wrap prose on spaces while keeping source offsets for each rendered line. Offsets let us
-   * seal completed lines by character position instead of by wrapped-line count, so a resize
+   * Wrap prose on spaces while keeping source offsets for each rendered line. Offsets let verbose
+   * mode seal completed lines by character position instead of by wrapped-line count, so a resize
    * cannot make future rewraps skip or duplicate prose that was already committed.
    */
   function wrapWithOffsets(text: string, width: number, indent: string, base = 0): WrappedLine[] {
@@ -151,7 +222,12 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
     return lines;
   }
 
-  /** The not-yet-sealed prose tail wrapped to the current body width. */
+  /** Wrap `text` to `width`, returning the bare wrapped segments (no indent). */
+  function wrap(text: string, width: number): string[] {
+    return wrapWithOffsets(text, width, "").map((entry) => entry.line);
+  }
+
+  /** Verbose: the not-yet-sealed prose tail wrapped to the current body width. */
   function pendingProse(view: ViewState): WrappedLine[] {
     return wrapWithOffsets(
       view.text.slice(proseCommittedLen),
@@ -161,27 +237,44 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
     );
   }
 
-  /** Mark all currently pending prose as committed (used at hard boundaries). */
+  /** Verbose: mark all currently pending prose as committed (used at hard boundaries). */
   function commitPendingProse(view: ViewState): string[] {
-    const pending = pendingProse(view).map((entry) => entry.line);
+    const pending = pendingProse(view).map((entry) => dim(entry.line));
     proseCommittedLen = view.text.length;
     return pending;
   }
 
-  /** The single live line for `view`: the volatile last prose line + spinner, or a bare spinner. */
+  /** The current activity for the quiet live line: the tool, else the prose tail, else the log. */
+  function activityTail(view: ViewState): string {
+    if (view.tool !== undefined) {
+      const { name, detail } = view.tool;
+      return `${glyphs.tool} ${name}${detail !== undefined ? ` · ${detail}` : ""}`;
+    }
+    const prose = view.text
+      .split("\n")
+      .map((segment) => segment.trim())
+      .filter((segment) => segment !== "");
+    return prose.at(-1) ?? view.logs.at(-1) ?? "";
+  }
+
+  /** The single live line for `view` — the active step + its current activity, with a spinner. */
   function liveLine(view: ViewState): string {
     if (view.status !== "running" || view.activeStep === undefined) return "";
     const spinner = glyphs.frames[frame % glyphs.frames.length];
-    const wrapped = pendingProse(view);
-    const tail = wrapped.length > 0 ? (wrapped[wrapped.length - 1]?.line ?? "") : "";
-    return clip(tail === "" ? `${BODY_INDENT}${spinner}` : `${tail} ${spinner}`);
+    if (verbose) {
+      const wrapped = pendingProse(view);
+      const tail = wrapped.length > 0 ? (wrapped[wrapped.length - 1]?.line ?? "") : "";
+      return clip(tail === "" ? `${BODY_INDENT}${spinner}` : `${tail} ${spinner}`);
+    }
+    const head = `${STEP_INDENT}${spinner} ${view.activeStep}`;
+    const activity = activityTail(view);
+    return clip(activity === "" ? head : `${head}  ${dim(activity)}`);
   }
 
   /**
-   * Append `permanent` lines to scrollback (a header, sealed prose, a command, a result), then
-   * redraw the single live line — one atomic sync'd write. The live line is wiped with `\r` +
-   * clear-line and rewritten in place; permanent lines reuse that row and scroll up with `\n`.
-   * No vertical cursor movement, so tmux scroll / resize can't desync us.
+   * Append `permanent` lines to scrollback, then redraw the single live line — one atomic sync'd
+   * write. The live line is wiped with `\r` + clear-line and rewritten in place; permanent lines
+   * reuse that row and scroll up with `\n`. No vertical cursor movement.
    */
   function paint(permanent: string[], live: string): void {
     if (permanent.length === 0 && live === lastLive) return; // nothing changed
@@ -198,7 +291,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
     lastLive = live;
   }
 
-  /** Redraw just the live line (spinner tick / streaming text); skips when unchanged. */
+  /** Redraw just the live line (spinner tick / streaming activity); skips when unchanged. */
   function paintLive(view: ViewState): void {
     lastView = view;
     paint([], liveLine(view));
@@ -208,6 +301,55 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
     if (stepStart === undefined) return "";
     const secs = Math.max(0, Math.round((now() - stepStart) / 1000));
     return `  (${secs}s)`;
+  }
+
+  /** A step's sealed result line: a short artifact inline, dimmed when the step produced none. */
+  function stepResult(view: ViewState, name: string): string {
+    const rendered = view.steps.find((step) => step.name === name)?.rendered;
+    if (rendered === undefined) {
+      // No artifact (a check, a commit) — structural, so de-emphasize it.
+      return dim(`${STEP_INDENT}${glyphs.done} ${name}${elapsed()}`);
+    }
+    // Narrative artifacts go to the results block in full; only short ones read inline here.
+    const inline = isNarrative(rendered) ? "" : `  ${rendered}`;
+    return `${STEP_INDENT}${green(glyphs.done)} ${name}${inline}${dim(elapsed())}`;
+  }
+
+  /** The end-of-run results block: narrative artifacts (in full) + the PR URL. */
+  function resultsBlock(view: ViewState): string[] {
+    const narrative = view.steps.filter(
+      (step): step is StepView & { rendered: string } =>
+        step.rendered !== undefined && isNarrative(step.rendered),
+    );
+    if (narrative.length === 0 && view.prUrl === undefined) return [];
+    const lines: string[] = [];
+    const head = `${glyphs.rule}${glyphs.rule} ${RESULTS_HEAD}`;
+    const fill = Math.max(0, Math.min(termColumns(), MAX_WIDTH) - STEP_INDENT.length - head.length);
+    lines.push(dim(`${STEP_INDENT}${head}${glyphs.rule.repeat(fill)}`));
+    const labelWidth = Math.max(
+      LABEL_WIDTH,
+      ...narrative.map((step) => step.name.length + 2),
+      view.prUrl !== undefined ? "pr".length + 2 : 0,
+    );
+    const gutter = STEP_INDENT.length + labelWidth;
+    const cont = " ".repeat(gutter);
+    const width = Math.max(1, Math.min(termColumns(), MAX_WIDTH) - gutter);
+    for (const step of narrative) {
+      const label = `${STEP_INDENT}${step.name.padEnd(labelWidth)}`;
+      wrap(step.rendered, width).forEach((segment, i) =>
+        lines.push((i === 0 ? label : cont) + segment),
+      );
+    }
+    if (view.prUrl !== undefined)
+      lines.push(`${STEP_INDENT}${"pr".padEnd(labelWidth)}${cyan(view.prUrl)}`);
+    return lines;
+  }
+
+  /** Quiet: the failing step's retained prose + logs, dimmed, dumped so the user sees the cause. */
+  function failureDump(view: ViewState): string[] {
+    const lines = wrap(view.text, wrapWidth()).map((segment) => dim(`${BODY_INDENT}${segment}`));
+    for (const log of view.logs) lines.push(dim(`${BODY_INDENT}· ${log}`));
+    return lines;
   }
 
   function showCursor(): void {
@@ -243,41 +385,54 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   return {
     render(view: ViewState, event: RunEvent): void {
       lastView = view;
-      // The PR link, appended to whichever run-end line we emit so it survives the CI wait.
-      const prSuffix = view.prUrl ? ` · ${view.prUrl}` : "";
+      // The PR link, appended to a cancelled/failed run-end line (those have no results block).
+      const prSuffix = view.prUrl !== undefined ? ` · ${cyan(view.prUrl)}` : "";
+      // Verbose seals the prose tail at every hard boundary; quiet discarded it as it streamed.
+      const sealed = (): string[] => (verbose ? commitPendingProse(view) : []);
       switch (event.type) {
-        case "run:started":
-          paint(
-            ["▶ pipeline", ...event.pipeline.map((step) => `${STEP_INDENT}${step}`)],
-            liveLine(view),
-          );
+        case "run:started": {
+          const header = bold("▶ ship");
+          // Verbose lists the pipeline upfront; quiet lets each step announce itself live.
+          const permanent = verbose
+            ? [header, ...event.pipeline.map((step) => `${STEP_INDENT}${step}`)]
+            : [header];
+          paint(permanent, liveLine(view));
           return;
+        }
         case "step:started": {
           stepStart = now();
           proseCommittedLen = 0;
-          const header = `${STEP_INDENT}${glyphs.started} ${event.step}`;
-          paint(anyStep ? ["", header] : [header], liveLine(view));
-          anyStep = true;
+          if (verbose) {
+            const header = `${STEP_INDENT}${glyphs.started} ${event.step}`;
+            paint(anyStep ? ["", header] : [header], liveLine(view));
+            anyStep = true;
+          } else {
+            paintLive(view); // the live line now shows the new active step
+          }
           return;
         }
         case "agent:progress": {
+          if (!verbose) {
+            paintLive(view); // chatter and tools ride the transient live line
+            return;
+          }
           if (event.progress.kind === "tool" && event.progress.phase === "start") {
-            // Commit any prose that preceded the command (incl. the volatile last line, now
-            // final) plus the ⚙ line, then start a fresh prose run past this text — the agent
-            // may keep talking, and a new run keeps wrapping independent of committed lines.
+            // Commit any prose that preceded the command (incl. the volatile last line, now final)
+            // plus the ⚙ line, then start a fresh prose run past this text.
             const { name, detail } = event.progress;
             const remaining = commitPendingProse(view);
-            const toolLine = `${BODY_INDENT}${glyphs.tool} ${name}${detail ? ` · ${detail}` : ""}`;
+            const toolLine = dim(
+              `${BODY_INDENT}${glyphs.tool} ${name}${detail !== undefined ? ` · ${detail}` : ""}`,
+            );
             paint([...remaining, toolLine], liveLine(view));
           } else if (event.progress.kind === "text") {
-            // Greedy wrap makes every line but the last final: seal those into scrollback and
-            // keep the last one live. Most deltas only grow the last line → just repaint it.
+            // Greedy wrap makes every line but the last final: seal those, keep the last one live.
             const wrapped = pendingProse(view);
             const newlySealed = wrapped.slice(0, -1);
             if (newlySealed.length > 0) {
               proseCommittedLen = newlySealed[newlySealed.length - 1]?.end ?? proseCommittedLen;
               paint(
-                newlySealed.map((entry) => entry.line),
+                newlySealed.map((entry) => dim(entry.line)),
                 liveLine(view),
               );
             } else {
@@ -288,54 +443,59 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           }
           return;
         }
-        case "step:finished": {
-          const remaining = commitPendingProse(view);
+        case "step:log":
+          // A step's log line: transient in quiet mode, sealed (dimmed) in verbose.
+          if (verbose)
+            paint(
+              [...commitPendingProse(view), dim(`${BODY_INDENT}· ${event.message}`)],
+              liveLine(view),
+            );
+          else paintLive(view);
+          return;
+        case "step:finished":
+          paint([...sealed(), stepResult(view, event.step)], liveLine(view));
+          return;
+        case "step:skipped":
           paint(
-            [...remaining, `${STEP_INDENT}${glyphs.done} ${event.step}${elapsed()}`],
+            [...sealed(), dim(`${STEP_INDENT}${glyphs.skipped} ${event.step} (skipped)`)],
             liveLine(view),
           );
           return;
-        }
-        case "step:skipped": {
-          const remaining = commitPendingProse(view);
-          paint(
-            [...remaining, `${STEP_INDENT}${glyphs.skipped} ${event.step} (skipped)`],
-            liveLine(view),
-          );
+        case "ask:pending":
+          // The prompt blocks the Run awaiting input, so it must seal — it can't be transient.
+          paint([...sealed(), `${STEP_INDENT}? ${event.step}: ${event.prompt}`], liveLine(view));
           return;
-        }
         case "run:finished":
           stopTimer();
-          paint([...commitPendingProse(view), `■ run finished${prSuffix}`], "");
+          paint([...sealed(), ...resultsBlock(view), "■ run finished"], "");
           showCursor();
           return;
         case "run:cancelled":
           stopTimer();
           paint(
-            [
-              ...commitPendingProse(view),
-              `◼ run cancelled${event.step ? ` at ${event.step}` : ""}${prSuffix}`,
-            ],
+            [...sealed(), `◼ run cancelled${event.step ? ` at ${event.step}` : ""}${prSuffix}`],
             "",
           );
           showCursor();
           return;
-        case "run:failed":
+        case "run:failed": {
           stopTimer();
-          paint(
-            [
-              ...commitPendingProse(view),
-              `${glyphs.failed} run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}${prSuffix}`,
-            ],
-            "",
-          );
+          const failedStep = event.step ?? view.activeStep;
+          // Quiet discarded the trail as it streamed — dump the failing step's so the cause shows.
+          const dump =
+            !verbose && failedStep !== undefined && failedStep === view.activeStep
+              ? [`${STEP_INDENT}${red(glyphs.failed)} ${failedStep}`, ...failureDump(view)]
+              : [];
+          const line =
+            red(
+              `${glyphs.failed} run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`,
+            ) + prSuffix;
+          paint([...sealed(), ...dump, line], "");
           showCursor();
           return;
-        case "pr:opened": // held in view.prUrl; surfaced on the run-end line, not live
-        case "step:log":
-        case "artifact:written":
-        case "ask:pending":
-          return; // no live-line change in v1
+        }
+        case "pr:opened": // held in view.prUrl; surfaced in the results block / run-end line
+          return;
       }
     },
     close(): void {

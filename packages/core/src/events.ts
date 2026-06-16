@@ -13,7 +13,10 @@ export type RunEvent =
   | { type: "step:started"; step: string }
   | { type: "step:log"; step: string; message: string }
   | { type: "agent:progress"; step: string; progress: AgentProgress }
-  | { type: "artifact:written"; step: string; artifact: string }
+  // `artifact` is the declared name; `rendered` is its human string form when the produced
+  // value is a string (absent for non-string artifacts). The engine relays it unjudged — the
+  // presenter decides which artifacts to surface, and how to clip/label them.
+  | { type: "artifact:written"; step: string; artifact: string; rendered?: string }
   // The Run's pull request is open on the Forge — freshly opened, or rediscovered on a re-run.
   // Carries the URL so a consumer can surface a clickable link at the end of the Run.
   | { type: "pr:opened"; url: string }

@@ -17,16 +17,18 @@ describe("present", () => {
     expect(view.activeStep).toBeUndefined();
   });
 
-  test("step:started activates the step and resets text + tool", () => {
+  test("step:started activates the step and resets text + tool + logs", () => {
     const view = fold([
       { type: "run:started", pipeline: ["lint"] },
       { type: "agent:progress", step: "lint", progress: { kind: "text", text: "stale" } },
+      { type: "step:log", step: "lint", message: "stale log" },
       { type: "step:started", step: "lint" },
     ]);
     expect(view.activeStep).toBe("lint");
     expect(view.steps[0]).toEqual({ name: "lint", status: "active" });
     expect(view.text).toBe("");
     expect(view.tool).toBeUndefined();
+    expect(view.logs).toEqual([]);
   });
 
   test("agent:progress text deltas coalesce into the active step's buffer", () => {
@@ -123,20 +125,50 @@ describe("present", () => {
   test("is pure — it never mutates the input view", () => {
     const before = initialView;
     const after = present(before, { type: "run:started", pipeline: ["lint"] });
-    expect(before).toEqual({ steps: [], text: "", status: "running" });
+    expect(before).toEqual({ steps: [], text: "", logs: [], status: "running" });
     expect(after).not.toBe(before);
   });
 
-  test("step:log, artifact:written, and ask:pending carry no display state", () => {
+  test("step:log appends to the active step's log buffer", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["ci-wait"] },
+      { type: "step:started", step: "ci-wait" },
+      { type: "step:log", step: "ci-wait", message: "ci: build → success" },
+      { type: "step:log", step: "ci-wait", message: "ci: test → pending" },
+    ]);
+    expect(view.logs).toEqual(["ci: build → success", "ci: test → pending"]);
+  });
+
+  test("artifact:written sets the step's headline from the first string artifact only", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["describe"] },
+      { type: "step:started", step: "describe" },
+      // describe produces prTitle then prBody; the first string wins, prBody never surfaces.
+      { type: "artifact:written", step: "describe", artifact: "prTitle", rendered: "feat: add X" },
+      { type: "artifact:written", step: "describe", artifact: "prBody", rendered: "the body" },
+    ]);
+    expect(view.steps[0]?.rendered).toBe("feat: add X");
+  });
+
+  test("artifact:written without a rendered value (a non-string artifact) carries no display state", () => {
+    const base = fold([
+      { type: "run:started", pipeline: ["open-pr"] },
+      { type: "step:started", step: "open-pr" },
+    ]);
+    const after = present(base, {
+      type: "artifact:written",
+      step: "open-pr",
+      artifact: "pullRequest",
+    });
+    expect(after).toEqual(base);
+  });
+
+  test("ask:pending carries no display state (renderers seal it from the event)", () => {
     const base = fold([
       { type: "run:started", pipeline: ["lint"] },
       { type: "step:started", step: "lint" },
     ]);
-    const after = [
-      { type: "step:log", step: "lint", message: "hi" } as RunEvent,
-      { type: "artifact:written", step: "lint", artifact: "Branch" } as RunEvent,
-      { type: "ask:pending", step: "lint", prompt: "ok?" } as RunEvent,
-    ].reduce(present, base);
+    const after = present(base, { type: "ask:pending", step: "lint", prompt: "ok?" });
     expect(after).toEqual(base);
   });
 
