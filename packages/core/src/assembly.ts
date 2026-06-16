@@ -151,13 +151,24 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
       }
 
       const providers: Providers = { forge: forge(cwd), agent: harness(cwd) };
+      const models = withoutDisabledModels(selection.models, selection.disable);
       return {
         pipeline: out,
         providers,
-        ...(selection.models !== undefined ? { models: selection.models } : {}),
+        ...(models !== undefined ? { models } : {}),
       };
     },
   };
+}
+
+function withoutDisabledModels(
+  models: ModelMap | undefined,
+  disabled: readonly string[] | undefined,
+): ModelMap | undefined {
+  if (models === undefined) return undefined;
+  const disabledNames = new Set(disabled ?? []);
+  const entries = Object.entries(models).filter(([key]) => !disabledNames.has(key));
+  return entries.length === 0 ? undefined : (Object.fromEntries(entries) as ModelMap);
 }
 
 function listSteps(steps: readonly Step[]): string {

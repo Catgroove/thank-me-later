@@ -89,4 +89,14 @@ describe("loadTmlConfig", () => {
     writeConfig(projectRoot, { disable: "typecheck" }); // should be an array
     expect(() => load(tempDir(), projectRoot)).toThrow(/"disable".*array of strings/);
   });
+
+  test("model ids and $schema must be strings", () => {
+    const badModel = tempDir();
+    writeConfig(badModel, { models: { review: 42 } });
+    expect(() => load(tempDir(), badModel)).toThrow(/"models.review".*string model id/);
+
+    const badSchema = tempDir();
+    writeConfig(badSchema, { $schema: 42 });
+    expect(() => load(tempDir(), badSchema)).toThrow(/"\$schema".*string/);
+  });
 });

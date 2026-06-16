@@ -1,4 +1,4 @@
-// Assemble the Config `tml ship` runs (ADR-0015). Over the merged `tml.json` knobs
+// Assemble the Config `tml ship` runs. Over the merged `tml.json` knobs
 // (`loaded.selection`) we seed the built-in Providers by name (GitHub Forge, pi Harness), run the
 // bundled `@tml/defaults` plugin first, then any local plugins the config referenced — each over
 // the injected `tml` API — and `build()` resolves the selected Providers into the final Config.

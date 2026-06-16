@@ -99,6 +99,15 @@ describe("model selection — assembly-time validation", () => {
   test("the reserved `default` key itself is never treated as a missing Step", () => {
     expect(() => createEngine(cfg([agentStep("review")], { default: "haiku" }))).not.toThrow();
   });
+
+  test("models must still have the config shape when config comes from untyped JavaScript", () => {
+    expect(() => createEngine(cfg([agentStep("review")], null as unknown as ModelMap))).toThrow(
+      /models must be an object/,
+    );
+
+    const models = { review: 42 } as unknown as ModelMap;
+    expect(() => createEngine(cfg([agentStep("review")], models))).toThrow(/must be a string/);
+  });
 });
 
 describe("model selection — run-start value validation (gated on listModels)", () => {
