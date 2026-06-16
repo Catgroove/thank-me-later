@@ -154,4 +154,13 @@ describe("createPiHarness — listModels", () => {
       "google/gemini-3-pro",
     ]);
   });
+
+  test("throws with stderr on a non-zero exit", async () => {
+    const harness = createPiHarness("/tmp", {
+      spawn: fakeSpawn([], { exitCode: 1, stderr: "models unavailable" }),
+    });
+    expect(String(await rejection(harness.listModels?.() ?? Promise.resolve([])))).toMatch(
+      /pi --list-models failed \(exit 1\): models unavailable/,
+    );
+  });
 });

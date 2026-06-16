@@ -60,7 +60,10 @@ export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harne
       const proc = spawn(listModelsArgs(), { cwd });
       let out = "";
       for await (const line of proc.stdout) out += `${line}\n`;
-      await proc.done;
+      const { exitCode, stderr } = await proc.done;
+      if (exitCode !== 0) {
+        throw new Error(`pi --list-models failed (exit ${exitCode}): ${stderr.trim()}`);
+      }
       return parseModels(out);
     },
   };
