@@ -17,15 +17,17 @@ export interface ShipDeps {
   /** Build the Config for `cwd`. Async in production (it imports local plugins). */
   buildConfig?: (cwd: string) => Config | Promise<Config>;
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
+  /** Seal the full per-step trail instead of the quiet, results-forward default (`--verbose`). */
+  verbose?: boolean;
   /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
   renderer?: Renderer;
 }
 
 /** A TTY live region when stdout is a terminal; clean append-only lines otherwise. */
-function defaultRenderer(): Renderer {
+function defaultRenderer(verbose: boolean): Renderer {
   return process.stdout.isTTY
-    ? createCliRenderer()
-    : createPlainRenderer((line: string) => console.log(line));
+    ? createCliRenderer({ verbose })
+    : createPlainRenderer((line: string) => console.log(line), { verbose });
 }
 
 // 128 + signal number: the conventional exit code for a signal-terminated process.
@@ -36,7 +38,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   const buildConfig =
     deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
   const engineFor = deps.engineFor ?? createEngine;
-  const renderer = deps.renderer ?? defaultRenderer();
+  const renderer = deps.renderer ?? defaultRenderer(deps.verbose ?? false);
 
   // On a signal (Ctrl-C, kill) Bun terminates the process without running the `finally`
   // below, so the renderer's teardown never fires and the terminal is left with a hidden
@@ -81,8 +83,9 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const [command] = argv;
-  if (command === "ship") return ship();
+  const [command, ...rest] = argv;
+  const verbose = rest.includes("--verbose") || rest.includes("-v");
+  if (command === "ship") return ship({ verbose });
   console.error(`Unknown command: ${command ?? "(none)"}. Try: tml ship`);
   return 1;
 }

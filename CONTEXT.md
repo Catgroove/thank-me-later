@@ -134,8 +134,11 @@ _Avoid_: Plugin (reserve for pipeline extensions), integration, binding
 The structured sequence of events the headless core emits during a Run (`step:started`,
 `artifact:written`, `agent:progress`, `ask:pending`, `run:finished`, `run:cancelled`, …).
 Events are emitted *live* as they occur — including `agent:progress` mid-Step — not
-batched at Step boundaries. All presentation — the standalone TUI, CLI logs, and host
-Adapters — is a consumer of this one stream; the engine itself draws nothing.
+batched at Step boundaries. `artifact:written` carries the artifact's string form (`rendered`)
+when it has one, so a consumer can surface produced values, not just their names; the engine
+relays it unjudged and leaves selection/formatting to the presentation. All presentation — the
+standalone TUI, CLI logs, and host Adapters — is a consumer of this one stream; the engine
+itself draws nothing.
 _Avoid_: Logs, output, feed
 
 **Agent progress**:

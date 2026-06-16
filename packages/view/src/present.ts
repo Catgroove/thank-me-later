@@ -9,6 +9,11 @@ import type { RunEvent } from "@tml/core";
 export interface StepView {
   readonly name: string;
   readonly status: "pending" | "active" | "done" | "skipped" | "failed";
+  /**
+   * The step's headline artifact in human string form (its first string-valued artifact). The
+   * renderer surfaces short ones inline on the result line and long ones in the results block.
+   */
+  readonly rendered?: string;
 }
 
 /** Current tool activity, with a short human label (e.g. bash → the command). */
@@ -24,8 +29,10 @@ export interface ViewState {
   readonly activeStep?: string;
   /** The active step's coalesced assistant text (the renderer decides how to wrap/flush). */
   readonly text: string;
-  /** The current tool, set on `start` and cleared on `end`; v1 keeps only the latest. */
+  /** The current tool, set on `start` and cleared on `end`; only the latest is kept. */
   readonly tool?: ToolView;
+  /** The active step's `ctx.log` messages, reset per step — shown live, and dumped on failure. */
+  readonly logs: string[];
   readonly status: "running" | "finished" | "cancelled" | "failed";
   readonly error?: string;
   /** The Run's pull request URL, once opened — surfaced on the final line. */
@@ -33,11 +40,16 @@ export interface ViewState {
 }
 
 /** The empty starting state, before any event has been folded in. */
-export const initialView: ViewState = { steps: [], text: "", status: "running" };
+export const initialView: ViewState = {
+  steps: [],
+  text: "",
+  logs: [],
+  status: "running",
+};
 
-/** Return a copy of `steps` with `name` set to `status` (others untouched). */
+/** Return a copy of `steps` with `name` set to `status` (other fields untouched). */
 function setStatus(steps: StepView[], name: string, status: StepView["status"]): StepView[] {
-  return steps.map((step) => (step.name === name ? { name: step.name, status } : step));
+  return steps.map((step) => (step.name === name ? { ...step, status } : step));
 }
 
 export function present(view: ViewState, event: RunEvent): ViewState {
@@ -55,6 +67,7 @@ export function present(view: ViewState, event: RunEvent): ViewState {
         activeStep: event.step,
         text: "",
         tool: undefined,
+        logs: [],
       };
     case "agent:progress":
       if (event.progress.kind === "text") {
@@ -98,9 +111,25 @@ export function present(view: ViewState, event: RunEvent): ViewState {
     case "pr:opened":
       return { ...view, prUrl: event.url };
     case "step:log":
-    case "artifact:written":
+      // The active step's log line — shown live, retained for a failure dump.
+      return { ...view, logs: [...view.logs, event.message] };
+    case "artifact:written": {
+      // Only the first string artifact a step produces becomes its headline (declared order
+      // decides — e.g. describe's `prTitle` wins over `prBody`, which never surfaces). Non-string
+      // artifacts carry no `rendered`; objects like the PullRequest surface via `pr:opened`.
+      if (event.rendered === undefined) return view;
+      const isHeadline = view.steps.some(
+        (step) => step.name === event.step && step.rendered === undefined,
+      );
+      if (!isHeadline) return view;
+      const { rendered } = event;
+      return {
+        ...view,
+        steps: view.steps.map((step) => (step.name === event.step ? { ...step, rendered } : step)),
+      };
+    }
     case "ask:pending":
-      // Carry no display state in v1 (current-tool + coalesced prose only).
+      // The prompt blocks the Run awaiting input; renderers seal it straight from the event.
       return view;
   }
 }

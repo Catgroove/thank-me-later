@@ -4,9 +4,9 @@ import { initialView, present } from "../src/present.ts";
 import { createPlainRenderer } from "../src/render-plain.ts";
 
 /** Drive a sequence through the fold + plain renderer, collecting the emitted lines. */
-function renderLines(events: RunEvent[]): string[] {
+function renderLines(events: RunEvent[], options: { verbose?: boolean } = {}): string[] {
   const lines: string[] = [];
-  const renderer = createPlainRenderer((line) => lines.push(line));
+  const renderer = createPlainRenderer((line) => lines.push(line), options);
   let view = initialView;
   for (const event of events) {
     view = present(view, event);
@@ -16,35 +16,44 @@ function renderLines(events: RunEvent[]): string[] {
   return lines;
 }
 
-describe("createPlainRenderer", () => {
-  test("emits clean append-only lines: transitions, one tool line, coalesced prose", () => {
-    const lines = renderLines([
-      { type: "run:started", pipeline: ["format", "lint"] },
-      { type: "step:started", step: "format" },
-      { type: "agent:progress", step: "format", progress: { kind: "text", text: "Running " } },
-      {
-        type: "agent:progress",
-        step: "format",
-        progress: { kind: "text", text: "the formatter." },
-      },
-      {
-        type: "agent:progress",
-        step: "format",
-        progress: { kind: "tool", name: "bash", phase: "start", detail: "bun run fmt" },
-      },
-      {
-        type: "agent:progress",
-        step: "format",
-        progress: { kind: "tool", name: "bash", phase: "end" },
-      },
-      { type: "step:finished", step: "format" },
-      { type: "step:started", step: "lint" },
-      { type: "step:skipped", step: "lint" },
-      { type: "run:finished" },
-    ]);
+const TRAIL: RunEvent[] = [
+  { type: "run:started", pipeline: ["format", "lint"] },
+  { type: "step:started", step: "format" },
+  { type: "agent:progress", step: "format", progress: { kind: "text", text: "Running " } },
+  { type: "agent:progress", step: "format", progress: { kind: "text", text: "the formatter." } },
+  {
+    type: "agent:progress",
+    step: "format",
+    progress: { kind: "tool", name: "bash", phase: "start", detail: "bun run fmt" },
+  },
+  {
+    type: "agent:progress",
+    step: "format",
+    progress: { kind: "tool", name: "bash", phase: "end" },
+  },
+  { type: "step:finished", step: "format" },
+  { type: "step:started", step: "lint" },
+  { type: "step:skipped", step: "lint" },
+  { type: "run:finished" },
+];
 
-    expect(lines).toEqual([
-      "▶ run started:",
+describe("createPlainRenderer", () => {
+  test("quiet (default): drops agent prose and tool lines, keeps step structure", () => {
+    expect(renderLines(TRAIL)).toEqual([
+      "▶ ship",
+      "  format",
+      "  lint",
+      "  ▸ format",
+      "  ✓ format",
+      "  ▸ lint",
+      "  ⤼ lint (skipped)",
+      "■ run finished",
+    ]);
+  });
+
+  test("verbose: seals the full trail — coalesced prose + one line per tool", () => {
+    expect(renderLines(TRAIL, { verbose: true })).toEqual([
+      "▶ ship",
       "  format",
       "  lint",
       "  ▸ format",
@@ -57,46 +66,68 @@ describe("createPlainRenderer", () => {
     ]);
   });
 
-  test("never emits a line per text delta (no token spam)", () => {
-    const lines = renderLines([
-      { type: "run:started", pipeline: ["x"] },
-      { type: "step:started", step: "x" },
-      { type: "agent:progress", step: "x", progress: { kind: "text", text: "a" } },
-      { type: "agent:progress", step: "x", progress: { kind: "text", text: "b" } },
-      { type: "agent:progress", step: "x", progress: { kind: "text", text: "c" } },
-      { type: "step:finished", step: "x" },
-    ]);
-    expect(lines).toEqual(["▶ run started:", "  x", "  ▸ x", "    abc", "  ✓ x"]);
+  test("verbose never emits a line per text delta (no token spam)", () => {
+    const lines = renderLines(
+      [
+        { type: "run:started", pipeline: ["x"] },
+        { type: "step:started", step: "x" },
+        { type: "agent:progress", step: "x", progress: { kind: "text", text: "a" } },
+        { type: "agent:progress", step: "x", progress: { kind: "text", text: "b" } },
+        { type: "agent:progress", step: "x", progress: { kind: "text", text: "c" } },
+        { type: "step:finished", step: "x" },
+      ],
+      { verbose: true },
+    );
+    expect(lines).toEqual(["▶ ship", "  x", "  ▸ x", "    abc", "  ✓ x"]);
   });
 
-  test("flushes text between consecutive tools, never re-printing earlier prose", () => {
+  test("step:log lines show in both modes (CI progress)", () => {
+    const events: RunEvent[] = [
+      { type: "run:started", pipeline: ["ci-wait"] },
+      { type: "step:started", step: "ci-wait" },
+      { type: "step:log", step: "ci-wait", message: "ci: build → success" },
+      { type: "step:finished", step: "ci-wait" },
+    ];
+    expect(renderLines(events)).toContain("    · ci: build → success");
+    expect(renderLines(events, { verbose: true })).toContain("    · ci: build → success");
+  });
+
+  test("shows a short artifact inline, routes a narrative one to the results block", () => {
     const lines = renderLines([
-      { type: "run:started", pipeline: ["x"] },
-      { type: "step:started", step: "x" },
-      { type: "agent:progress", step: "x", progress: { kind: "text", text: "first." } },
+      { type: "run:started", pipeline: ["branch", "review", "open-pr"] },
+      { type: "step:started", step: "branch" },
+      { type: "artifact:written", step: "branch", artifact: "branchName", rendered: "feat/x" },
+      { type: "step:finished", step: "branch" },
+      { type: "step:started", step: "review" },
       {
-        type: "agent:progress",
-        step: "x",
-        progress: { kind: "tool", name: "read", phase: "start", detail: "a.ts" },
+        type: "artifact:written",
+        step: "review",
+        artifact: "reviewSummary",
+        rendered: "handles empty argv\ntests cover both",
       },
-      { type: "agent:progress", step: "x", progress: { kind: "tool", name: "read", phase: "end" } },
-      { type: "agent:progress", step: "x", progress: { kind: "text", text: " second." } },
-      {
-        type: "agent:progress",
-        step: "x",
-        progress: { kind: "tool", name: "read", phase: "start", detail: "b.ts" },
-      },
-      { type: "step:finished", step: "x" },
+      { type: "step:finished", step: "review" },
+      { type: "step:started", step: "open-pr" },
+      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "artifact:written", step: "open-pr", artifact: "pullRequest" }, // object, no rendered
+      { type: "step:finished", step: "open-pr" },
+      { type: "run:finished" },
     ]);
     expect(lines).toEqual([
-      "▶ run started:",
-      "  x",
-      "  ▸ x",
-      "    first.",
-      "    ⚙ read · a.ts",
-      "    second.",
-      "    ⚙ read · b.ts",
-      "  ✓ x",
+      "▶ ship",
+      "  branch",
+      "  review",
+      "  open-pr",
+      "  ▸ branch",
+      "  ✓ branch  feat/x", // short → inline
+      "  ▸ review",
+      "  ✓ review", // narrative → no inline; full text in the block
+      "  ▸ open-pr",
+      "  ✓ open-pr",
+      `  ── results ${"─".repeat(20)}`,
+      "  review  handles empty argv",
+      "          tests cover both",
+      "  pr      https://forge.test/pr/7",
+      "■ run finished",
     ]);
   });
 
@@ -109,7 +140,7 @@ describe("createPlainRenderer", () => {
     expect(lines.at(-1)).toBe("✗ run failed at test: boom");
   });
 
-  test("appends the PR link to the run-end line, surviving the steps after open-pr", () => {
+  test("the PR URL lands in the results block, not on the run-finished line", () => {
     const lines = renderLines([
       { type: "run:started", pipeline: ["open-pr", "ci-wait"] },
       { type: "step:started", step: "open-pr" },
@@ -119,12 +150,11 @@ describe("createPlainRenderer", () => {
       { type: "step:finished", step: "ci-wait" },
       { type: "run:finished" },
     ]);
-    // pr:opened itself prints nothing inline; the URL only shows on the final line.
-    expect(lines).not.toContain("    + https://forge.test/pr/7");
-    expect(lines.at(-1)).toBe("■ run finished · https://forge.test/pr/7");
+    expect(lines).toContain("  pr      https://forge.test/pr/7");
+    expect(lines.at(-1)).toBe("■ run finished");
   });
 
-  test("appends the PR link to a failure line too (PR opened, then CI failed)", () => {
+  test("appends the PR link to a failure line (no results block on failure)", () => {
     const lines = renderLines([
       { type: "run:started", pipeline: ["open-pr", "ci-wait"] },
       { type: "step:started", step: "open-pr" },

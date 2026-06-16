@@ -1,33 +1,64 @@
-// Plain (non-TTY) renderer: append-only, no spinner, no cursor codes — the output
-// pipes and CI get. It is thin over `ViewState`: the coalesced assistant
-// text lives in `view.text` (the shared fold did the coalescing); this renderer only
-// decides *when* to flush it (at tool/step boundaries) and emits labelled lines for
-// step transitions and tool activity. One line per call to `writeLine`.
+// Plain (non-TTY) renderer: append-only, no spinner, no cursor codes, no color — the output
+// pipes and CI get. It mirrors the TTY renderer's *content* (the same step results, the same
+// end-of-run results block, the same artifact surfacing); only the mechanism differs — there is
+// no transient live line, so each step announces itself with a `▸` header and resolves to a
+// `✓`/`⤼`/`✗` line. Quiet by default: the agent's prose and `⚙` tool lines are dropped, leaving
+// step structure, `· log` lines, the results, and any escalation prompt. `--verbose` seals the
+// full trail (prose + tool lines), the way every run used to. One line per `writeLine` call.
 
 import type { RunEvent } from "@tml/core";
 import type { ViewState } from "./present.ts";
 import type { Renderer } from "./renderer.ts";
 
+const LABEL_WIDTH = 8; // the results block's left label gutter
+const INLINE_MAX = 56; // a longer (or multi-line) artifact is narrative — it goes to the block
+
+/** A long or multi-line artifact reads as narrative: shown in the results block, not inline. */
+function isNarrative(rendered: string): boolean {
+  return rendered.includes("\n") || rendered.length > INLINE_MAX;
+}
+
 /** Build a plain renderer that emits one line per `writeLine` call (the sink adds newlines). */
-export function createPlainRenderer(writeLine: (line: string) => void): Renderer {
-  // How much of the active step's `view.text` has already been flushed. `view.text`
-  // resets to "" on every `step:started`, so this resets to 0 there too.
+export function createPlainRenderer(
+  writeLine: (line: string) => void,
+  options: { verbose?: boolean } = {},
+): Renderer {
+  const verbose = options.verbose ?? false;
+  // How much of the active step's `view.text` has already been flushed. `view.text` resets to ""
+  // on every `step:started`, so this resets to 0 there too. Only verbose actually emits prose.
   let flushedLen = 0;
 
   function flushText(view: ViewState): void {
     const segment = view.text.slice(flushedLen).trim();
     flushedLen = view.text.length;
-    if (segment !== "") writeLine(`    ${segment}`);
+    if (verbose && segment !== "") writeLine(`    ${segment}`);
   }
 
-  // The PR link, appended to whichever run-end line we emit so it survives the CI wait.
-  const prSuffix = (view: ViewState): string => (view.prUrl ? ` · ${view.prUrl}` : "");
+  // The PR link, appended to a cancelled/failed run-end line (those carry no results block).
+  const prSuffix = (view: ViewState): string =>
+    view.prUrl !== undefined ? ` · ${view.prUrl}` : "";
+
+  /** The end-of-run results block: narrative artifacts (in full) + the PR URL. */
+  function resultsBlock(view: ViewState): void {
+    const narrative = view.steps.filter(
+      (step) => step.rendered !== undefined && isNarrative(step.rendered),
+    );
+    if (narrative.length === 0 && view.prUrl === undefined) return;
+    writeLine(`  ── results ${"─".repeat(20)}`);
+    const cont = " ".repeat(2 + LABEL_WIDTH);
+    for (const step of narrative) {
+      const [first, ...rest] = (step.rendered ?? "").split("\n");
+      writeLine(`  ${step.name.padEnd(LABEL_WIDTH)}${first ?? ""}`);
+      for (const line of rest) writeLine(`${cont}${line}`);
+    }
+    if (view.prUrl !== undefined) writeLine(`  ${"pr".padEnd(LABEL_WIDTH)}${view.prUrl}`);
+  }
 
   return {
     render(view: ViewState, event: RunEvent): void {
       switch (event.type) {
         case "run:started":
-          writeLine("▶ run started:");
+          writeLine("▶ ship");
           for (const step of event.pipeline) writeLine(`  ${step}`);
           return;
         case "step:started":
@@ -35,11 +66,13 @@ export function createPlainRenderer(writeLine: (line: string) => void): Renderer
           writeLine(`  ▸ ${event.step}`);
           return;
         case "agent:progress":
-          // Text is accumulated in view.text by the fold; a tool start is a flush boundary.
+          // Prose accumulates in view.text; a tool start is a flush boundary. Both are verbose-only.
           if (event.progress.kind === "tool" && event.progress.phase === "start") {
             flushText(view);
-            const { name, detail } = event.progress;
-            writeLine(`    ⚙ ${name}${detail ? ` · ${detail}` : ""}`);
+            if (verbose) {
+              const { name, detail } = event.progress;
+              writeLine(`    ⚙ ${name}${detail !== undefined ? ` · ${detail}` : ""}`);
+            }
           }
           return;
         case "step:log":
@@ -47,27 +80,31 @@ export function createPlainRenderer(writeLine: (line: string) => void): Renderer
           writeLine(`    · ${event.message}`);
           return;
         case "artifact:written":
-          flushText(view);
-          writeLine(`    + ${event.artifact}`);
+          // Surfaced on the step's result line and in the results block — no separate line here.
           return;
         case "pr:opened":
-          // Held in view.prUrl; surfaced on the run-end line, not inline.
+          // Held in view.prUrl; surfaced in the results block, not inline.
           return;
         case "ask:pending":
           flushText(view);
           writeLine(`  ? ${event.step}: ${event.prompt}`);
           return;
-        case "step:finished":
+        case "step:finished": {
           flushText(view);
-          writeLine(`  ✓ ${event.step}`);
+          const rendered = view.steps.find((step) => step.name === event.step)?.rendered;
+          // Narrative artifacts surface in the results block; only short ones read inline here.
+          const inline = rendered !== undefined && !isNarrative(rendered) ? `  ${rendered}` : "";
+          writeLine(`  ✓ ${event.step}${inline}`);
           return;
+        }
         case "step:skipped":
           flushText(view);
           writeLine(`  ⤼ ${event.step} (skipped)`);
           return;
         case "run:finished":
           flushText(view);
-          writeLine(`■ run finished${prSuffix(view)}`);
+          resultsBlock(view);
+          writeLine("■ run finished");
           return;
         case "run:cancelled":
           flushText(view);

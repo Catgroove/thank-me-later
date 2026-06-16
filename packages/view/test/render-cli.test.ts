@@ -14,6 +14,7 @@ function renderRaw(events: RunEvent[], options: Partial<CliRendererOptions> = {}
     term: "xterm",
     intervalMs: 0, // no animation timer in tests
     now: () => 0,
+    color: false, // keep assertions ANSI-color-free unless a test opts in
     ...options,
   });
   let view = initialView;
@@ -50,38 +51,41 @@ const HAPPY: RunEvent[] = [
 ];
 
 describe("createCliRenderer", () => {
-  test("renders a full sequence without throwing and commits finished steps", () => {
+  test("quiet (default): seals step results and the run end, keeps chatter transient", () => {
     const out = renderRaw(HAPPY);
     expect(out).toContain("✓ format");
     expect(out).toContain("⤼ lint (skipped)");
     expect(out).toContain("■ run finished");
-    // The active step's prose appears, and the command is committed as its own ⚙ line.
-    expect(out).toContain("Running the formatter now.");
-    expect(out).toContain("⚙ bash · bun run fmt");
+    // Chatter and tool calls ride the transient live line — they never seal into scrollback
+    // (a sealed line is followed by `\n`; a live line is not).
+    expect(out).not.toContain("⚙ bash · bun run fmt\n");
     // A Braille spinner frame is used in a normal terminal.
     expect(out).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
-  test("heads the step, commits each command, and keeps the spinner bare", () => {
-    const out = renderRaw([
-      { type: "run:started", pipeline: ["lint"] },
-      { type: "step:started", step: "lint" },
-      {
-        type: "agent:progress",
-        step: "lint",
-        progress: { kind: "tool", name: "bash", phase: "start", detail: "bun run lint" },
-      },
-      {
-        type: "agent:progress",
-        step: "lint",
-        progress: { kind: "tool", name: "bash", phase: "end" },
-      },
-      {
-        type: "agent:progress",
-        step: "lint",
-        progress: { kind: "tool", name: "read", phase: "start", detail: "src/index.ts" },
-      },
-    ]);
+  test("verbose heads the step, commits each command, and keeps the spinner bare", () => {
+    const out = renderRaw(
+      [
+        { type: "run:started", pipeline: ["lint"] },
+        { type: "step:started", step: "lint" },
+        {
+          type: "agent:progress",
+          step: "lint",
+          progress: { kind: "tool", name: "bash", phase: "start", detail: "bun run lint" },
+        },
+        {
+          type: "agent:progress",
+          step: "lint",
+          progress: { kind: "tool", name: "bash", phase: "end" },
+        },
+        {
+          type: "agent:progress",
+          step: "lint",
+          progress: { kind: "tool", name: "read", phase: "start", detail: "src/index.ts" },
+        },
+      ],
+      { verbose: true },
+    );
     // The step name heads its block; the commands commit beneath it as permanent ⚙ lines.
     expect(out).toContain("▸ lint");
     expect(out).toContain("⚙ bash · bun run lint");
@@ -90,15 +94,18 @@ describe("createCliRenderer", () => {
     expect(out).not.toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] lint/);
   });
 
-  test("separates steps with a blank line, but not before the first", () => {
-    const out = renderRaw([
-      { type: "run:started", pipeline: ["branch", "lint"] },
-      { type: "step:started", step: "branch" },
-      { type: "step:finished", step: "branch" },
-      { type: "step:started", step: "lint" },
-      { type: "step:finished", step: "lint" },
-      { type: "run:finished" },
-    ]);
+  test("verbose separates steps with a blank line, but not before the first", () => {
+    const out = renderRaw(
+      [
+        { type: "run:started", pipeline: ["branch", "lint"] },
+        { type: "step:started", step: "branch" },
+        { type: "step:finished", step: "branch" },
+        { type: "step:started", step: "lint" },
+        { type: "step:finished", step: "lint" },
+        { type: "run:finished" },
+      ],
+      { verbose: true },
+    );
     // The second header is preceded by a committed blank line (a bare `\n` after the
     // cleared live line); the first follows its cleared line immediately, with no blank.
     const blankBefore = (name: string) => `\x1b[2K\n  ▸ ${name}`;
@@ -106,7 +113,7 @@ describe("createCliRenderer", () => {
     expect(out).not.toContain(blankBefore("branch"));
   });
 
-  test("streams prose on a single live line, sealing filled lines into scrollback", () => {
+  test("verbose streams prose on a single live line, sealing filled lines into scrollback", () => {
     const out = renderRaw(
       [
         { type: "run:started", pipeline: ["describe"] },
@@ -117,7 +124,7 @@ describe("createCliRenderer", () => {
           progress: { kind: "text", text: "alpha bravo charlie delta echo" },
         },
       ],
-      { columns: 20 },
+      { columns: 20, verbose: true },
     );
     // Filled lines seal into scrollback (committed above)...
     expect(out).toContain("alpha bravo");
@@ -126,7 +133,7 @@ describe("createCliRenderer", () => {
     expect(out).toMatch(/echo [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
-  test("does not drop pending prose when the terminal is resized mid-stream", () => {
+  test("verbose does not drop pending prose when the terminal is resized mid-stream", () => {
     let out = "";
     let columns = 20;
     const originalColumns = Object.getOwnPropertyDescriptor(process.stdout, "columns");
@@ -139,6 +146,8 @@ describe("createCliRenderer", () => {
         term: "xterm",
         intervalMs: 0,
         now: () => 0,
+        color: false,
+        verbose: true,
       });
       let view = initialView;
       const send = (event: RunEvent): void => {
@@ -202,7 +211,7 @@ describe("createCliRenderer", () => {
         { type: "step:skipped", step: "lint" },
         { type: "run:finished" },
       ],
-      { columns: 24 },
+      { columns: 24, verbose: true },
     );
     // Cursor-up is ESC `[` <optional digits> `A`; scan for it without a control char in a regex.
     const movesCursorUp = out.split("\x1b[").some((part) => /^[0-9]*A/.test(part));
@@ -235,5 +244,71 @@ describe("createCliRenderer", () => {
     const out = renderRaw(HAPPY, { term: "dumb" });
     expect(out).toContain("[ok] format");
     expect(out).not.toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+  });
+
+  test("quiet: short artifact inline, narrative artifact + PR sealed in the results block", () => {
+    const out = renderRaw([
+      { type: "run:started", pipeline: ["branch", "review", "open-pr"] },
+      { type: "step:started", step: "branch" },
+      { type: "artifact:written", step: "branch", artifact: "branchName", rendered: "feat/x" },
+      { type: "step:finished", step: "branch" },
+      { type: "step:started", step: "review" },
+      {
+        type: "artifact:written",
+        step: "review",
+        artifact: "reviewSummary",
+        rendered: "handles empty argv\ntests cover both",
+      },
+      { type: "step:finished", step: "review" },
+      { type: "step:started", step: "open-pr" },
+      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "artifact:written", step: "open-pr", artifact: "pullRequest" }, // object, no rendered
+      { type: "step:finished", step: "open-pr" },
+      { type: "run:finished" },
+    ]);
+    expect(out).toContain("✓ branch  feat/x"); // short artifact reads inline
+    expect(out).not.toContain("✓ review  handles"); // narrative one is not crammed inline
+    expect(out).toContain("── results");
+    expect(out).toContain("review  handles empty argv"); // results block, labeled by step
+    expect(out).toContain("pr      https://forge.test/pr/7");
+    expect(out).toContain("■ run finished");
+  });
+
+  test("quiet: dumps the failing step's retained trail, then the failure line", () => {
+    const out = renderRaw([
+      { type: "run:started", pipeline: ["test"] },
+      { type: "step:started", step: "test" },
+      { type: "agent:progress", step: "test", progress: { kind: "text", text: "running tests" } },
+      { type: "step:log", step: "test", message: "3 failures" },
+      { type: "run:failed", step: "test", error: "tests failed" },
+    ]);
+    expect(out).toContain("running tests"); // dumped prose
+    expect(out).toContain("· 3 failures"); // dumped log
+    expect(out).toMatch(/run failed at test: tests failed/);
+  });
+
+  test("seals an escalation prompt — it blocks the run, so it can't be transient", () => {
+    const out = renderRaw([
+      { type: "run:started", pipeline: ["lint"] },
+      { type: "step:started", step: "lint" },
+      { type: "ask:pending", step: "lint", prompt: "Fix lint errors?" },
+    ]);
+    expect(out).toContain("? lint: Fix lint errors?\n"); // sealed (a permanent line ends with \n)
+  });
+
+  test("color: wraps results and outcomes in SGR codes when enabled", () => {
+    const out = renderRaw(
+      [
+        { type: "run:started", pipeline: ["review"] },
+        { type: "step:started", step: "review" },
+        { type: "artifact:written", step: "review", artifact: "reviewSummary", rendered: "ok" },
+        { type: "step:finished", step: "review" },
+        { type: "run:finished" },
+      ],
+      { color: true },
+    );
+    expect(out).toContain("\x1b[32m"); // green ✓ on a step that produced an artifact
+    expect(out).toContain("\x1b[2m"); // dim elapsed
+    expect(out).toContain("\x1b[1m"); // bold run header
   });
 });

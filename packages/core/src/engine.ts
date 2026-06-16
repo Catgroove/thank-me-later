@@ -223,8 +223,16 @@ async function drive(
         queue.close();
         return;
       }
-      store.set(artifact.name, produced[artifact.name]);
-      queue.push({ type: "artifact:written", step: step.name, artifact: artifact.name });
+      const value = produced[artifact.name];
+      store.set(artifact.name, value);
+      // Relay the value's string form for presentation when it has one; non-string artifacts
+      // (e.g. a PullRequest object — surfaced via `pr:opened`) carry no `rendered`.
+      queue.push({
+        type: "artifact:written",
+        step: step.name,
+        artifact: artifact.name,
+        ...(typeof value === "string" ? { rendered: value } : {}),
+      });
     }
 
     queue.push({ type: "step:finished", step: step.name });
