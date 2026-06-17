@@ -76,7 +76,7 @@ function defaultConfigHome(env: Record<string, string | undefined>): string {
 }
 
 /** Walk up from cwd to the nearest dir containing `.git`; fall back to cwd when not in a repo. */
-function findProjectRoot(cwd: string): string {
+export function findProjectRoot(cwd: string): string {
   let dir = resolve(cwd);
   for (;;) {
     if (existsSync(join(dir, ".git"))) return dir;

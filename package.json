@@ -12,7 +12,11 @@
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "build": "bun build packages/cli/src/index.ts --compile --outfile dist/tml",
-    "test": "bun test"
+    "build:binaries": "bash scripts/build-binaries.sh",
+    "test": "bun test",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "release": "bash scripts/release.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",

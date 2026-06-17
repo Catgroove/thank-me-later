@@ -1,0 +1,33 @@
+name: Release
+
+# Changesets-driven releases. On every push to master the action either keeps a
+# "Version Packages" PR open (consuming changeset files, bumping versions, writing
+# CHANGELOGs) or — when no changesets remain, i.e. that PR just merged — runs the publish
+# command, which cross-compiles the binaries and creates the GitHub Release.
+on:
+  push:
+    branches: [master]
+
+# One release run at a time, so a fast follow-up push can't race the publish.
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write # create the Version PR commits, the git tag, and the Release
+  pull-requests: write # open/update the "Version Packages" PR
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - uses: changesets/action@v1
+        with:
+          version: bun run changeset:version
+          publish: bun run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

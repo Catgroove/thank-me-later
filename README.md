@@ -9,11 +9,27 @@ knobs) or extend them with a local plugin (`export default (tml) => …`). _Spen
 > (`gh`) and the pi agent, configurable via `tml.json` + local plugins. The TUI,
 > resume/checkpoint, and PR-comment handling aren't built yet.
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Catgroove/thank-me-later/master/install.sh | sh
+```
+
+Downloads the latest prebuilt binary (macOS/Linux, arm64/x64) to `~/.local/bin/tml`. Override
+the location with `TML_INSTALL_DIR`, or pin a release with `TML_VERSION=v0.1.0`.
+
+From source (needs [Bun](https://bun.sh)):
+
+```sh
+git clone https://github.com/Catgroove/thank-me-later && cd thank-me-later
+bun install && bun run build   # → dist/tml
+```
+
 ## Quick start
 
 ```sh
-bun install
-bunx tml ship      # run the pipeline in your checkout
+tml init      # scaffold a starter tml.json (optional — tml ship is zero-config)
+tml ship      # run the pipeline in your checkout
 ```
 
 `tml ship` runs **in place** in your current checkout, from any starting state. It puts the
@@ -26,12 +42,12 @@ tml is built with tml: every change to this repo ships through `tml ship`.
 ## Configuration
 
 `tml ship` is **zero-config** — it runs the default pipeline anywhere, in any language. To tune
-it, add a `tml.json` (repo root, or `~/.config/tml/tml.json` for machine-wide defaults; the two
-deep-merge, project winning):
+it, run `tml init` (or hand-write a `tml.json` at the repo root, or `~/.config/tml/tml.json` for
+machine-wide defaults; the two deep-merge, project winning):
 
 ```jsonc
 {
-  "$schema": "https://tml.dev/config.json",
+  "$schema": "https://raw.githubusercontent.com/Catgroove/thank-me-later/master/packages/cli/schema/tml.schema.json",
   "branch": "require",                          // ai | auto | require
   "models": { "default": "haiku", "review": "opus" },
   "disable": ["typecheck"],                     // drop a default Step
@@ -71,7 +87,7 @@ bun test           # Bun's test runner
 | `@tml/github` | GitHub Forge provider (via `gh`) |
 | `@tml/pi` | pi Harness adapter |
 | `@tml/view` | Presentation: folds the event stream into view state + CLI/plain renderers |
-| `tml` | CLI binary (`tml ship`) |
+| `tml` | CLI binary (`tml ship`, `tml init`) |
 
 ## Docs
 
