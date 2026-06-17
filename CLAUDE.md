@@ -41,6 +41,15 @@ bun test               # run tests (Bun's built-in runner)
 bunx tml ship          # run the pipeline
 ```
 
+## Releases (Changesets)
+
+- **Add a changeset for any user-facing change:** `bun changeset` (pick packages + bump). The
+  release workflow (`.github/workflows/release.yaml`) keeps a "Version Packages" PR open from
+  accumulated changesets; **merging that PR cuts a release** — `scripts/release.sh` cross-compiles
+  the binaries (`scripts/build-binaries.sh`) and publishes a GitHub Release. No manual tagging.
+- The binary's version is the `tml` package version; `updateInternalDependencies: patch` means any
+  `@tml/*` bump patch-bumps `tml`. Users install via `install.sh` (curl) from the latest Release.
+
 ## Conventions
 
 - **Data for knobs, code for behavior.** Config is `tml.json` (declarative: providers, models,
