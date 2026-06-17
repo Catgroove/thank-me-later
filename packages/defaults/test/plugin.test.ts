@@ -24,10 +24,14 @@ describe("tmlDefaults plugin", () => {
       "typecheck",
       "test",
       "commit(format+lint+typecheck+test)",
+      "open-pr",
       "review",
       "commit(review)",
-      "open-pr",
+      "respond-comments",
+      "commit(respond-comments)",
+      "push",
       "ci-wait",
+      "merge-gate",
     ]);
   });
 

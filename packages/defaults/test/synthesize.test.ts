@@ -3,6 +3,8 @@ import {
   type Finding,
   type ReviewPass,
   parsePassResult,
+  replaceReviewBlock,
+  reviewBlock,
   riskOf,
   summarize,
 } from "../src/review/synthesize.ts";
@@ -112,7 +114,7 @@ describe("summarize", () => {
     expect(out).not.toContain("**Fixes applied:**"); // nothing fixed → line omitted
   });
 
-  test("ask-user findings are listed with a decision hint", () => {
+  test("ask-user findings are not listed (they become threads); openThreads drives the tally", () => {
     const out = summarize(
       [
         {
@@ -125,14 +127,50 @@ describe("summarize", () => {
         },
       ],
       "",
+      2, // two open threads need a decision
     );
-    expect(out).toContain("API shape");
-    expect(out.toLowerCase()).toContain("needs your decision");
+    expect(out).toContain("2 threads need your decision"); // tally is driven by the thread count
+    expect(out).not.toContain("API shape"); // but the finding itself is not rendered
+    expect(out).not.toContain("### Design & non-functional"); // the otherwise-empty section is dropped
+  });
+
+  test("the decision tally is singular for one open thread and absent for none", () => {
+    const passes: ReviewPass[] = [{ title: "Context & intent", result: { findings: [] } }];
+    expect(summarize(passes, "", 1)).toContain("1 thread needs your decision");
+    expect(summarize(passes, "", 0)).not.toContain("your decision");
   });
 
   test("no findings at all renders a clean low-risk summary", () => {
     const out = summarize([{ title: "Context & intent", result: { findings: [] } }], "");
     expect(out).toContain("**Risk: low**");
     expect(out).toContain("No findings.");
+  });
+});
+
+describe("review block helpers", () => {
+  test("reviewBlock wraps the summary in the delimited region", () => {
+    const block = reviewBlock("**Risk: low**");
+    expect(block).toBe("<!-- tml:review -->\n**Risk: low**\n<!-- /tml:review -->");
+  });
+
+  test("replaceReviewBlock appends when the body has no block yet", () => {
+    const out = replaceReviewBlock("Just prose.", reviewBlock("HEADLINE"));
+    expect(out).toBe("Just prose.\n\n<!-- tml:review -->\nHEADLINE\n<!-- /tml:review -->");
+  });
+
+  test("replaceReviewBlock appends to an empty body without leading whitespace", () => {
+    expect(replaceReviewBlock("", reviewBlock("X"))).toBe(
+      "<!-- tml:review -->\nX\n<!-- /tml:review -->",
+    );
+  });
+
+  test("replaceReviewBlock swaps only the delimited region, keeping surrounding prose", () => {
+    const body = "Before.\n\n<!-- tml:review -->old<!-- /tml:review -->\n\nAfter.";
+    const out = replaceReviewBlock(body, reviewBlock("new"));
+    expect(out).toContain("Before.");
+    expect(out).toContain("After.");
+    expect(out).not.toContain("old");
+    expect(out).toContain("<!-- tml:review -->\nnew\n<!-- /tml:review -->");
+    expect(out.match(/<!-- tml:review -->/g)).toHaveLength(1);
   });
 });

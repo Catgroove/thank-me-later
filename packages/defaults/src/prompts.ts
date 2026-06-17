@@ -3,7 +3,9 @@
 // no tml-side detection, so the pipeline works in any language (ARCHITECTURE). Kept pure
 // and snapshot-tested; the Steps are thin wrappers that pass these to `ctx.agent.run`.
 
+import type { ReviewThread } from "@tml/core";
 import type { Finding } from "./review/synthesize.ts";
+import { renderThread } from "./review/threads.ts";
 
 export const formatPrompt =
   "Format this repository using its own formatter (discover it from the project config). " +
@@ -196,6 +198,61 @@ export const branchNameSchema = {
     branch: { type: "string" },
   },
   required: ["branch"],
+  additionalProperties: false,
+} as const;
+
+// --- respond-comments: reconcile unresolved review threads ------------------------------------
+
+/** 👍 on one of tml's own findings — apply the proposed change in place. */
+export function respondFixPrompt(thread: ReviewThread): string {
+  return (
+    "A reviewer approved (👍) the suggestion in this review thread you opened. Apply the proposed " +
+    "change in place. Double-check it's still correct against the current code, prefer the " +
+    "smallest correct root-cause fix, and do not add code comments explaining the change. " +
+    "Summarise what you changed in one short line.\n\n" +
+    renderThread(thread)
+  );
+}
+
+/** A reply on one of tml's own findings — interpret the instruction and act if it's enough. */
+export function interpretReplyPrompt(thread: ReviewThread): string {
+  return (
+    "A reviewer replied to this review thread you opened. Interpret their instruction and act on " +
+    "it if you have enough to act (apply the change in place). If you applied the change or it " +
+    'needs nothing further, set status to "resolved"; if you need more from the human, set status ' +
+    'to "insufficient". Put a one-line reply to post on the thread in `note`. Do not add code ' +
+    "comments explaining the change.\n\n" +
+    renderThread(thread)
+  );
+}
+
+/** A human's / another bot's thread — classify and respond; never resolve it (tml didn't open it). */
+export function classifyThreadPrompt(thread: ReviewThread): string {
+  return (
+    "Respond to this review thread that tml did not open (a human's or another bot's). If the " +
+    "latest comment asks for a clear, safe fix, apply it in place and reference it; otherwise " +
+    "answer the question or give a short justification. Put the reply to post in `reply`. Do not " +
+    "resolve the thread and do not add code comments explaining the change.\n\n" +
+    renderThread(thread)
+  );
+}
+
+/** Schema for the reply-interpretation result: did tml resolve the thread, and what to post. */
+export const replyActionSchema = {
+  type: "object",
+  properties: {
+    status: { type: "string", enum: ["resolved", "insufficient"] },
+    note: { type: "string" },
+  },
+  required: ["status", "note"],
+  additionalProperties: false,
+} as const;
+
+/** Schema for the human-thread classification result: the reply to post. */
+export const humanReplySchema = {
+  type: "object",
+  properties: { reply: { type: "string" } },
+  required: ["reply"],
   additionalProperties: false,
 } as const;
 

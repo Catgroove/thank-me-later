@@ -32,6 +32,9 @@ export type {
   Mergeable,
   OpenPullRequestInput,
   PullRequest,
+  Reactions,
+  ReviewComment,
+  ReviewDecision,
   ReviewThread,
 } from "./providers/forge.ts";
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";

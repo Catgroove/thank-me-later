@@ -12,6 +12,8 @@ const pr: PullRequest = {
   body: "b",
   state: "open",
   mergeable: "mergeable",
+  reviewDecision: null,
+  headSha: "headsha",
   checks: [],
   threads: [],
 };

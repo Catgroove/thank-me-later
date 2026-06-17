@@ -8,18 +8,38 @@ import type { Pending } from "../pending.ts";
 
 export type Mergeable = "mergeable" | "conflicted" | "unknown";
 
+/** The repo owner's aggregate review verdict on a PR; `null` when no review has been submitted. */
+export type ReviewDecision = "approved" | "changes_requested" | "review_required" | null;
+
 export interface CheckRun {
   readonly name: string;
   readonly status: "queued" | "in_progress" | "completed";
   readonly conclusion: "success" | "failure" | "neutral" | "cancelled" | null;
 }
 
+/** 👍/👎 tallies on a single comment; the thread root's reactions carry the ack signal. */
+export interface Reactions {
+  readonly thumbsUp: number;
+  readonly thumbsDown: number;
+}
+
+export interface ReviewComment {
+  readonly author: string;
+  readonly body: string;
+  readonly reactions: Reactions;
+}
+
 export interface ReviewThread {
   readonly id: string;
   readonly path?: string;
+  /** Anchor line in the file; absent for thread-less/general comments. */
+  readonly line?: number;
+  /** Root comment body — may carry tml's `tml:finding` marker. */
   readonly body: string;
   readonly resolved: boolean;
-  readonly comments: { author: string; body: string }[];
+  /** GitHub marks a thread outdated once a later commit moved the lines it anchored to. */
+  readonly isOutdated?: boolean;
+  readonly comments: ReviewComment[];
 }
 
 export interface PullRequest {
@@ -31,6 +51,10 @@ export interface PullRequest {
   readonly body: string;
   readonly state: "open" | "closed" | "merged";
   readonly mergeable: Mergeable;
+  /** The owner's aggregate review verdict — respected by the merge gate. */
+  readonly reviewDecision: ReviewDecision;
+  /** SHA of the PR's head commit — what `review` anchors its threads and resume marker to. */
+  readonly headSha: string;
   readonly checks: CheckRun[];
   readonly threads: ReviewThread[];
 }
@@ -50,4 +74,23 @@ export interface Forge {
   getPullRequest(prNumber: number): Promise<PullRequest>;
   /** Cheap and pollable — the ci-wait loop calls this through `until`. */
   getChecks(prNumber: number): Pending<CheckRun[]>;
+
+  /** Replace the PR body — used for the delimited `tml:review` block. */
+  updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void>;
+  /** Post a new line-anchored review thread (tml's own finding), anchored to `commitSha`. */
+  createReviewThread(input: {
+    prNumber: number;
+    path: string;
+    line: number;
+    body: string;
+    commitSha: string;
+  }): Promise<ReviewThread>;
+  /** Reply to any existing thread (tml's, a human's, a bot's). */
+  replyToThread(input: { threadId: string; body: string }): Promise<void>;
+  /** Resolve a thread tml is allowed to resolve (its own). */
+  resolveThread(threadId: string): Promise<void>;
+  /** Submit a COMMENT review tied to a commit — the "don't re-review" resume marker. */
+  submitReview(input: { prNumber: number; commitSha: string; body: string }): Promise<void>;
+  /** SHA of tml's most recent submitted review, or `null` if none. */
+  lastReviewedSha(prNumber: number): Promise<string | null>;
 }

@@ -102,23 +102,29 @@ function label(severity: Severity): string {
 function renderFinding(f: Finding): string {
   const loc = f.location ? ` \`${f.location}\`` : "";
   const text = `${label(f.severity)}${loc} ${f.title} — ${f.detail}`;
-  // `auto-fix` findings were handed to the fix pass, so they read as already handled; the rest
-  // are left for the human, with `ask-user` ones called out as needing a decision.
+  // `auto-fix` findings were handed to the fix pass, so they read as already handled. `ask-user`
+  // findings are not rendered here — they live as their own resolvable review threads on the PR.
   if (f.action === "auto-fix") return `- ~~${text}~~ ✅ fixed`;
-  if (f.action === "ask-user") return `- ${text} _(needs your decision)_`;
   return `- ${text}`;
 }
 
 /** Fold the passes into the `reviewSummary` markdown. Above the fold: a blocking banner (if
  *  any), the risk, a one-line tally, and the fixes applied. The full per-phase breakdown is
- *  tucked into a collapsible `<details>` so the PR body stays scannable. Deterministic. */
-export function summarize(passes: readonly ReviewPass[], fixSummary: string): string {
+ *  tucked into a collapsible `<details>` so the PR body stays scannable. Deterministic.
+ *
+ *  `openThreads` is the count of unresolved tml threads on the PR — the `ask-user` findings live
+ *  there now, so the "needs your decision" tally points at the threads, not at a body list. */
+export function summarize(
+  passes: readonly ReviewPass[],
+  fixSummary: string,
+  openThreads = 0,
+): string {
   const all = passes.flatMap((p) => p.result.findings);
   const blocked = passes.some((p) => p.result.verdict === "block");
   const fixes = fixSummary.trim();
 
   const fixed = all.filter((f) => f.action === "auto-fix").length;
-  const decide = all.filter((f) => f.action === "ask-user").length;
+  const decide = openThreads;
   const info = all.filter((f) => f.action === "no-op").length;
 
   const head: string[] = [];
@@ -134,21 +140,26 @@ export function summarize(passes: readonly ReviewPass[], fixSummary: string): st
 
   const tally = [
     fixed > 0 ? `✅ ${fixed} fixed` : null,
-    decide > 0 ? `⚠️ ${decide} ${decide === 1 ? "needs" : "need"} your decision` : null,
+    decide > 0
+      ? `⚠️ ${decide} ${decide === 1 ? "thread needs" : "threads need"} your decision`
+      : null,
     info > 0 ? `ℹ️ ${info} informational` : null,
   ].filter((s): s is string => s !== null);
   if (tally.length > 0) head.push(tally.join(" · "), "");
   if (fixes.length > 0) head.push(`**Fixes applied:** ${fixes}`, "");
 
-  // The full, per-phase breakdown — collapsed by default.
+  // The full, per-phase breakdown — collapsed by default. `ask-user` findings are excluded here;
+  // they become their own review threads, so the dashboard summarizes auto-fixes + informational
+  // notes and the headline tally points at the threads that need a decision.
   const body: string[] = [];
   for (const pass of passes) {
-    if (pass.result.findings.length === 0 && pass.result.verdict !== "block") continue;
+    const shown = pass.result.findings.filter((f) => f.action !== "ask-user");
+    if (shown.length === 0 && pass.result.verdict !== "block") continue;
     body.push(`### ${pass.title}`);
-    if (pass.result.findings.length === 0) {
+    if (shown.length === 0) {
       body.push("- Blocking verdict returned without specific findings.");
     } else {
-      for (const f of pass.result.findings) body.push(renderFinding(f));
+      for (const f of shown) body.push(renderFinding(f));
     }
     body.push("");
   }
@@ -160,4 +171,30 @@ export function summarize(passes: readonly ReviewPass[], fixSummary: string): st
     lines.push("No findings.");
   }
   return lines.join("\n").trim();
+}
+
+// --- The delimited PR-body block --------------------------------------------------------------
+// `review` keeps its headline + dashboard inside an HTML-comment-delimited region so re-runs
+// replace only that region and never clobber a human's prose (or each other). The markers are
+// invisible in rendered Markdown.
+
+export const REVIEW_BLOCK_START = "<!-- tml:review -->";
+export const REVIEW_BLOCK_END = "<!-- /tml:review -->";
+
+/** Wrap a review summary in the delimited block. */
+export function reviewBlock(summary: string): string {
+  return `${REVIEW_BLOCK_START}\n${summary}\n${REVIEW_BLOCK_END}`;
+}
+
+/** Replace the delimited region in `body` with `block`, or append it when none exists yet. */
+export function replaceReviewBlock(body: string, block: string): string {
+  const start = body.indexOf(REVIEW_BLOCK_START);
+  const end = body.indexOf(REVIEW_BLOCK_END);
+  if (start !== -1 && end !== -1 && end > start) {
+    const before = body.slice(0, start);
+    const after = body.slice(end + REVIEW_BLOCK_END.length);
+    return `${before}${block}${after}`.trim();
+  }
+  const base = body.trim();
+  return base.length > 0 ? `${base}\n\n${block}` : block;
 }

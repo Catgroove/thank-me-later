@@ -14,10 +14,13 @@ import {
   type Git,
   type GitStatus,
   type Harness,
+  type Mergeable,
   type OpenPullRequestInput,
   type Pending,
   type PullRequest,
   type RebaseResult,
+  type ReviewDecision,
+  type ReviewThread,
   until,
 } from "@tml/core";
 
@@ -110,32 +113,108 @@ export class FakeForge implements Forge {
   /** When set, `findPullRequest` returns this (the idempotent-skip path). */
   existing: PullRequest | null = null;
   checks: CheckRun[] = [{ name: "ci", status: "completed", conclusion: "success" }];
+
+  // Scriptable snapshot state that `getPullRequest` returns and the merge gate / loop read.
+  threads: ReviewThread[] = [];
+  reviewDecision: ReviewDecision = null;
+  mergeable: Mergeable = "mergeable";
+  headShaValue = "headsha";
+  bodyValue = "";
+  /** The resume marker `review`'s delta gate compares against `headSha`. */
+  lastReviewedShaValue: string | null = null;
+
+  // Recorded write calls, for assertions.
+  readonly bodyUpdates: { prNumber: number; body: string }[] = [];
+  readonly createdThreads: {
+    prNumber: number;
+    path: string;
+    line: number;
+    body: string;
+    commitSha: string;
+  }[] = [];
+  readonly replies: { threadId: string; body: string }[] = [];
+  readonly resolved: string[] = [];
+  readonly reviews: { prNumber: number; commitSha: string; body: string }[] = [];
+
   private nextNumber = 1;
+  private nextThreadId = 1;
+
+  private snapshotFor(number: number, head: string, title: string, body: string): PullRequest {
+    return {
+      number,
+      url: `https://forge.test/pr/${number}`,
+      head,
+      base: "main",
+      title,
+      body,
+      state: "open",
+      mergeable: this.mergeable,
+      reviewDecision: this.reviewDecision,
+      headSha: this.headShaValue,
+      checks: this.checks,
+      threads: this.threads,
+    };
+  }
 
   findPullRequest(_head: string): Promise<PullRequest | null> {
     return Promise.resolve(this.existing);
   }
   openPullRequest(input: OpenPullRequestInput): Promise<PullRequest> {
     this.opened.push(input);
+    this.bodyValue = input.body;
     const number = this.nextNumber++;
-    return Promise.resolve({
-      number,
-      url: `https://forge.test/pr/${number}`,
-      head: input.head,
-      base: input.base,
-      title: input.title,
-      body: input.body,
-      state: "open",
-      mergeable: "mergeable",
-      checks: this.checks,
-      threads: [],
-    });
+    return Promise.resolve(this.snapshotFor(number, input.head, input.title, input.body));
   }
   getPullRequest(prNumber: number): Promise<PullRequest> {
-    return Promise.reject(new Error(`fake forge stores no PR #${prNumber}`));
+    return Promise.resolve(this.snapshotFor(prNumber, "feat/x", "title", this.bodyValue));
   }
   getChecks(_prNumber: number): Pending<CheckRun[]> {
     return settled(this.checks);
+  }
+
+  updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void> {
+    this.bodyUpdates.push(input);
+    this.bodyValue = input.body;
+    return Promise.resolve();
+  }
+  createReviewThread(input: {
+    prNumber: number;
+    path: string;
+    line: number;
+    body: string;
+    commitSha: string;
+  }): Promise<ReviewThread> {
+    this.createdThreads.push(input);
+    const thread: ReviewThread = {
+      id: `RT_${this.nextThreadId++}`,
+      path: input.path,
+      line: input.line,
+      body: input.body,
+      resolved: false,
+      comments: [{ author: "tml", body: input.body, reactions: { thumbsUp: 0, thumbsDown: 0 } }],
+    };
+    return Promise.resolve(thread);
+  }
+  replyToThread(input: { threadId: string; body: string }): Promise<void> {
+    this.replies.push(input);
+    return Promise.resolve();
+  }
+  resolveThread(threadId: string): Promise<void> {
+    this.resolved.push(threadId);
+    // Reflect the resolution in the snapshot a later step (merge-gate) reads.
+    const i = this.threads.findIndex((t) => t.id === threadId);
+    if (i !== -1) {
+      const t = this.threads[i];
+      if (t !== undefined) this.threads[i] = { ...t, resolved: true };
+    }
+    return Promise.resolve();
+  }
+  submitReview(input: { prNumber: number; commitSha: string; body: string }): Promise<void> {
+    this.reviews.push(input);
+    return Promise.resolve();
+  }
+  lastReviewedSha(_prNumber: number): Promise<string | null> {
+    return Promise.resolve(this.lastReviewedShaValue);
   }
 }
 

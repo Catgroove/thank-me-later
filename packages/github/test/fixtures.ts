@@ -8,12 +8,15 @@
 // The query strings live in src/queries.ts.
 
 import type {
+  AddThreadData,
   ChecksData,
   GhCheckNode,
   GhGraphQlResponse,
   GhPrListRow,
   GhPullRequestNode,
   GhReviewThreadNode,
+  LastReviewData,
+  PrIdData,
   SnapshotData,
 } from "../src/map.ts";
 
@@ -71,14 +74,19 @@ export const statusContextPending: GhCheckNode = {
 
 // --- Review threads -------------------------------------------------------------
 
+/** No reactions on a comment — the common case. */
+const noReactions = { reactionGroups: [] as const };
+
 export const threadUnresolved: GhReviewThreadNode = {
   id: "RT_unresolved",
   isResolved: false,
+  isOutdated: false,
   path: "src/app.ts",
+  line: 12,
   comments: {
     nodes: [
-      { author: { login: "reviewer" }, body: "nit: rename this" },
-      { author: { login: "author" }, body: "done" },
+      { author: { login: "reviewer" }, body: "nit: rename this", ...noReactions },
+      { author: { login: "author" }, body: "done", ...noReactions },
     ],
   },
 };
@@ -86,9 +94,32 @@ export const threadUnresolved: GhReviewThreadNode = {
 export const threadResolved: GhReviewThreadNode = {
   id: "RT_resolved",
   isResolved: true,
+  isOutdated: false,
   path: null,
+  line: null,
   comments: {
-    nodes: [{ author: null, body: "general comment" }],
+    nodes: [{ author: null, body: "general comment", ...noReactions }],
+  },
+};
+
+/** A thumbs-up'd thread root — exercises the reaction mapping. */
+export const threadThumbsUp: GhReviewThreadNode = {
+  id: "RT_thumbsup",
+  isResolved: false,
+  isOutdated: true,
+  path: "src/x.ts",
+  line: 3,
+  comments: {
+    nodes: [
+      {
+        author: { login: "tml" },
+        body: "<!-- tml:finding key=abc --> consider extracting this",
+        reactionGroups: [
+          { content: "THUMBS_UP", reactors: { totalCount: 1 } },
+          { content: "THUMBS_DOWN", reactors: { totalCount: 0 } },
+        ],
+      },
+    ],
   },
 };
 
@@ -107,6 +138,8 @@ export const prOpen: GhPullRequestNode = {
   body: "Does x.",
   state: "OPEN",
   mergeable: "MERGEABLE",
+  reviewDecision: "REVIEW_REQUIRED",
+  headRefOid: "headsha000000000000000000000000000000aaa",
   commits: {
     nodes: [
       {
@@ -128,6 +161,8 @@ export const prConflicted: GhPullRequestNode = {
   body: "Does y.",
   state: "OPEN",
   mergeable: "CONFLICTING",
+  reviewDecision: "CHANGES_REQUESTED",
+  headRefOid: "headsha000000000000000000000000000000bbb",
   commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [checkFailure] } } } }] },
   reviewThreads: { nodes: [] },
 };
@@ -141,6 +176,8 @@ export const prMerged: GhPullRequestNode = {
   body: "Does z.",
   state: "MERGED",
   mergeable: "UNKNOWN",
+  reviewDecision: null,
+  headRefOid: "headsha000000000000000000000000000000ccc",
   commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
   reviewThreads: { nodes: [] },
 };
@@ -180,3 +217,53 @@ export const prListEmpty: GhPrListRow[] = [];
 // --- `gh pr create` stdout ------------------------------------------------------
 
 export const prCreateOutput = "https://github.com/acme/widget/pull/42\n";
+
+// --- Thread / review mutation + lookup responses --------------------------------
+
+export const prIdResponse: GhGraphQlResponse<PrIdData> = {
+  data: { repository: { pullRequest: { id: "PR_node_42" } } },
+};
+
+/** Viewer reviewed twice; the newest (last) commit is the resume marker. */
+export const lastReviewResponse: GhGraphQlResponse<LastReviewData> = {
+  data: {
+    repository: {
+      pullRequest: {
+        reviews: {
+          nodes: [
+            { viewerDidAuthor: true, commit: { oid: "oldsha" } },
+            { viewerDidAuthor: false, commit: { oid: "someoneelse" } },
+            { viewerDidAuthor: true, commit: { oid: "newsha" } },
+          ],
+        },
+      },
+    },
+  },
+};
+
+export const lastReviewEmpty: GhGraphQlResponse<LastReviewData> = {
+  data: { repository: { pullRequest: { reviews: { nodes: [] } } } },
+};
+
+export const addThreadResponse: GhGraphQlResponse<AddThreadData> = {
+  data: {
+    addPullRequestReviewThread: {
+      thread: {
+        id: "RT_new",
+        isResolved: false,
+        isOutdated: false,
+        path: "src/x.ts",
+        line: 9,
+        comments: {
+          nodes: [
+            {
+              author: { login: "tml" },
+              body: "<!-- tml:finding key=k1 --> detail",
+              ...noReactions,
+            },
+          ],
+        },
+      },
+    },
+  },
+};

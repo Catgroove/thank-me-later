@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentResult } from "@tml/core";
+import type { AgentResult, PullRequest } from "@tml/core";
 import { reviewStep } from "../src/steps/review.ts";
 import { architectureSchema, findingsSchema } from "../src/prompts.ts";
-import { FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
+import { findingKey, findingMarker } from "../src/review/threads.ts";
+import { FakeForge, FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
 /** A scripted review-pass reply: structured `output` against the findings schema. */
 function pass(findings: unknown[], extra: Record<string, unknown> = {}): AgentResult {
@@ -13,17 +14,43 @@ function summaryOf(result: unknown): string {
   return (result as { reviewSummary: string }).reviewSummary;
 }
 
+/** A minimal open PR the review step reads (number + body are all it touches). */
+function prWith(body: string): PullRequest {
+  return {
+    number: 5,
+    url: "https://forge.test/pr/5",
+    head: "feat/x",
+    base: "main",
+    title: "t",
+    body,
+    state: "open",
+    mergeable: "mergeable",
+    reviewDecision: null,
+    headSha: "headsha",
+    checks: [],
+    threads: [],
+  };
+}
+
+/** The five clean passes (context understanding, architecture proceed, three empty). */
+function cleanPasses(): AgentResult[] {
+  return [
+    pass([], { understanding: "adds a --json flag" }),
+    pass([], { verdict: "proceed" }),
+    pass([]),
+    pass([]),
+    pass([]),
+  ];
+}
+
 describe("review step", () => {
   test("runs five read-only passes in order, the architecture pass requiring a verdict", async () => {
     const agent = new FakeHarness();
-    agent.responses.push(
-      pass([], { understanding: "adds a --json flag" }),
-      pass([], { verdict: "proceed" }),
-      pass([]),
-      pass([]),
-      pass([]),
-    );
-    const { ctx, asks } = fakeCtx({ agent, reads: { prBody: "Adds --json output" } });
+    agent.responses.push(...cleanPasses());
+    const { ctx, asks } = fakeCtx({
+      agent,
+      reads: { prBody: "Adds --json output", pullRequest: prWith("body") },
+    });
 
     const result = await reviewStep().run(ctx);
 
@@ -43,11 +70,52 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx } = fakeCtx({ agent, reads: { prBody: "body", pullRequest: prWith("body") } });
 
     await reviewStep().run(ctx);
 
     for (const task of agent.tasks.slice(1)) expect(task).toContain("MARKER-INTENT");
+  });
+
+  test("writes the review block into the PR body, replacing only that region on re-run", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(...cleanPasses());
+    const forge = new FakeForge();
+    const body = "Human prose.\n\n<!-- tml:review -->stale<!-- /tml:review -->\n\nMore prose.";
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith(body) },
+    });
+
+    await reviewStep().run(ctx);
+
+    expect(forge.bodyUpdates).toHaveLength(1);
+    const updated = forge.bodyUpdates[0]?.body ?? "";
+    expect(updated).toContain("Human prose."); // human prose preserved
+    expect(updated).toContain("More prose.");
+    expect(updated).not.toContain("stale"); // the old block is gone
+    expect(updated).toContain("<!-- tml:review -->");
+    expect(updated).toContain("**Risk: low**");
+    // the block appears exactly once (not duplicated)
+    expect(updated.match(/<!-- tml:review -->/g)).toHaveLength(1);
+  });
+
+  test("appends a fresh block when the body has none yet", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(...cleanPasses());
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("Just the description.") },
+    });
+
+    await reviewStep().run(ctx);
+
+    const updated = forge.bodyUpdates[0]?.body ?? "";
+    expect(updated.startsWith("Just the description.")).toBe(true);
+    expect(updated).toContain("<!-- tml:review -->");
   });
 
   test("a block verdict surfaces a banner + high risk without halting or asking", async () => {
@@ -61,7 +129,10 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx, asks } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx, asks } = fakeCtx({
+      agent,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
 
     const summary = summaryOf(await reviewStep().run(ctx));
 
@@ -83,7 +154,7 @@ describe("review step", () => {
       pass([]),
       { ok: true, summary: "fixed the off-by-one" }, // the fix pass reply
     );
-    const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx } = fakeCtx({ agent, reads: { prBody: "body", pullRequest: prWith("body") } });
 
     const summary = summaryOf(await reviewStep().run(ctx));
 
@@ -92,7 +163,43 @@ describe("review step", () => {
     expect(summary).toContain("fixed the off-by-one");
   });
 
-  test("lists ask-user findings in the summary but never fixes them", async () => {
+  test("posts a located ask-user finding as a marked thread, counts it, and never lists it", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      pass([]),
+      pass([], { verdict: "proceed" }),
+      pass([
+        {
+          severity: "warning",
+          action: "ask-user",
+          title: "Confirm contract",
+          detail: "intent?",
+          location: "src/a.ts:12",
+        },
+      ]),
+      pass([]),
+      pass([]),
+    );
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    const summary = summaryOf(await reviewStep().run(ctx));
+
+    expect(agent.tasks).toHaveLength(5); // no fix pass ran
+    expect(forge.createdThreads).toHaveLength(1);
+    expect(forge.createdThreads[0]?.path).toBe("src/a.ts");
+    expect(forge.createdThreads[0]?.line).toBe(12);
+    expect(forge.createdThreads[0]?.body).toContain("tml:finding");
+    expect(forge.createdThreads[0]?.commitSha).toBe("headsha");
+    expect(summary).toContain("thread needs your decision"); // counted in the headline tally
+    expect(summary).not.toContain("Confirm contract"); // not listed — it lives as the thread
+  });
+
+  test("skips (and logs) an ask-user finding with no path:line location", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([]),
@@ -103,12 +210,88 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const forge = new FakeForge();
+    const { ctx, logs } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    await reviewStep().run(ctx);
+
+    expect(forge.createdThreads).toHaveLength(0);
+    expect(logs.some((l) => l.includes("no path:line"))).toBe(true);
+  });
+
+  test("never re-posts a finding that already has a thread (open or resolved)", async () => {
+    const agent = new FakeHarness();
+    const finding = {
+      severity: "warning" as const,
+      action: "ask-user" as const,
+      title: "Confirm contract",
+      detail: "intent?",
+      location: "src/a.ts:12",
+    };
+    agent.responses.push(
+      pass([]),
+      pass([], { verdict: "proceed" }),
+      pass([finding]),
+      pass([]),
+      pass([]),
+    );
+    const forge = new FakeForge();
+    // The PR already carries a resolved tml thread for this very finding.
+    const key = findingKey(finding);
+    const pr = prWith("body");
+    pr.threads.push({
+      id: "RT_old",
+      body: findingMarker(key),
+      resolved: true,
+      comments: [
+        { author: "tml", body: findingMarker(key), reactions: { thumbsUp: 0, thumbsDown: 0 } },
+      ],
+    });
+    const { ctx } = fakeCtx({ agent, forge, reads: { prBody: "body", pullRequest: pr } });
 
     const summary = summaryOf(await reviewStep().run(ctx));
 
-    expect(agent.tasks).toHaveLength(5); // no fix pass ran
-    expect(summary).toContain("Confirm contract");
+    expect(forge.createdThreads).toHaveLength(0); // deduped — never re-post a settled finding
+    expect(summary).not.toContain("thread needs your decision"); // the existing one is resolved
+  });
+
+  test("delta gate: runs zero passes and posts nothing when the head is already reviewed", async () => {
+    const agent = new FakeHarness();
+    const forge = new FakeForge();
+    forge.lastReviewedShaValue = "headsha"; // == prWith().headSha
+    const { ctx, logs } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("Description.") },
+    });
+
+    await reviewStep().run(ctx);
+
+    expect(agent.tasks).toHaveLength(0); // no passes, no fix pass
+    expect(forge.createdThreads).toHaveLength(0);
+    expect(forge.reviews).toHaveLength(0); // the resume marker is not re-advanced
+    expect(forge.bodyUpdates).toHaveLength(1); // but the body block is still refreshed
+    expect(logs.some((l) => l.includes("no new commits"))).toBe(true);
+  });
+
+  test("advances the resume marker via submitReview tied to the head", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(...cleanPasses());
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    await reviewStep().run(ctx);
+
+    expect(forge.reviews).toHaveLength(1);
+    expect(forge.reviews[0]?.commitSha).toBe("headsha");
   });
 
   test("reverts and warns when a read-only pass modifies the worktree", async () => {
@@ -127,8 +310,12 @@ describe("review step", () => {
     }
     const git = new DirtyingGit();
     const agent = new FakeHarness();
-    agent.responses.push(pass([]), pass([], { verdict: "proceed" }), pass([]), pass([]), pass([]));
-    const { ctx, logs } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+    agent.responses.push(...cleanPasses());
+    const { ctx, logs } = fakeCtx({
+      agent,
+      git,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
 
     await reviewStep().run(ctx);
 
@@ -139,8 +326,12 @@ describe("review step", () => {
   test("does not revert when the read-only passes leave the worktree untouched", async () => {
     const git = new FakeGit(); // status stays clean across both checks
     const agent = new FakeHarness();
-    agent.responses.push(pass([]), pass([], { verdict: "proceed" }), pass([]), pass([]), pass([]));
-    const { ctx } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+    agent.responses.push(...cleanPasses());
+    const { ctx } = fakeCtx({
+      agent,
+      git,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
 
     await reviewStep().run(ctx);
 

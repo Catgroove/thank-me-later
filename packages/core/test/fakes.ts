@@ -3,7 +3,13 @@
 // Provider is real (see git.test.ts), so it has no fake here.
 
 import { AbortError, type Pending } from "../src/pending.ts";
-import type { CheckRun, Forge, OpenPullRequestInput, PullRequest } from "../src/providers/forge.ts";
+import type {
+  CheckRun,
+  Forge,
+  OpenPullRequestInput,
+  PullRequest,
+  ReviewThread,
+} from "../src/providers/forge.ts";
 import type {
   AgentProgress,
   AgentResult,
@@ -56,6 +62,8 @@ export class FakeForge implements Forge {
       body: input.body,
       state: "open",
       mergeable: "mergeable",
+      reviewDecision: null,
+      headSha: "0".repeat(40),
       checks: this.checks,
       threads: [],
     };
@@ -71,6 +79,34 @@ export class FakeForge implements Forge {
 
   getChecks(): Pending<CheckRun[]> {
     return pendingAfter(this.checksSettleAfter, this.checks);
+  }
+
+  // The engine never drives these write paths; stub them to satisfy the interface.
+  updatePullRequestBody(): Promise<void> {
+    return Promise.resolve();
+  }
+  createReviewThread(input: { prNumber: number; path: string; line: number; body: string }) {
+    const thread: ReviewThread = {
+      id: "RT_fake",
+      path: input.path,
+      line: input.line,
+      body: input.body,
+      resolved: false,
+      comments: [{ author: "", body: input.body, reactions: { thumbsUp: 0, thumbsDown: 0 } }],
+    };
+    return Promise.resolve(thread);
+  }
+  replyToThread(): Promise<void> {
+    return Promise.resolve();
+  }
+  resolveThread(): Promise<void> {
+    return Promise.resolve();
+  }
+  submitReview(): Promise<void> {
+    return Promise.resolve();
+  }
+  lastReviewedSha(): Promise<string | null> {
+    return Promise.resolve(null);
   }
 }
 

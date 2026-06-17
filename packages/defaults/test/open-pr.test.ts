@@ -7,11 +7,10 @@ const reads = {
   branchName: "tml/ship-abc1234",
   prTitle: "fix: off-by-one in pager",
   prBody: "Fixes the boundary case.",
-  reviewSummary: "fixed an off-by-one",
 };
 
 describe("open-pr step", () => {
-  test("pushes the branch and opens the PR, folding the review into the body", async () => {
+  test("pushes the branch and opens the PR with describe's title + body (no review fold)", async () => {
     const git = new FakeGit();
     const forge = new FakeForge();
     const { ctx } = fakeCtx({ git, forge, reads });
@@ -25,22 +24,12 @@ describe("open-pr step", () => {
       head: "tml/ship-abc1234",
       base: "main",
       title: "fix: off-by-one in pager",
-      body: "Fixes the boundary case.\n\n## Review\n\nfixed an off-by-one",
+      body: "Fixes the boundary case.", // review hasn't run yet — nothing folded in
     });
     expect(result.pullRequest.number).toBe(1);
   });
 
-  test("omits the review section when the summary is empty", async () => {
-    const git = new FakeGit();
-    const forge = new FakeForge();
-    const { ctx } = fakeCtx({ git, forge, reads: { ...reads, reviewSummary: "" } });
-
-    await openPrStep().run(ctx);
-
-    expect(forge.opened[0]?.body).toBe("Fixes the boundary case.");
-  });
-
-  test("is idempotent: an existing PR is reused after pushing local commits", async () => {
+  test("is idempotent: an existing open PR is reused after pushing local commits", async () => {
     const git = new FakeGit();
     const forge = new FakeForge();
     const prior: PullRequest = {
@@ -52,6 +41,8 @@ describe("open-pr step", () => {
       body: "prior body",
       state: "open",
       mergeable: "mergeable",
+      reviewDecision: null,
+      headSha: "headsha",
       checks: [],
       threads: [],
     };
@@ -79,6 +70,8 @@ describe("open-pr step", () => {
         body: "prior body",
         state,
         mergeable: "unknown",
+        reviewDecision: null,
+        headSha: "headsha",
         checks: [],
         threads: [],
       };

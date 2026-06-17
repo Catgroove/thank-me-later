@@ -5,7 +5,15 @@
 // This file owns the *input contract*: the raw shapes of `gh api graphql` /
 // `gh pr list` output that the provider feeds in.
 
-import type { CheckRun, Mergeable, PullRequest, ReviewThread } from "@tml/core";
+import type {
+  CheckRun,
+  Mergeable,
+  PullRequest,
+  Reactions,
+  ReviewComment,
+  ReviewDecision,
+  ReviewThread,
+} from "@tml/core";
 
 // --- Raw `gh` response shapes (pre-mapping) -------------------------------------
 
@@ -29,16 +37,31 @@ export interface GhStatusContextNode {
 
 export type GhCheckNode = GhCheckRunNode | GhStatusContextNode;
 
+/** A `reactionGroups` entry: the emoji content + how many users reacted with it. */
+export interface GhReactionGroup {
+  readonly content: string;
+  readonly reactors: { readonly totalCount: number };
+}
+
+export interface GhReviewCommentNode {
+  readonly author: { readonly login: string } | null;
+  readonly body: string;
+  readonly reactionGroups: readonly GhReactionGroup[];
+}
+
 export interface GhReviewThreadNode {
   readonly id: string;
   readonly isResolved: boolean;
+  readonly isOutdated: boolean;
   readonly path: string | null;
-  readonly comments: {
-    readonly nodes: readonly {
-      readonly author: { readonly login: string } | null;
-      readonly body: string;
-    }[];
-  };
+  readonly line: number | null;
+  readonly comments: { readonly nodes: readonly GhReviewCommentNode[] };
+}
+
+/** A viewer-authored review, tied to the commit it reviewed (the `lastReviewedSha` source). */
+export interface GhReviewNode {
+  readonly viewerDidAuthor: boolean;
+  readonly commit: { readonly oid: string } | null;
 }
 
 /** The last commit on the PR carries the status-check rollup. */
@@ -61,6 +84,9 @@ export interface GhPullRequestNode {
   readonly state: string;
   /** MERGEABLE | CONFLICTING | UNKNOWN */
   readonly mergeable: string;
+  /** APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | null */
+  readonly reviewDecision: string | null;
+  readonly headRefOid: string;
   readonly commits: { readonly nodes: readonly GhCommitNode[] };
   readonly reviewThreads: { readonly nodes: readonly GhReviewThreadNode[] };
 }
@@ -80,6 +106,23 @@ export interface ChecksData {
   readonly repository: {
     readonly pullRequest: { readonly commits: { readonly nodes: readonly GhCommitNode[] } };
   };
+}
+
+/** `data` shape of the PR-node-id lookup (input to the thread/review mutations). */
+export interface PrIdData {
+  readonly repository: { readonly pullRequest: { readonly id: string } };
+}
+
+/** `data` shape of the viewer-reviews query (lastReviewedSha). */
+export interface LastReviewData {
+  readonly repository: {
+    readonly pullRequest: { readonly reviews: { readonly nodes: readonly GhReviewNode[] } };
+  };
+}
+
+/** `data` shape of the add-thread mutation. */
+export interface AddThreadData {
+  readonly addPullRequestReviewThread: { readonly thread: GhReviewThreadNode };
 }
 
 /** A row of `gh pr list --json number,state`. */
@@ -111,6 +154,20 @@ export function mapMergeable(raw: string): Mergeable {
       return "conflicted";
     default:
       return "unknown"; // includes "UNKNOWN"
+  }
+}
+
+/** PR reviewDecision enum → core. Null (no review yet) and unknowns coarsen to `null`. */
+export function mapReviewDecision(raw: string | null): ReviewDecision {
+  switch (raw) {
+    case "APPROVED":
+      return "approved";
+    case "CHANGES_REQUESTED":
+      return "changes_requested";
+    case "REVIEW_REQUIRED":
+      return "review_required";
+    default:
+      return null;
   }
 }
 
@@ -192,13 +249,38 @@ export function mapChecks(commits: { readonly nodes: readonly GhCommitNode[] }):
   return (rollup?.contexts.nodes ?? []).map(mapCheckNode);
 }
 
+/** Tally a comment's `reactionGroups` into 👍/👎 counts; other emoji are ignored. */
+export function mapReactions(groups: readonly GhReactionGroup[]): Reactions {
+  const count = (content: string) =>
+    groups.find((g) => g.content === content)?.reactors.totalCount ?? 0;
+  return { thumbsUp: count("THUMBS_UP"), thumbsDown: count("THUMBS_DOWN") };
+}
+
+export function mapReviewComment(node: GhReviewCommentNode): ReviewComment {
+  return {
+    author: node.author?.login ?? "",
+    body: node.body,
+    reactions: mapReactions(node.reactionGroups),
+  };
+}
+
 export function mapReviewThread(node: GhReviewThreadNode): ReviewThread {
-  const comments = node.comments.nodes.map((c) => ({
-    author: c.author?.login ?? "",
-    body: c.body,
-  }));
-  const base = { id: node.id, body: comments[0]?.body ?? "", resolved: node.isResolved, comments };
-  return node.path === null ? base : { ...base, path: node.path };
+  const comments = node.comments.nodes.map(mapReviewComment);
+  const base: ReviewThread = {
+    id: node.id,
+    body: comments[0]?.body ?? "",
+    resolved: node.isResolved,
+    isOutdated: node.isOutdated,
+    comments,
+  };
+  const withPath = node.path === null ? base : { ...base, path: node.path };
+  return node.line === null ? withPath : { ...withPath, line: node.line };
+}
+
+/** The SHA of the viewer's most recent submitted review, or `null` when there is none. */
+export function mapLastReviewedSha(reviews: readonly GhReviewNode[]): string | null {
+  const mine = reviews.filter((r) => r.viewerDidAuthor && r.commit !== null);
+  return mine.at(-1)?.commit?.oid ?? null;
 }
 
 export function mapPullRequest(node: GhPullRequestNode): PullRequest {
@@ -211,6 +293,8 @@ export function mapPullRequest(node: GhPullRequestNode): PullRequest {
     body: node.body,
     state: mapState(node.state),
     mergeable: mapMergeable(node.mergeable),
+    reviewDecision: mapReviewDecision(node.reviewDecision),
+    headSha: node.headRefOid,
     checks: mapChecks(node.commits),
     threads: node.reviewThreads.nodes.map(mapReviewThread),
   };

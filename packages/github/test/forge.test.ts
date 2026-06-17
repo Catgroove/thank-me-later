@@ -7,12 +7,16 @@ import type { GhRunner } from "../src/gh.ts";
 import { createGitHubForge as fromIndex } from "../src/index.ts";
 import * as pkg from "../src/index.ts";
 import {
+  addThreadResponse,
   checksAllDone,
   checksEmpty,
   checksPending,
   checksWithFailure,
+  lastReviewEmpty,
+  lastReviewResponse,
   prConflicted,
   prCreateOutput,
+  prIdResponse,
   prListEmpty,
   prListHit,
   snapshotConflictedResponse,
@@ -31,7 +35,15 @@ function fakeRunner(handler: (args: string[]) => string): { run: GhRunner; calls
 
 const isPrList = (args: string[]) => args[0] === "pr" && args[1] === "list";
 const isPrCreate = (args: string[]) => args[0] === "pr" && args[1] === "create";
+const isPrEdit = (args: string[]) => args[0] === "pr" && args[1] === "edit";
 const isSnapshot = (args: string[]) => args.some((a) => a.includes("reviewThreads"));
+const has = (args: string[], needle: string) => args.some((a) => a.includes(needle));
+const isPrIdQuery = (args: string[]) => has(args, "pullRequest(number: $number) { id }");
+const isAddThread = (args: string[]) => has(args, "addPullRequestReviewThread(input");
+const isAddReply = (args: string[]) => has(args, "addPullRequestReviewThreadReply");
+const isResolve = (args: string[]) => has(args, "resolveReviewThread");
+const isAddReview = (args: string[]) => has(args, "addPullRequestReview(input");
+const isLastReview = (args: string[]) => has(args, "reviews(last:");
 
 function forgeWith(handler: (args: string[]) => string): {
   forge: ReturnType<typeof createGitHubForge>;
@@ -180,6 +192,96 @@ describe("getChecks polling", () => {
     const run: GhRunner = () => Promise.resolve(JSON.stringify(checksWithFailure));
     const result = await createGitHubForge("/repo", { run }).getChecks(42).poll();
     expect(result.done).toBe(true);
+  });
+});
+
+describe("updatePullRequestBody", () => {
+  test("edits the PR body via gh pr edit", async () => {
+    const { forge, calls } = forgeWith((args) => {
+      if (isPrEdit(args)) return "";
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+    await forge.updatePullRequestBody({ prNumber: 42, body: "new body" });
+    expect(calls[0]).toEqual(["pr", "edit", "42", "--body", "new body"]);
+  });
+});
+
+describe("createReviewThread", () => {
+  test("looks up the PR node id, posts the thread, and maps it back", async () => {
+    const { forge, calls } = forgeWith((args) => {
+      if (isPrIdQuery(args)) return JSON.stringify(prIdResponse);
+      if (isAddThread(args)) return JSON.stringify(addThreadResponse);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    const thread = await forge.createReviewThread({
+      prNumber: 42,
+      path: "src/x.ts",
+      line: 9,
+      body: "<!-- tml:finding key=k1 --> detail",
+      commitSha: "deadbeef",
+    });
+
+    expect(thread.id).toBe("RT_new");
+    expect(thread.line).toBe(9);
+    const mutation = calls.find(isAddThread);
+    expect(mutation).toContain("prId=PR_node_42");
+    expect(mutation).toContain("line=9");
+    expect(mutation).toContain("-F"); // line is sent as a numeric variable
+  });
+});
+
+describe("replyToThread / resolveThread", () => {
+  test("replyToThread sends the thread id and body", async () => {
+    const { forge, calls } = forgeWith((args) => {
+      if (isAddReply(args)) return "{}";
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+    await forge.replyToThread({ threadId: "RT_1", body: "fixed in abc123" });
+    const call = calls.find(isAddReply);
+    expect(call).toContain("threadId=RT_1");
+    expect(call).toContain("body=fixed in abc123");
+  });
+
+  test("resolveThread sends the thread id", async () => {
+    const { forge, calls } = forgeWith((args) => {
+      if (isResolve(args)) return "{}";
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+    await forge.resolveThread("RT_2");
+    expect(calls.find(isResolve)).toContain("threadId=RT_2");
+  });
+});
+
+describe("submitReview", () => {
+  test("looks up the PR node id and submits a COMMENT review tied to the commit", async () => {
+    const { forge, calls } = forgeWith((args) => {
+      if (isPrIdQuery(args)) return JSON.stringify(prIdResponse);
+      if (isAddReview(args)) return "{}";
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+    await forge.submitReview({ prNumber: 42, commitSha: "headsha", body: "Reviewed." });
+    const call = calls.find(isAddReview);
+    expect(call).toContain("prId=PR_node_42");
+    expect(call).toContain("commit=headsha");
+  });
+});
+
+describe("lastReviewedSha", () => {
+  test("returns the newest viewer-authored review commit", async () => {
+    const { forge } = forgeWith((args) => {
+      if (isLastReview(args)) return JSON.stringify(lastReviewResponse);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+    expect(await forge.lastReviewedSha(42)).toBe("newsha");
+  });
+
+  test("null when there is no viewer review", async () => {
+    const { forge } = forgeWith((args) => {
+      if (isLastReview(args)) return JSON.stringify(lastReviewEmpty);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+    expect(await forge.lastReviewedSha(42)).toBe(null);
   });
 });
 

@@ -5,8 +5,10 @@ import {
   mapChecks,
   mapCheckStatus,
   mapConclusion,
+  mapLastReviewedSha,
   mapMergeable,
   mapPullRequest,
+  mapReviewDecision,
   mapReviewThread,
   mapState,
 } from "../src/map.ts";
@@ -14,12 +16,15 @@ import {
   checkInProgress,
   checkSkipped,
   checkSuccess,
+  lastReviewEmpty,
+  lastReviewResponse,
   prConflicted,
   prMerged,
   prOpen,
   statusContextPending,
   statusContextSuccess,
   threadResolved,
+  threadThumbsUp,
   threadUnresolved,
 } from "./fixtures.ts";
 
@@ -40,6 +45,29 @@ describe("mapMergeable", () => {
     expect(mapMergeable("CONFLICTING")).toBe("conflicted");
     expect(mapMergeable("UNKNOWN")).toBe("unknown");
     expect(mapMergeable("anything-else")).toBe("unknown");
+  });
+});
+
+describe("mapReviewDecision", () => {
+  test("all branches", () => {
+    expect(mapReviewDecision("APPROVED")).toBe("approved");
+    expect(mapReviewDecision("CHANGES_REQUESTED")).toBe("changes_requested");
+    expect(mapReviewDecision("REVIEW_REQUIRED")).toBe("review_required");
+    expect(mapReviewDecision(null)).toBe(null);
+    expect(mapReviewDecision("WHATEVER")).toBe(null);
+  });
+});
+
+describe("mapLastReviewedSha", () => {
+  test("returns the newest viewer-authored review's commit", () => {
+    expect(mapLastReviewedSha(lastReviewResponse.data.repository.pullRequest.reviews.nodes)).toBe(
+      "newsha",
+    );
+  });
+  test("null when the viewer has never reviewed", () => {
+    expect(mapLastReviewedSha(lastReviewEmpty.data.repository.pullRequest.reviews.nodes)).toBe(
+      null,
+    );
   });
 });
 
@@ -112,28 +140,39 @@ describe("mapChecks", () => {
   });
 });
 
+const noReactions = { thumbsUp: 0, thumbsDown: 0 };
+
 describe("mapReviewThread", () => {
-  test("unresolved thread with a path and multiple comments", () => {
+  test("unresolved thread with a path, line, and multiple comments", () => {
     expect(mapReviewThread(threadUnresolved)).toEqual({
       id: "RT_unresolved",
       path: "src/app.ts",
+      line: 12,
       body: "nit: rename this",
       resolved: false,
+      isOutdated: false,
       comments: [
-        { author: "reviewer", body: "nit: rename this" },
-        { author: "author", body: "done" },
+        { author: "reviewer", body: "nit: rename this", reactions: noReactions },
+        { author: "author", body: "done", reactions: noReactions },
       ],
     });
   });
-  test("resolved thread: null path omitted, null author becomes empty string", () => {
+  test("resolved thread: null path/line omitted, null author becomes empty string", () => {
     const mapped = mapReviewThread(threadResolved);
     expect(mapped).toEqual({
       id: "RT_resolved",
       body: "general comment",
       resolved: true,
-      comments: [{ author: "", body: "general comment" }],
+      isOutdated: false,
+      comments: [{ author: "", body: "general comment", reactions: noReactions }],
     });
     expect("path" in mapped).toBe(false);
+    expect("line" in mapped).toBe(false);
+  });
+  test("maps 👍/👎 reaction groups onto the root comment", () => {
+    const mapped = mapReviewThread(threadThumbsUp);
+    expect(mapped.comments[0]?.reactions).toEqual({ thumbsUp: 1, thumbsDown: 0 });
+    expect(mapped.isOutdated).toBe(true);
   });
 });
 
@@ -148,6 +187,8 @@ describe("mapPullRequest", () => {
       body: "Does x.",
       state: "open",
       mergeable: "mergeable",
+      reviewDecision: "review_required",
+      headSha: "headsha000000000000000000000000000000aaa",
       checks: [
         { name: "build", status: "completed", conclusion: "success" },
         { name: "ci/legacy", status: "completed", conclusion: "success" },

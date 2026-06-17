@@ -309,6 +309,12 @@ function makeContext(
     },
     getPullRequest: (prNumber) => base.getPullRequest(prNumber),
     getChecks: (prNumber) => base.getChecks(prNumber),
+    updatePullRequestBody: (input) => base.updatePullRequestBody(input),
+    createReviewThread: (input) => base.createReviewThread(input),
+    replyToThread: (input) => base.replyToThread(input),
+    resolveThread: (threadId) => base.resolveThread(threadId),
+    submitReview: (input) => base.submitReview(input),
+    lastReviewedSha: (prNumber) => base.lastReviewedSha(prNumber),
   };
 
   return {

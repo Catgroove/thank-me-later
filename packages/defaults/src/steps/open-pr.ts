@@ -1,23 +1,18 @@
 // `open-pr` — push the branch and open the PR. The work and the fixes were already committed by the
 // commit Steps before this point, so `open-pr` no longer commits; it pushes what's there and opens
-// the PR. Idempotent: if an open PR already exists for this head branch, reuse it and skip the
-// open, so a re-run never double-opens (a merged/closed PR is spent — open a fresh one). The title
-// + body come from `describe`; the review summary is
-// folded into the body here. The base is the repo's default branch.
+// the PR. It now runs *before* `review`, so it opens with `describe`'s title + body only — review
+// hasn't run yet and folds nothing in (it writes its own delimited body block once it has). The
+// step is idempotent: if an open PR already exists for this head branch, reuse it and skip the open,
+// so a re-run never double-opens (a merged/closed PR is spent — open a fresh one). The base is the
+// repo's default branch.
 
 import { defineStep, type Step } from "@tml/core";
-import { branchName, prBody, prTitle, pullRequest, reviewSummary } from "../artifacts.ts";
-
-/** Append the review summary to the description body as its own section, when there is one. */
-function withReview(body: string, review: string): string {
-  const notes = review.trim();
-  return notes.length > 0 ? `${body}\n\n## Review\n\n${notes}` : body;
-}
+import { branchName, prBody, prTitle, pullRequest } from "../artifacts.ts";
 
 export function openPrStep(): Step {
   return defineStep({
     name: "open-pr",
-    consumes: [branchName, prTitle, prBody, reviewSummary],
+    consumes: [branchName, prTitle, prBody],
     produces: [pullRequest],
     async run(ctx) {
       const head = ctx.read(branchName);
@@ -34,7 +29,7 @@ export function openPrStep(): Step {
 
       const base = await ctx.git.defaultBranch();
       const title = ctx.read(prTitle);
-      const body = withReview(ctx.read(prBody), ctx.read(reviewSummary));
+      const body = ctx.read(prBody);
       const pr = await ctx.forge.openPullRequest({ head, base, title, body });
       return { pullRequest: pr };
     },

@@ -3,10 +3,17 @@ import { describe, expect, test } from "bun:test";
 import {
   CHECKS_QUERY,
   checksArgs,
+  createThreadArgs,
+  lastReviewArgs,
   prCreateArgs,
+  prEditBodyArgs,
   prListArgs,
+  prNodeIdArgs,
+  replyThreadArgs,
+  resolveThreadArgs,
   snapshotArgs,
   SNAPSHOT_QUERY,
+  submitReviewArgs,
 } from "../src/queries.ts";
 
 describe("argv builders", () => {
@@ -69,6 +76,38 @@ describe("argv builders", () => {
   });
 });
 
+describe("mutation + lookup argv builders", () => {
+  test("prNodeIdArgs / lastReviewArgs pass the number through graphql", () => {
+    expect(prNodeIdArgs(42)).toContain("number=42");
+    expect(lastReviewArgs(7)).toContain("number=7");
+  });
+
+  test("createThreadArgs sends the body/path as strings and the line as a numeric var", () => {
+    const args = createThreadArgs({ prId: "PR_1", path: "src/x.ts", line: 9, body: "detail" });
+    expect(args).toContain("prId=PR_1");
+    expect(args).toContain("path=src/x.ts");
+    expect(args).toContain("body=detail");
+    // line follows a -F flag (numeric), not -f.
+    expect(args[args.indexOf("line=9") - 1]).toBe("-F");
+  });
+
+  test("replyThreadArgs / resolveThreadArgs carry the thread id", () => {
+    expect(replyThreadArgs({ threadId: "RT_1", body: "hi" })).toEqual(
+      expect.arrayContaining(["threadId=RT_1", "body=hi"]),
+    );
+    expect(resolveThreadArgs("RT_2")).toContain("threadId=RT_2");
+  });
+
+  test("submitReviewArgs carries the PR id and the commit", () => {
+    const args = submitReviewArgs({ prId: "PR_1", commit: "abc", body: "ok" });
+    expect(args).toEqual(expect.arrayContaining(["prId=PR_1", "commit=abc", "body=ok"]));
+  });
+
+  test("prEditBodyArgs builds a gh pr edit call", () => {
+    expect(prEditBodyArgs(42, "new body")).toEqual(["pr", "edit", "42", "--body", "new body"]);
+  });
+});
+
 describe("queries", () => {
   test("both queries select the status-check rollup", () => {
     expect(SNAPSHOT_QUERY).toContain("statusCheckRollup");
@@ -78,5 +117,11 @@ describe("queries", () => {
   test("only the snapshot query selects review threads (the checks poll stays light)", () => {
     expect(SNAPSHOT_QUERY).toContain("reviewThreads");
     expect(CHECKS_QUERY).not.toContain("reviewThreads");
+  });
+
+  test("the snapshot query selects the new thread/PR fields", () => {
+    for (const field of ["reviewDecision", "headRefOid", "isOutdated", "line", "reactionGroups"]) {
+      expect(SNAPSHOT_QUERY).toContain(field);
+    }
   });
 });

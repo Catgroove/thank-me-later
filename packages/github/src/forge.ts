@@ -3,18 +3,42 @@
 // builder through `run`, parses JSON, and hands it to a mapper. The only state is
 // the (injectable) runner.
 
-import type { CheckRun, Forge, OpenPullRequestInput, Pending, PullRequest } from "@tml/core";
+import type {
+  CheckRun,
+  Forge,
+  OpenPullRequestInput,
+  Pending,
+  PullRequest,
+  ReviewThread,
+} from "@tml/core";
 
 import { defaultRunner, type GhRunner } from "./gh.ts";
 import {
+  type AddThreadData,
   type ChecksData,
   type GhGraphQlResponse,
   type GhPrListRow,
+  type LastReviewData,
   mapChecks,
+  mapLastReviewedSha,
   mapPullRequest,
+  mapReviewThread,
+  type PrIdData,
   type SnapshotData,
 } from "./map.ts";
-import { checksArgs, prCreateArgs, prListArgs, snapshotArgs } from "./queries.ts";
+import {
+  checksArgs,
+  createThreadArgs,
+  lastReviewArgs,
+  prCreateArgs,
+  prEditBodyArgs,
+  prListArgs,
+  prNodeIdArgs,
+  replyThreadArgs,
+  resolveThreadArgs,
+  snapshotArgs,
+  submitReviewArgs,
+} from "./queries.ts";
 
 export interface GitHubForgeOptions {
   /** Override the `gh` runner; tests inject a fake returning canned JSON. */
@@ -36,6 +60,12 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
   async function getPullRequest(prNumber: number): Promise<PullRequest> {
     const res = JSON.parse(await run(snapshotArgs(prNumber))) as GhGraphQlResponse<SnapshotData>;
     return mapPullRequest(res.data.repository.pullRequest);
+  }
+
+  // The thread/review mutations key off the PR's GraphQL node id, not its number.
+  async function prNodeId(prNumber: number): Promise<string> {
+    const res = JSON.parse(await run(prNodeIdArgs(prNumber))) as GhGraphQlResponse<PrIdData>;
+    return res.data.repository.pullRequest.id;
   }
 
   return {
@@ -65,6 +95,47 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
           return pending ? { done: false } : { done: true, value: checks };
         },
       };
+    },
+
+    async updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void> {
+      await run(prEditBodyArgs(input.prNumber, input.body));
+    },
+
+    async createReviewThread(input: {
+      prNumber: number;
+      path: string;
+      line: number;
+      body: string;
+    }): Promise<ReviewThread> {
+      // GitHub anchors a new thread to the PR's latest commit (== the head `review` reviewed).
+      const prId = await prNodeId(input.prNumber);
+      const args = createThreadArgs({ prId, path: input.path, line: input.line, body: input.body });
+      const res = JSON.parse(await run(args)) as GhGraphQlResponse<AddThreadData>;
+      return mapReviewThread(res.data.addPullRequestReviewThread.thread);
+    },
+
+    async replyToThread(input: { threadId: string; body: string }): Promise<void> {
+      await run(replyThreadArgs(input));
+    },
+
+    async resolveThread(threadId: string): Promise<void> {
+      await run(resolveThreadArgs(threadId));
+    },
+
+    async submitReview(input: {
+      prNumber: number;
+      commitSha: string;
+      body: string;
+    }): Promise<void> {
+      const prId = await prNodeId(input.prNumber);
+      await run(submitReviewArgs({ prId, commit: input.commitSha, body: input.body }));
+    },
+
+    async lastReviewedSha(prNumber: number): Promise<string | null> {
+      const res = JSON.parse(
+        await run(lastReviewArgs(prNumber)),
+      ) as GhGraphQlResponse<LastReviewData>;
+      return mapLastReviewedSha(res.data.repository.pullRequest.reviews.nodes);
     },
   };
 }
