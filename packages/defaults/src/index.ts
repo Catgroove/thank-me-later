@@ -1,6 +1,6 @@
 // @tml/defaults — the blessed default pipeline, shipped as just another Plugin built on the
 // same @tml/core primitives (ARCHITECTURE). The pipeline is
-//   branch → describe → commit(the change) → {format,lint,typecheck,test}+commit
+//   branch → describe → commit(the change) → rebase → {format,lint,typecheck,test}+commit
 //          → open-pr → review+commit → respond-comments+commit → push → ci-wait → merge-gate
 // assembled by the `tmlDefaults` Plugin (an injected-API `(tml) => …`). Steps and artifact
 // tokens are also exported so plugin authors can reuse or replace individual pieces. The plugin

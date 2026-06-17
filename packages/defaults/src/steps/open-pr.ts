@@ -1,7 +1,7 @@
-// `open-pr` — push the branch and open the PR. The work and the fixes were already committed by the
-// commit Steps before this point, so `open-pr` no longer commits; it pushes what's there and opens
-// the PR. It now runs *before* `review`, so it opens with `describe`'s title + body only — review
-// hasn't run yet and folds nothing in (it writes its own delimited body block once it has). The
+// `open-pr` — push the branch and open the PR after the pre-PR commits are in place. It no longer
+// commits; it pushes what's there and opens the PR. It now runs *before* `review`, so it opens with
+// `describe`'s title + body only — review hasn't run yet and folds nothing in (it writes its own
+// delimited body block once it has). The
 // step is idempotent: if an open PR already exists for this head branch, reuse it and skip the open,
 // so a re-run never double-opens (a merged/closed PR is spent — open a fresh one). The base is the
 // repo's default branch.
