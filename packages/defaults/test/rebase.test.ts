@@ -28,8 +28,28 @@ describe("rebase step", () => {
     const { ctx, logs } = fakeCtx({ git });
 
     expect(await rebaseStep().run(ctx)).toEqual(skip());
-    expect(git.calls).toEqual(["fetch main", "isAncestor origin/main HEAD"]);
+    expect(git.calls).toEqual([
+      "fetch main",
+      "isAncestor origin/main HEAD",
+      "isAncestor HEAD origin/main",
+    ]);
     expect(logs.some((l) => l.includes("already up to date"))).toBe(true);
+  });
+
+  test("cancels instead of opening an empty PR when HEAD already equals the base", async () => {
+    const git = divergedGit();
+    git.ancestry.set("origin/main..HEAD", true);
+    git.ancestry.set("HEAD..origin/main", true);
+    const { ctx } = fakeCtx({ git });
+
+    expect(await rebaseStep().run(ctx)).toEqual(
+      cancel("nothing to ship: this work is already in main"),
+    );
+    expect(git.calls).toEqual([
+      "fetch main",
+      "isAncestor origin/main HEAD",
+      "isAncestor HEAD origin/main",
+    ]);
   });
 
   test("rebases cleanly and continues when commits remain", async () => {
@@ -73,9 +93,10 @@ describe("rebase step", () => {
     expect(logs.some((l) => l.includes("agent resolved"))).toBe(true);
   });
 
-  test("aborts and throws when the agent reports failure", async () => {
+  test("aborts and throws when the agent reports failure with the rebase still in progress", async () => {
     const git = divergedGit();
     git.rebaseResult = { status: "conflict", files: ["a.ts"] };
+    git.rebaseInProgressValue = true;
     const agent = new FakeHarness();
     agent.result = { ok: false, summary: "too hard" };
     const { ctx } = fakeCtx({ git, agent });
@@ -86,6 +107,23 @@ describe("rebase step", () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain("could not resolve");
     expect(git.calls).toContain("rebaseAbort");
+  });
+
+  test("does not mask the failure when the agent already ended the rebase", async () => {
+    const git = divergedGit();
+    git.rebaseResult = { status: "conflict", files: ["a.ts"] };
+    git.rebaseInProgressValue = false;
+    const agent = new FakeHarness();
+    agent.result = { ok: false, summary: "aborted" };
+    const { ctx } = fakeCtx({ git, agent });
+
+    const error = await rebaseStep()
+      .run(ctx)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("could not resolve");
+    expect((error as Error).message).toContain("inspect the branch");
+    expect(git.calls).not.toContain("rebaseAbort");
   });
 
   test("aborts and throws when the agent leaves the rebase in progress", async () => {

@@ -30,8 +30,12 @@ export function rebaseStep(): Step {
         return skip();
       }
 
-      // Already building on top of the latest base — nothing to replay.
+      // Already building on top of the latest base — nothing to replay. If the refs are equal,
+      // there are no branch commits left to ship, so stop before opening an empty PR.
       if (await ctx.git.isAncestor(baseRef, "HEAD")) {
+        if (await ctx.git.isAncestor("HEAD", baseRef)) {
+          return cancel(`nothing to ship: this work is already in ${base}`);
+        }
         ctx.log(`already up to date with ${baseRef}`);
         return skip();
       }
@@ -42,12 +46,15 @@ export function rebaseStep(): Step {
       if (result.status === "conflict") {
         ctx.log(`conflicts in ${result.files.join(", ")}; asking the agent to resolve`);
         const reply = await ctx.agent.run(rebaseConflictPrompt(baseRef, result.files));
-        if (!reply.ok || (await ctx.git.rebaseInProgress())) {
-          await ctx.git.rebaseAbort();
+        const stillRebasing = await ctx.git.rebaseInProgress();
+        if (!reply.ok || stillRebasing) {
+          if (stillRebasing) await ctx.git.rebaseAbort();
+          const guidance = stillRebasing
+            ? "Your branch is untouched — rebase it manually, then re-run tml ship."
+            : "The rebase is no longer in progress; inspect the branch, then re-run tml ship.";
           throw new Error(
             `rebase onto ${baseRef} hit conflicts the agent could not resolve ` +
-              `(${result.files.join(", ")}). Your branch is untouched — rebase it manually, then ` +
-              "re-run tml ship.",
+              `(${result.files.join(", ")}). ${guidance}`,
           );
         }
         ctx.log("agent resolved the rebase conflicts");
