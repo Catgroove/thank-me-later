@@ -19,7 +19,13 @@ export {
   type Selection,
   type Tml,
 } from "./assembly.ts";
-export { type CommitResult, createGit, type Git, type GitStatus } from "./providers/git.ts";
+export {
+  type CommitResult,
+  createGit,
+  type Git,
+  type GitStatus,
+  type RebaseResult,
+} from "./providers/git.ts";
 export type {
   CheckRun,
   Forge,

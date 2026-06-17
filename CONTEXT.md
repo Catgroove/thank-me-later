@@ -201,3 +201,17 @@ human is watching; a Forge comment that *suspends* the Run when headless. A repl
 from a person or an agent — becomes a Re-entry that resumes the Run at the suspended
 Step. An unanswered Ask is simply a suspended Run, not a failure.
 _Avoid_: Prompt, confirm, question
+
+**Review thread**:
+The unit of work for the reentrant review loop: a line-anchored (`path:line`), resolvable
+conversation on the PR, modelled in core as `ReviewThread` (`resolved` boolean +
+`comments[]`). It is deliberately *only* the resolvable, anchored kind — not top-level PR
+conversation comments and not the PR description, neither of which has a `resolved` state, so
+"drive to resolution" is undefined for them. The loop reconciles **every unresolved thread
+regardless of author** (tml's own escalated findings, a human's, another bot's like
+coderabbit); author is irrelevant to *whether* a thread is worked and relevant only to *who
+may resolve* it. tml's own `ask-user` findings are posted *as* review threads anchored to the
+finding's `location`. A thread is driven to one of three outcomes per Run: fixed (commit +
+resolve), answered-with-justification, or left open for a human.
+_Avoid_: Comment (too broad — that includes the non-resolvable surfaces), note, finding (a
+finding is review output; a thread is its posted, resolvable form on the PR)

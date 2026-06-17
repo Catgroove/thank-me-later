@@ -23,8 +23,10 @@ export function openPrStep(): Step {
       const head = ctx.read(branchName);
 
       // Push before the idempotency check so a re-run that created new local commits updates the
-      // already-open PR instead of silently leaving those commits only in the checkout.
-      await ctx.git.push({ branch: head }); // push the feature branch we ship under
+      // already-open PR instead of silently leaving those commits only in the checkout. Force (with
+      // lease) because `rebase` may have rewritten history; it's a safe fast-forward otherwise and
+      // refuses rather than clobbers if the remote head moved under us.
+      await ctx.git.push({ branch: head, force: true }); // push the feature branch we ship under
 
       // Reuse only an open PR. A merged/closed PR for this head is spent — open a fresh one.
       const existing = await ctx.forge.findPullRequest(head);

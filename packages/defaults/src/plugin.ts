@@ -1,7 +1,9 @@
 // `tmlDefaults` — the blessed default pipeline as an injected-API Plugin. In order:
-//   branch → describe → commit(the change) → {format,lint,typecheck,test}+commit
+//   branch → describe → commit(the change) → rebase → {format,lint,typecheck,test}+commit
 //          → review+commit → open-pr → ci-wait
-// The work lands as a clean history — your change, then tml's fixes in their own commits.
+// The work lands as a clean history — your change, then tml's fixes in their own commits. `rebase`
+// runs once the change is committed (clean worktree) so the checks, review, and CI all see the
+// freshly fetched base; turn it off with `disable: ["rebase"]` in tml.json.
 // It registers no Providers (the host wires Forge + Harness by name) and names no models
 // (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
 // (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
@@ -16,6 +18,7 @@ import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts"
 import { commitGroup, commitStep } from "./steps/commit.ts";
 import { describeStep } from "./steps/describe.ts";
 import { openPrStep } from "./steps/open-pr.ts";
+import { rebaseStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
 
 const BRANCH_MODES: readonly BranchMode[] = ["ai", "auto", "require"];
@@ -25,6 +28,7 @@ export const tmlDefaults: Plugin = (tml) => {
     branchStep(asBranchMode(tml.config.branch)),
     describeStep(),
     commitStep("commit-change", prTitle), // your work, subject = the PR title
+    rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
     ...commitGroup(formatStep(), lintStep(), typecheckStep(), testStep()),
     ...commitGroup(reviewStep()),
     openPrStep(),

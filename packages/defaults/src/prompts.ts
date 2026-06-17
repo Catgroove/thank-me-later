@@ -167,6 +167,21 @@ export const architectureSchema = {
   required: ["findings", "verdict"],
 } as const;
 
+/**
+ * The prompt handed to the agent when a rebase stops on conflicts. The rebase is in progress; the
+ * agent resolves the markers, stages each file, and runs `git rebase --continue` to completion.
+ */
+export function rebaseConflictPrompt(onto: string, files: readonly string[]): string {
+  return (
+    `A git rebase onto ${onto} has stopped on merge conflicts. Resolve it to completion.\n\n` +
+    `Conflicted files:\n${files.map((f) => `- ${f}`).join("\n")}\n\n` +
+    "Resolve every conflict marker (<<<<<<< ======= >>>>>>>), preserving the intent of both this " +
+    "branch's changes and the upstream changes. Stage each resolved file with `git add <file>`, " +
+    "then run `git rebase --continue`. If further conflicts surface, resolve those too. Do not " +
+    "touch files that have no conflicts, and do not abort the rebase."
+  );
+}
+
 /** The prompt for the AI branch name; the harness returns it as structured `{ branch }`. */
 export const branchNamePrompt =
   "Suggest a single git branch name for the work being shipped (compute the diff yourself " +

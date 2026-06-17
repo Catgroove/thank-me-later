@@ -60,6 +60,7 @@ describe("assembleShipConfig", () => {
       "branch",
       "describe",
       "commit-change",
+      "rebase",
       "format",
       "lint",
       "typecheck",
