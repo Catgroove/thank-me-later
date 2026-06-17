@@ -101,41 +101,63 @@ function label(severity: Severity): string {
 
 function renderFinding(f: Finding): string {
   const loc = f.location ? ` \`${f.location}\`` : "";
-  const hint = f.action === "ask-user" ? " _(needs your decision)_" : "";
-  return `- ${label(f.severity)}${loc} ${f.title} — ${f.detail}${hint}`;
+  const text = `${label(f.severity)}${loc} ${f.title} — ${f.detail}`;
+  // `auto-fix` findings were handed to the fix pass, so they read as already handled; the rest
+  // are left for the human, with `ask-user` ones called out as needing a decision.
+  if (f.action === "auto-fix") return `- ~~${text}~~ ✅ fixed`;
+  if (f.action === "ask-user") return `- ${text} _(needs your decision)_`;
+  return `- ${text}`;
 }
 
-/** Fold the passes into the `reviewSummary` markdown: banner (if blocked), risk, per-phase
- *  sections, and the fixes applied. Deterministic — same input, same output. */
+/** Fold the passes into the `reviewSummary` markdown. Above the fold: a blocking banner (if
+ *  any), the risk, a one-line tally, and the fixes applied. The full per-phase breakdown is
+ *  tucked into a collapsible `<details>` so the PR body stays scannable. Deterministic. */
 export function summarize(passes: readonly ReviewPass[], fixSummary: string): string {
   const all = passes.flatMap((p) => p.result.findings);
-  const blockedPass = passes.find((p) => p.result.verdict === "block");
-  const blocked = blockedPass !== undefined;
-  const lines: string[] = [];
+  const blocked = passes.some((p) => p.result.verdict === "block");
+  const fixes = fixSummary.trim();
 
+  const fixed = all.filter((f) => f.action === "auto-fix").length;
+  const decide = all.filter((f) => f.action === "ask-user").length;
+  const info = all.filter((f) => f.action === "no-op").length;
+
+  const head: string[] = [];
   if (blocked) {
-    lines.push(
+    head.push(
       "> **Blocking concern (architecture & scope).** This change was flagged as fundamentally " +
-        `risky, out of scope, or too large to review safely — see the ${blockedPass.title} ` +
-        "section below before merging.",
+        "risky, out of scope, or too large to review safely — expand the full review below " +
+        "before merging.",
       "",
     );
   }
-  lines.push(`**Risk: ${riskOf(all, blocked)}**`, "");
+  head.push(`**Risk: ${riskOf(all, blocked)}**`, "");
 
+  const tally = [
+    fixed > 0 ? `✅ ${fixed} fixed` : null,
+    decide > 0 ? `⚠️ ${decide} ${decide === 1 ? "needs" : "need"} your decision` : null,
+    info > 0 ? `ℹ️ ${info} informational` : null,
+  ].filter((s): s is string => s !== null);
+  if (tally.length > 0) head.push(tally.join(" · "), "");
+  if (fixes.length > 0) head.push(`**Fixes applied:** ${fixes}`, "");
+
+  // The full, per-phase breakdown — collapsed by default.
+  const body: string[] = [];
   for (const pass of passes) {
     if (pass.result.findings.length === 0 && pass.result.verdict !== "block") continue;
-    lines.push(`### ${pass.title}`);
+    body.push(`### ${pass.title}`);
     if (pass.result.findings.length === 0) {
-      lines.push("- Blocking verdict returned without specific findings.");
+      body.push("- Blocking verdict returned without specific findings.");
     } else {
-      for (const f of pass.result.findings) lines.push(renderFinding(f));
+      for (const f of pass.result.findings) body.push(renderFinding(f));
     }
-    lines.push("");
+    body.push("");
   }
-  if (all.length === 0 && !blocked) lines.push("No findings.", "");
 
-  const fixes = fixSummary.trim();
-  lines.push("### Fixes applied", fixes.length > 0 ? fixes : "None.");
+  const lines = [...head];
+  if (body.length > 0) {
+    lines.push("<details>", "<summary>Full review</summary>", "", ...body, "</details>");
+  } else {
+    lines.push("No findings.");
+  }
   return lines.join("\n").trim();
 }

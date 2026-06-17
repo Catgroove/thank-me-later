@@ -89,11 +89,14 @@ describe("summarize", () => {
     ];
     const out = summarize(passes, "fixed the NPE");
     expect(out).toContain("**Risk: high**"); // critical present
+    expect(out).toContain("<details>"); // full breakdown is collapsible
     expect(out).toContain("### Architecture & scope");
     expect(out).toContain("Warning:");
     expect(out).toContain("Critical:");
-    expect(out).toContain("### Fixes applied");
-    expect(out).toContain("fixed the NPE");
+    expect(out).toContain("✅ 1 fixed"); // headline tally
+    expect(out).toContain("~~"); // the auto-fixed critical is struck through
+    expect(out).toContain("✅ fixed");
+    expect(out).toContain("**Fixes applied:** fixed the NPE");
     expect(out).not.toContain("### Context & intent"); // empty section omitted
   });
 
@@ -106,7 +109,7 @@ describe("summarize", () => {
     expect(out).toContain("**Risk: high**");
     expect(out).toContain("### Architecture & scope");
     expect(out).toContain("Blocking verdict returned without specific findings");
-    expect(out).toContain("None."); // no fixes applied
+    expect(out).not.toContain("**Fixes applied:**"); // nothing fixed → line omitted
   });
 
   test("ask-user findings are listed with a decision hint", () => {
