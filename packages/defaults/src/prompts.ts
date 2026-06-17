@@ -159,6 +159,14 @@ export const findingsSchema = {
   additionalProperties: false,
 } as const;
 
+/** The architecture pass's schema: the shared finding model plus a *required* `verdict`. Making
+ *  the verdict mandatory here (it is optional on `findingsSchema`, which the other passes share)
+ *  keeps the block gate from silently downgrading to non-blocking when the agent omits it. */
+export const architectureSchema = {
+  ...findingsSchema,
+  required: ["findings", "verdict"],
+} as const;
+
 /** The prompt for the AI branch name; the harness returns it as structured `{ branch }`. */
 export const branchNamePrompt =
   "Suggest a single git branch name for the work being shipped (compute the diff yourself " +

@@ -70,6 +70,12 @@ export class FakeGit implements Git {
     this.calls.push(`push ${opts.branch}`);
     return Promise.resolve();
   }
+  discardChanges(): Promise<void> {
+    this.calls.push("discardChanges");
+    this.stagedFiles = [];
+    this.unstagedFiles = [];
+    return Promise.resolve();
+  }
 }
 
 /** Settles to `value` on the first poll (immediate). */

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentResult } from "@tml/core";
 import { reviewStep } from "../src/steps/review.ts";
-import { findingsSchema } from "../src/prompts.ts";
-import { FakeHarness, fakeCtx } from "./fake-ctx.ts";
+import { architectureSchema, findingsSchema } from "../src/prompts.ts";
+import { FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
 /** A scripted review-pass reply: structured `output` against the findings schema. */
 function pass(findings: unknown[], extra: Record<string, unknown> = {}): AgentResult {
@@ -14,7 +14,7 @@ function summaryOf(result: unknown): string {
 }
 
 describe("review step", () => {
-  test("runs five read-only passes in order, each requesting the findings schema", async () => {
+  test("runs five read-only passes in order, the architecture pass requiring a verdict", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([], { understanding: "adds a --json flag" }),
@@ -28,7 +28,8 @@ describe("review step", () => {
     const result = await reviewStep().run(ctx);
 
     expect(agent.tasks).toHaveLength(5); // no fix pass — no auto-fix findings
-    for (let i = 0; i < 5; i++) expect(agent.opts[i]?.schema).toBe(findingsSchema);
+    expect(agent.opts[1]?.schema).toBe(architectureSchema); // architecture: verdict required
+    for (const i of [0, 2, 3, 4]) expect(agent.opts[i]?.schema).toBe(findingsSchema);
     expect(asks).toHaveLength(0); // the gate never calls ctx.ask
     expect(summaryOf(result)).toContain("**Risk: low**");
   });
@@ -37,7 +38,7 @@ describe("review step", () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([], { understanding: "MARKER-INTENT" }),
-      pass([]),
+      pass([], { verdict: "proceed" }),
       pass([]),
       pass([]),
       pass([]),
@@ -95,7 +96,7 @@ describe("review step", () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([]),
-      pass([]),
+      pass([], { verdict: "proceed" }),
       pass([
         { severity: "warning", action: "ask-user", title: "Confirm contract", detail: "intent?" },
       ]),
@@ -108,5 +109,41 @@ describe("review step", () => {
 
     expect(agent.tasks).toHaveLength(5); // no fix pass ran
     expect(summary).toContain("Confirm contract");
+  });
+
+  test("reverts and warns when a read-only pass modifies the worktree", async () => {
+    // The worktree is clean when review starts but dirty once the passes have run — i.e. a
+    // supposedly read-only pass edited a file despite the prompt.
+    class DirtyingGit extends FakeGit {
+      private statusCalls = 0;
+      override status() {
+        this.statusCalls += 1;
+        return Promise.resolve({
+          branch: this.currentBranchName,
+          staged: [],
+          unstaged: this.statusCalls > 1 ? ["rogue.ts"] : [],
+        });
+      }
+    }
+    const git = new DirtyingGit();
+    const agent = new FakeHarness();
+    agent.responses.push(pass([]), pass([], { verdict: "proceed" }), pass([]), pass([]), pass([]));
+    const { ctx, logs } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    expect(git.calls).toContain("discardChanges");
+    expect(logs.some((l) => l.toLowerCase().includes("modified the worktree"))).toBe(true);
+  });
+
+  test("does not revert when the read-only passes leave the worktree untouched", async () => {
+    const git = new FakeGit(); // status stays clean across both checks
+    const agent = new FakeHarness();
+    agent.responses.push(pass([]), pass([], { verdict: "proceed" }), pass([]), pass([]), pass([]));
+    const { ctx } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    expect(git.calls).not.toContain("discardChanges");
   });
 });

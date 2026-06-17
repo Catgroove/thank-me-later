@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   architecturePrompt,
+  architectureSchema,
   branchNamePrompt,
   branchNameSchema,
   contextPrompt,
@@ -94,6 +95,11 @@ describe("default pipeline prompts", () => {
       "ask-user",
       "no-op",
     ]);
+  });
+
+  test("architectureSchema requires a verdict so the block gate cannot silently downgrade", () => {
+    expect(architectureSchema.required).toEqual(["findings", "verdict"]);
+    expect(architectureSchema.properties.verdict.enum).toEqual(["proceed", "block"]);
   });
 
   test("prDescriptionPrompt embeds the reviewer notes; schema requires title and body", () => {
