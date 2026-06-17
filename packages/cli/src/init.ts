@@ -20,6 +20,8 @@ export interface InitDeps {
   write?: (path: string, content: string) => void;
   /** Line sink for user-facing output; defaults to console.log. */
   log?: (line: string) => void;
+  /** Error sink for failed scaffolding; defaults to console.error. */
+  error?: (line: string) => void;
 }
 
 const FILENAME = "tml.json";
@@ -40,16 +42,22 @@ export async function init(deps: InitDeps = {}): Promise<number> {
   const exists = deps.exists ?? existsSync;
   const write = deps.write ?? ((path, content) => writeFileSync(path, content, "utf8"));
   const log = deps.log ?? ((line) => console.log(line));
+  const error = deps.error ?? ((line) => console.error(line));
 
-  const target = join(findProjectRoot(cwd), FILENAME);
+  try {
+    const target = join(findProjectRoot(cwd), FILENAME);
 
-  if (exists(target) && deps.force !== true) {
-    log(`tml.json already exists at ${target}; use --force to overwrite.`);
+    if (exists(target) && deps.force !== true) {
+      log(`tml.json already exists at ${target}; use --force to overwrite.`);
+      return 1;
+    }
+
+    write(target, STARTER);
+    log(`✓ wrote ${target}`);
+    log("Run `tml ship` to ship your work.");
+    return 0;
+  } catch (caught) {
+    error(`tml init: ${caught instanceof Error ? caught.message : String(caught)}`);
     return 1;
   }
-
-  write(target, STARTER);
-  log(`✓ wrote ${target}`);
-  log("Run `tml ship` to ship your work.");
-  return 0;
 }

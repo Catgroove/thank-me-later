@@ -13,6 +13,11 @@ cd "$(dirname "$0")/.."
 version="$(bun -e 'console.log(require("./packages/cli/package.json").version)')"
 tag="v$version"
 
+if [ "$version" = "0.0.0" ]; then
+  echo "package version is 0.0.0 — refusing to publish the bootstrap version"
+  exit 0
+fi
+
 if gh release view "$tag" >/dev/null 2>&1; then
   echo "release $tag already exists — nothing to publish"
   exit 0

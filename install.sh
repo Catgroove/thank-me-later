@@ -49,7 +49,7 @@ echo "downloading ${asset}..."
 curl -fsSL "$url" -o "$tmp" ||
   err "could not download $url — no release asset for ${os}/${arch}? (check ${TML_VERSION:-latest})"
 
-chmod +x "$tmp"
+chmod 755 "$tmp"
 mkdir -p "$INSTALL_DIR"
 mv "$tmp" "$INSTALL_DIR/tml"
 trap - EXIT
@@ -57,7 +57,7 @@ trap - EXIT
 echo "Installed tml to $INSTALL_DIR/tml"
 
 # Nudge the user if the install dir isn't on PATH, so `tml` resolves in a new shell.
-case ":$PATH:" in
+case ":${PATH:-}:" in
   *":$INSTALL_DIR:"*) ;;
   *) echo "Note: $INSTALL_DIR is not on your PATH. Add it, e.g.:"
      echo "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;

@@ -92,4 +92,22 @@ describe("init", () => {
     expect(writtenContent).toBe(EXPECTED);
     expect(existsSync(join(dir, "tml.json"))).toBe(false); // the real fs was never written
   });
+
+  test("returns 1 with a concise error when writing fails", async () => {
+    const dir = tempRepo();
+    const errors: string[] = [];
+    const code = await init({
+      cwd: dir,
+      exists: () => false,
+      write: () => {
+        throw new Error("disk full");
+      },
+      log: () => {},
+      error: (line) => errors.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain("disk full");
+    expect(existsSync(join(dir, "tml.json"))).toBe(false);
+  });
 });
