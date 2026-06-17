@@ -9,6 +9,7 @@ import {
   type Renderer,
 } from "@tml/view";
 import { assembleShipConfig } from "./config.ts";
+import { init } from "./init.ts";
 import { loadTmlConfig } from "./load.ts";
 
 /** Seams, injected by tests; production uses the real config and engine against the checkout. */
@@ -84,9 +85,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
-  const verbose = rest.includes("--verbose") || rest.includes("-v");
-  if (command === "ship") return ship({ verbose });
-  console.error(`Unknown command: ${command ?? "(none)"}. Try: tml ship`);
+  if (command === "ship") {
+    const verbose = rest.includes("--verbose") || rest.includes("-v");
+    return ship({ verbose });
+  }
+  if (command === "init") {
+    const force = rest.includes("--force") || rest.includes("-f");
+    return init({ force });
+  }
+  console.error(`Unknown command: ${command ?? "(none)"}. Try: tml ship | tml init`);
   return 1;
 }
 
