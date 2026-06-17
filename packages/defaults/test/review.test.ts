@@ -259,7 +259,7 @@ describe("review step", () => {
     expect(summary).not.toContain("thread needs your decision"); // the existing one is resolved
   });
 
-  test("delta gate: runs zero passes and posts nothing when the head is already reviewed", async () => {
+  test("delta gate: runs zero passes and leaves the existing block untouched when already reviewed", async () => {
     const agent = new FakeHarness();
     const forge = new FakeForge();
     forge.lastReviewedShaValue = "headsha"; // == prWith().headSha
@@ -274,8 +274,32 @@ describe("review step", () => {
     expect(agent.tasks).toHaveLength(0); // no passes, no fix pass
     expect(forge.createdThreads).toHaveLength(0);
     expect(forge.reviews).toHaveLength(0); // the resume marker is not re-advanced
-    expect(forge.bodyUpdates).toHaveLength(1); // but the body block is still refreshed
+    expect(forge.bodyUpdates).toHaveLength(0); // the prior block is preserved, not rewritten
     expect(logs.some((l) => l.includes("no new commits"))).toBe(true);
+  });
+
+  test("a pass that returns no schema-valid findings is treated as empty, not fatal", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      pass([], { understanding: "intent" }),
+      pass([], { verdict: "proceed" }),
+      { ok: true, summary: "broke", output: "not a structured pass result" }, // correctness pass: garbage
+      pass([]),
+      pass([]),
+    );
+    const forge = new FakeForge();
+    const { ctx, logs } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    const summary = summaryOf(await reviewStep().run(ctx));
+
+    expect(agent.tasks).toHaveLength(5); // all five passes still ran
+    expect(forge.bodyUpdates).toHaveLength(1); // the run completed and wrote the block
+    expect(summary).toContain("**Risk: low**"); // the bad pass folded in as empty findings
+    expect(logs.some((l) => l.includes("no valid findings"))).toBe(true);
   });
 
   test("advances the resume marker via submitReview tied to the head", async () => {

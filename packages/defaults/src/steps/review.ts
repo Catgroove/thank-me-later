@@ -8,7 +8,7 @@
 //
 // `review` runs *after* `open-pr`, against the live PR:
 //   - Delta gate: if the PR head matches the last SHA tml reviewed, it runs zero passes — there's
-//     nothing new to review — and only refreshes the body block.
+//     nothing new to review — and leaves the prior body block untouched.
 //   - `ask-user` findings become resolvable, line-anchored review threads, each stamped with a
 //     `tml:finding` marker and skipped on re-runs if a thread already exists (open or resolved).
 //   - It writes its headline + dashboard into a delimited `tml:review` block on the PR body
@@ -43,14 +43,24 @@ import {
   parseLocation,
 } from "../review/threads.ts";
 
-/** Run one read-only review pass: structured reply against the given schema, validated. */
+/** Run one read-only review pass: structured reply against the given schema, validated. A pass
+ *  that fails to return schema-valid output (a flaky agent turn) is logged and treated as empty
+ *  rather than aborting the whole ship — the other passes and the rest of the pipeline proceed. */
 async function runPass(
   agent: Harness,
   prompt: string,
-  schema: object = findingsSchema,
+  schema: object,
+  log: (m: string) => void,
 ): Promise<PassResult> {
-  const result = await agent.run(prompt, { schema });
-  return parsePassResult(result.output);
+  try {
+    const result = await agent.run(prompt, { schema });
+    return parsePassResult(result.output);
+  } catch (err) {
+    log(
+      `review: a pass returned no valid findings (${(err as Error).message}); treating it as empty`,
+    );
+    return { findings: [] };
+  }
 }
 
 /** The set of files git reports as changed (staged or unstaged), for before/after comparison. */
@@ -79,14 +89,20 @@ async function runReview(
   prBodyText: string,
 ): Promise<{ passes: ReviewPass[]; fixSummary: string }> {
   const { agent } = ctx;
+  const log = (m: string) => ctx.log(m);
   const before = await ctx.git.status();
-  const context = await runPass(agent, contextPrompt(prBodyText));
+  const context = await runPass(agent, contextPrompt(prBodyText), findingsSchema, log);
   const understanding = context.understanding ?? "";
-  const architecture = await runPass(agent, architecturePrompt(understanding), architectureSchema);
-  const correctness = await runPass(agent, correctnessPrompt(understanding));
-  const design = await runPass(agent, designPrompt(understanding));
-  const micro = await runPass(agent, microPrompt(understanding));
-  await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+  const architecture = await runPass(
+    agent,
+    architecturePrompt(understanding),
+    architectureSchema,
+    log,
+  );
+  const correctness = await runPass(agent, correctnessPrompt(understanding), findingsSchema, log);
+  const design = await runPass(agent, designPrompt(understanding), findingsSchema, log);
+  const micro = await runPass(agent, microPrompt(understanding), findingsSchema, log);
+  await revertRogueEdits(ctx.git, before, log);
 
   const passes: ReviewPass[] = [
     { title: "Context & intent", result: context },
@@ -111,57 +127,52 @@ export function reviewStep(): Step {
     async run(ctx) {
       const pr = ctx.read(pullRequest);
 
-      // Delta gate: nothing new on the head since the last review tml submitted → run no passes.
+      // Delta gate: nothing new on the head since tml's last review → skip the passes entirely
+      // and leave the existing body block untouched (rewriting it from zero findings would erase
+      // the prior risk banner, findings, and fix notes).
       const lastReviewed = await ctx.forge.lastReviewedSha(pr.number);
-      const delta = pr.headSha !== lastReviewed;
-
-      let passes: ReviewPass[] = [];
-      let fixSummary = "";
-      let posted = 0;
-      if (delta) {
-        ({ passes, fixSummary } = await runReview(ctx, ctx.read(prBody)));
-
-        // Post each ask-user finding as a marked, line-anchored thread — skipping any whose key
-        // already has a thread (open or resolved), so a settled finding is never re-posted.
-        const seen = existingKeys(pr.threads);
-        const askUser = passes
-          .flatMap((p) => p.result.findings)
-          .filter((f) => f.action === "ask-user");
-        for (const f of askUser) {
-          const key = findingKey(f);
-          if (seen.has(key)) continue;
-          const loc = parseLocation(f.location);
-          if (loc === null) {
-            ctx.log(`review: "${f.title}" has no path:line location — skipping its thread`);
-            continue;
-          }
-          seen.add(key);
-          await ctx.forge.createReviewThread({
-            prNumber: pr.number,
-            path: loc.path,
-            line: loc.line,
-            body: findingThreadBody(f),
-            commitSha: pr.headSha,
-          });
-          posted += 1;
-        }
-      } else {
+      if (pr.headSha === lastReviewed) {
         ctx.log("review: no new commits since the last review — skipping the passes");
+        return { reviewSummary: "No new commits since the last review — review skipped." };
+      }
+
+      const { passes, fixSummary } = await runReview(ctx, ctx.read(prBody));
+
+      // Post each ask-user finding as a marked, line-anchored thread — skipping any whose key
+      // already has a thread (open or resolved), so a settled finding is never re-posted.
+      const seen = existingKeys(pr.threads);
+      const askUser = passes
+        .flatMap((p) => p.result.findings)
+        .filter((f) => f.action === "ask-user");
+      let posted = 0;
+      for (const f of askUser) {
+        const key = findingKey(f);
+        if (seen.has(key)) continue;
+        const loc = parseLocation(f.location);
+        if (loc === null) {
+          ctx.log(`review: "${f.title}" has no path:line location — skipping its thread`);
+          continue;
+        }
+        seen.add(key);
+        await ctx.forge.createReviewThread({
+          prNumber: pr.number,
+          path: loc.path,
+          line: loc.line,
+          body: findingThreadBody(f),
+          commitSha: pr.headSha,
+        });
+        posted += 1;
       }
 
       // The "needs your decision" tally points at the unresolved tml threads now on the PR:
       // the ones that were already open plus the ones just posted.
       const stillOpen = pr.threads.filter((t) => !t.resolved && isTmlThread(t)).length;
-      const openThreads = stillOpen + posted;
-
-      const summary = summarize(passes, fixSummary, openThreads);
+      const summary = summarize(passes, fixSummary, stillOpen + posted);
       const body = replaceReviewBlock(pr.body, reviewBlock(summary));
       await ctx.forge.updatePullRequestBody({ prNumber: pr.number, body });
 
-      // Advance the resume marker only when we actually reviewed the current head.
-      if (delta) {
-        await ctx.forge.submitReview({ prNumber: pr.number, commitSha: pr.headSha, body: summary });
-      }
+      // Advance the resume marker now that we've reviewed the current head.
+      await ctx.forge.submitReview({ prNumber: pr.number, commitSha: pr.headSha, body: summary });
 
       return { reviewSummary: summary };
     },

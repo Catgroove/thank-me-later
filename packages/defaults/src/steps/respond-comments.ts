@@ -27,6 +27,7 @@ import {
 } from "../prompts.ts";
 import {
   handoffReply,
+  isHandedOff,
   isTmlThread,
   tmlReply,
   tmlRoundCount,
@@ -85,10 +86,13 @@ export function respondCommentsStep(): Step {
       const actions: string[] = [];
 
       for (const t of unresolved) {
-        // Ping-pong guard: stop engaging a thread that has churned without converging.
+        // Ping-pong guard: stop engaging a thread that has churned without converging. Post the
+        // hand-off once, then leave it untouched on every later re-entry.
         if (tmlRoundCount(t) >= PING_PONG_CEILING) {
-          await ctx.forge.replyToThread({ threadId: t.id, body: handoffReply() });
-          actions.push(`handed ${t.id} to a human`);
+          if (!isHandedOff(t)) {
+            await ctx.forge.replyToThread({ threadId: t.id, body: handoffReply() });
+            actions.push(`handed ${t.id} to a human`);
+          }
           continue;
         }
 

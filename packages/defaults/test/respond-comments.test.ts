@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentResult, PullRequest, Reactions, ReviewComment, ReviewThread } from "@tml/core";
 import { respondCommentsStep } from "../src/steps/respond-comments.ts";
-import { findingMarker, tmlReply } from "../src/review/threads.ts";
+import { findingMarker, handoffReply, tmlReply } from "../src/review/threads.ts";
 import { FakeForge, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
 const NONE: Reactions = { thumbsUp: 0, thumbsDown: 0 };
@@ -173,6 +173,32 @@ describe("respond-comments step", () => {
 
     expect(agent.tasks).toHaveLength(0);
     expect(forge.replies[0]?.body).toContain("handing it to a human");
+    expect(forge.resolved).toHaveLength(0);
+  });
+
+  test("a thread already handed off is left untouched on re-entry (no duplicate handoff)", async () => {
+    const agent = new FakeHarness();
+    const forge = new FakeForge();
+    const alreadyHandedOff = thread({
+      id: "RT_loop",
+      body: "human topic",
+      comments: [
+        comment({ author: "reviewer", body: "human topic" }),
+        comment({ author: "tml", body: tmlReply("one") }),
+        comment({ author: "tml", body: tmlReply("two") }),
+        comment({ author: "tml", body: handoffReply() }),
+      ],
+    });
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { pullRequest: prWithThreads([alreadyHandedOff]) },
+    });
+
+    await respondCommentsStep().run(ctx);
+
+    expect(forge.replies).toHaveLength(0); // no second handoff
+    expect(agent.tasks).toHaveLength(0);
     expect(forge.resolved).toHaveLength(0);
   });
 

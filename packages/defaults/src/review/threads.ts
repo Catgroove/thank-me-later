@@ -117,6 +117,11 @@ export function handoffReply(): string {
   );
 }
 
+/** True once a thread already carries tml's hand-off reply — so re-entries leave it untouched. */
+export function isHandedOff(t: ReviewThread): boolean {
+  return t.comments.some((c) => c.body.includes(TML_HANDOFF_MARKER));
+}
+
 /** Render a thread's comments as plain text for an agent prompt. */
 export function renderThread(t: ReviewThread): string {
   const where = t.path ? `${t.path}${t.line ? `:${t.line}` : ""}` : "(general)";
