@@ -19,7 +19,7 @@ describe("open-pr step", () => {
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
     // No commit — the work and fixes were committed by the commit Steps already.
-    expect(git.calls).toEqual(["push tml/ship-abc1234"]);
+    expect(git.calls).toEqual(["push (force) tml/ship-abc1234"]);
     expect(forge.opened).toHaveLength(1);
     expect(forge.opened[0]).toEqual({
       head: "tml/ship-abc1234",
@@ -61,7 +61,7 @@ describe("open-pr step", () => {
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
     expect(result.pullRequest).toEqual(prior);
-    expect(git.calls).toEqual(["push tml/ship-abc1234"]); // update the existing PR's branch
+    expect(git.calls).toEqual(["push (force) tml/ship-abc1234"]); // update the existing PR's branch
     expect(forge.opened).toEqual([]); // nothing opened
   });
 

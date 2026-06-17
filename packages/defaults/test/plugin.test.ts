@@ -18,6 +18,7 @@ describe("tmlDefaults plugin", () => {
       "branch",
       "describe",
       "commit-change",
+      "rebase",
       "format",
       "lint",
       "typecheck",

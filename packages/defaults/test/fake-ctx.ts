@@ -17,6 +17,7 @@ import {
   type OpenPullRequestInput,
   type Pending,
   type PullRequest,
+  type RebaseResult,
   until,
 } from "@tml/core";
 
@@ -29,6 +30,12 @@ export class FakeGit implements Git {
   commitSha = "0".repeat(40);
   stagedFiles: string[] = [];
   unstagedFiles: string[] = [];
+  /** `fetch` throws when set, modelling no/unreachable remote. */
+  fetchThrows = false;
+  /** Ancestry answers keyed `${ancestor}..${ref}`; absent → false. */
+  readonly ancestry = new Map<string, boolean>();
+  rebaseResult: RebaseResult = { status: "clean" };
+  rebaseInProgressValue = false;
 
   currentBranch(): Promise<string> {
     return Promise.resolve(this.currentBranchName);
@@ -41,7 +48,22 @@ export class FakeGit implements Git {
   }
   fetch(branch: string): Promise<void> {
     this.calls.push(`fetch ${branch}`);
+    return this.fetchThrows ? Promise.reject(new Error("no remote")) : Promise.resolve();
+  }
+  isAncestor(ancestor: string, ref: string): Promise<boolean> {
+    this.calls.push(`isAncestor ${ancestor} ${ref}`);
+    return Promise.resolve(this.ancestry.get(`${ancestor}..${ref}`) ?? false);
+  }
+  rebase(onto: string): Promise<RebaseResult> {
+    this.calls.push(`rebase ${onto}`);
+    return Promise.resolve(this.rebaseResult);
+  }
+  rebaseAbort(): Promise<void> {
+    this.calls.push("rebaseAbort");
     return Promise.resolve();
+  }
+  rebaseInProgress(): Promise<boolean> {
+    return Promise.resolve(this.rebaseInProgressValue);
   }
   createBranch(name: string, opts?: { from?: string }): Promise<void> {
     this.calls.push(opts?.from ? `createBranch ${name} from ${opts.from}` : `createBranch ${name}`);
@@ -66,8 +88,8 @@ export class FakeGit implements Git {
       unstaged: this.unstagedFiles,
     });
   }
-  push(opts: { branch: string }): Promise<void> {
-    this.calls.push(`push ${opts.branch}`);
+  push(opts: { branch: string; force?: boolean }): Promise<void> {
+    this.calls.push(`push ${opts.force ? "(force) " : ""}${opts.branch}`);
     return Promise.resolve();
   }
   discardChanges(): Promise<void> {
