@@ -3,8 +3,8 @@
 // micro), then one fix pass that applies the safe fixes the passes surfaced. Synthesis and the
 // overall risk are computed in code (see `../review/synthesize.ts`), not by the agent. The
 // architecture pass can `block`, which is recorded as a high-risk banner — it does not halt the
-// run (the `ctx.ask` escalation that would gate the run is not implemented yet). The resulting
-// markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR body.
+// run. The resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR
+// body.
 
 import { defineStep, type Harness, type Step } from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";

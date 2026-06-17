@@ -47,6 +47,7 @@ describe("parsePassResult", () => {
     expect(() =>
       parsePassResult({ findings: [{ severity: "nit", action: "no-op", title: "", detail: "d" }] }),
     ).toThrow();
+    expect(() => parsePassResult({ findings: [], verdict: "blocked" })).toThrow();
   });
 });
 
@@ -103,6 +104,8 @@ describe("summarize", () => {
     );
     expect(out.toLowerCase()).toContain("blocking concern");
     expect(out).toContain("**Risk: high**");
+    expect(out).toContain("### Architecture & scope");
+    expect(out).toContain("Blocking verdict returned without specific findings");
     expect(out).toContain("None."); // no fixes applied
   });
 

@@ -32,6 +32,7 @@ export interface ReviewPass {
 
 const SEVERITIES: ReadonlySet<string> = new Set(["critical", "warning", "nit"]);
 const ACTIONS: ReadonlySet<string> = new Set(["auto-fix", "ask-user", "no-op"]);
+const VERDICTS: ReadonlySet<string> = new Set(["proceed", "block"]);
 
 /** Validate one pass's structured reply into a `PassResult`, throwing on anything malformed. */
 export function parsePassResult(output: unknown): PassResult {
@@ -47,7 +48,12 @@ export function parsePassResult(output: unknown): PassResult {
   if (typeof obj.understanding === "string" && obj.understanding.trim().length > 0) {
     result.understanding = obj.understanding.trim();
   }
-  if (obj.verdict === "proceed" || obj.verdict === "block") result.verdict = obj.verdict;
+  if (obj.verdict !== undefined) {
+    if (typeof obj.verdict !== "string" || !VERDICTS.has(obj.verdict)) {
+      throw new Error("review: the pass result has an invalid verdict");
+    }
+    result.verdict = obj.verdict as Verdict;
+  }
   return result;
 }
 
@@ -103,13 +109,14 @@ function renderFinding(f: Finding): string {
  *  sections, and the fixes applied. Deterministic — same input, same output. */
 export function summarize(passes: readonly ReviewPass[], fixSummary: string): string {
   const all = passes.flatMap((p) => p.result.findings);
-  const blocked = passes.some((p) => p.result.verdict === "block");
+  const blockedPass = passes.find((p) => p.result.verdict === "block");
+  const blocked = blockedPass !== undefined;
   const lines: string[] = [];
 
   if (blocked) {
     lines.push(
       "> **Blocking concern (architecture & scope).** This change was flagged as fundamentally " +
-        "risky, out of scope, or too large to review safely — see the Architecture & scope " +
+        `risky, out of scope, or too large to review safely — see the ${blockedPass.title} ` +
         "section below before merging.",
       "",
     );
@@ -117,12 +124,16 @@ export function summarize(passes: readonly ReviewPass[], fixSummary: string): st
   lines.push(`**Risk: ${riskOf(all, blocked)}**`, "");
 
   for (const pass of passes) {
-    if (pass.result.findings.length === 0) continue;
+    if (pass.result.findings.length === 0 && pass.result.verdict !== "block") continue;
     lines.push(`### ${pass.title}`);
-    for (const f of pass.result.findings) lines.push(renderFinding(f));
+    if (pass.result.findings.length === 0) {
+      lines.push("- Blocking verdict returned without specific findings.");
+    } else {
+      for (const f of pass.result.findings) lines.push(renderFinding(f));
+    }
     lines.push("");
   }
-  if (all.length === 0) lines.push("No findings.", "");
+  if (all.length === 0 && !blocked) lines.push("No findings.", "");
 
   const fixes = fixSummary.trim();
   lines.push("### Fixes applied", fixes.length > 0 ? fixes : "None.");
