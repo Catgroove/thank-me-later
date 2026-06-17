@@ -33,6 +33,8 @@ export interface Git {
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
   status(): Promise<GitStatus>;
+  /** Discard all uncommitted changes — tracked and untracked — returning the worktree to `HEAD`. */
+  discardChanges(): Promise<void>;
   /** Push `branch` to `origin`, setting upstream tracking (the branch tml ships under). */
   push(opts: { branch: string }): Promise<void>;
 }
@@ -119,6 +121,12 @@ export function createGit(cwd: string): Git {
         if (worktree !== " ") unstaged.push(file);
       }
       return { branch: await branch(), staged, unstaged };
+    },
+
+    async discardChanges() {
+      // Reset tracked files (staged + worktree) to HEAD, then sweep untracked files and dirs.
+      await git(cwd, ["reset", "--hard", "HEAD"]);
+      await git(cwd, ["clean", "-fd"]);
     },
 
     async push(opts) {
