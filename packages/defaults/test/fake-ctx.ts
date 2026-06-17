@@ -113,11 +113,17 @@ export class FakeForge implements Forge {
 
 export class FakeHarness implements Harness {
   readonly tasks: string[] = [];
+  /** The `opts` of each `run` call, parallel to `tasks` — lets tests assert a `schema` was set. */
+  readonly opts: (AgentRunOpts | undefined)[] = [];
+  /** Default reply, used when no per-call response is scripted. */
   result: AgentResult = { ok: true, summary: "done" };
+  /** Optional per-call replies, consumed in order; falls back to `result` once drained. */
+  readonly responses: AgentResult[] = [];
 
-  run(task: string, _opts?: AgentRunOpts): Promise<AgentResult> {
+  run(task: string, opts?: AgentRunOpts): Promise<AgentResult> {
     this.tasks.push(task);
-    return Promise.resolve(this.result);
+    this.opts.push(opts);
+    return Promise.resolve(this.responses.shift() ?? this.result);
   }
 }
 
