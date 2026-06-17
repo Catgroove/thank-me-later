@@ -82,6 +82,7 @@ describe("review step", () => {
     agent.responses.push(...cleanPasses());
     const forge = new FakeForge();
     const body = "Human prose.\n\n<!-- tml:review -->stale<!-- /tml:review -->\n\nMore prose.";
+    forge.bodyValue = body;
     const { ctx } = fakeCtx({
       agent,
       forge,
@@ -105,6 +106,7 @@ describe("review step", () => {
     const agent = new FakeHarness();
     agent.responses.push(...cleanPasses());
     const forge = new FakeForge();
+    forge.bodyValue = "Just the description.";
     const { ctx } = fakeCtx({
       agent,
       forge,
@@ -115,6 +117,25 @@ describe("review step", () => {
 
     const updated = forge.bodyUpdates[0]?.body ?? "";
     expect(updated.startsWith("Just the description.")).toBe(true);
+    expect(updated).toContain("<!-- tml:review -->");
+  });
+
+  test("preserves PR body edits made after the open-pr snapshot", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(...cleanPasses());
+    const forge = new FakeForge();
+    forge.bodyValue = "Human edit after open-pr.";
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("Original open-pr body.") },
+    });
+
+    await reviewStep().run(ctx);
+
+    const updated = forge.bodyUpdates[0]?.body ?? "";
+    expect(updated).toContain("Human edit after open-pr.");
+    expect(updated).not.toContain("Original open-pr body.");
     expect(updated).toContain("<!-- tml:review -->");
   });
 
@@ -257,6 +278,42 @@ describe("review step", () => {
 
     expect(forge.createdThreads).toHaveLength(0); // deduped — never re-post a settled finding
     expect(summary).not.toContain("thread needs your decision"); // the existing one is resolved
+  });
+
+  test("a thread that fails to post is logged, not fatal; the review still completes", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      pass([]),
+      pass([], { verdict: "proceed" }),
+      pass([
+        {
+          severity: "warning",
+          action: "ask-user",
+          title: "Confirm contract",
+          detail: "intent?",
+          location: "src/a.ts:12",
+        },
+      ]),
+      pass([]),
+      pass([]),
+    );
+    class ThrowingForge extends FakeForge {
+      override createReviewThread() {
+        return Promise.reject(new Error("422 line not in diff"));
+      }
+    }
+    const forge = new ThrowingForge();
+    const { ctx, logs } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    await reviewStep().run(ctx);
+
+    expect(forge.bodyUpdates).toHaveLength(1); // the run still wrote the block
+    expect(forge.reviews).toHaveLength(1); // and advanced the resume marker
+    expect(logs.some((l) => l.includes("could not post a thread"))).toBe(true);
   });
 
   test("delta gate: runs zero passes and leaves the existing block untouched when already reviewed", async () => {

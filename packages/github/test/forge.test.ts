@@ -7,7 +7,6 @@ import type { GhRunner } from "../src/gh.ts";
 import { createGitHubForge as fromIndex } from "../src/index.ts";
 import * as pkg from "../src/index.ts";
 import {
-  addThreadResponse,
   checksAllDone,
   checksEmpty,
   checksPending,
@@ -19,6 +18,7 @@ import {
   prIdResponse,
   prListEmpty,
   prListHit,
+  restReviewComment,
   snapshotConflictedResponse,
   snapshotOpenResponse,
 } from "./fixtures.ts";
@@ -39,7 +39,8 @@ const isPrEdit = (args: string[]) => args[0] === "pr" && args[1] === "edit";
 const isSnapshot = (args: string[]) => args.some((a) => a.includes("reviewThreads"));
 const has = (args: string[], needle: string) => args.some((a) => a.includes(needle));
 const isPrIdQuery = (args: string[]) => has(args, "pullRequest(number: $number) { id }");
-const isAddThread = (args: string[]) => has(args, "addPullRequestReviewThread(input");
+const isCreateComment = (args: string[]) =>
+  args[0] === "api" && args.some((a) => a.endsWith("/comments"));
 const isAddReply = (args: string[]) => has(args, "addPullRequestReviewThreadReply");
 const isResolve = (args: string[]) => has(args, "resolveReviewThread");
 const isAddReview = (args: string[]) => has(args, "addPullRequestReview(input");
@@ -207,10 +208,9 @@ describe("updatePullRequestBody", () => {
 });
 
 describe("createReviewThread", () => {
-  test("looks up the PR node id, posts the thread, and maps it back", async () => {
+  test("posts a published REST review comment anchored to the reviewed head, and maps it back", async () => {
     const { forge, calls } = forgeWith((args) => {
-      if (isPrIdQuery(args)) return JSON.stringify(prIdResponse);
-      if (isAddThread(args)) return JSON.stringify(addThreadResponse);
+      if (isCreateComment(args)) return JSON.stringify(restReviewComment);
       throw new Error(`unexpected args: ${args.join(" ")}`);
     });
 
@@ -222,12 +222,26 @@ describe("createReviewThread", () => {
       commitSha: "deadbeef",
     });
 
-    expect(thread.id).toBe("RT_new");
+    expect(thread.id).toBe("PRRC_new");
     expect(thread.line).toBe(9);
-    const mutation = calls.find(isAddThread);
-    expect(mutation).toContain("prId=PR_node_42");
-    expect(mutation).toContain("line=9");
-    expect(mutation).toContain("-F"); // line is sent as a numeric variable
+    expect(thread.resolved).toBe(false);
+    const call = calls.find(isCreateComment);
+    expect(call).toEqual([
+      "api",
+      "--method",
+      "POST",
+      "repos/{owner}/{repo}/pulls/42/comments",
+      "-f",
+      "body=<!-- tml:finding key=k1 --> detail",
+      "-f",
+      "commit_id=deadbeef",
+      "-f",
+      "path=src/x.ts",
+      "-F",
+      "line=9",
+      "-f",
+      "side=RIGHT",
+    ]);
   });
 });
 

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CHECKS_QUERY,
   checksArgs,
-  createThreadArgs,
+  createReviewCommentArgs,
   lastReviewArgs,
   prCreateArgs,
   prEditBodyArgs,
@@ -82,11 +82,24 @@ describe("mutation + lookup argv builders", () => {
     expect(lastReviewArgs(7)).toContain("number=7");
   });
 
-  test("createThreadArgs sends the body/path as strings and the line as a numeric var", () => {
-    const args = createThreadArgs({ prId: "PR_1", path: "src/x.ts", line: 9, body: "detail" });
-    expect(args).toContain("prId=PR_1");
+  test("createReviewCommentArgs builds a REST POST anchored to the commit, line as a numeric var", () => {
+    const args = createReviewCommentArgs({
+      prNumber: 42,
+      path: "src/x.ts",
+      line: 9,
+      body: "detail",
+      commitSha: "abc",
+    });
+    expect(args.slice(0, 4)).toEqual([
+      "api",
+      "--method",
+      "POST",
+      "repos/{owner}/{repo}/pulls/42/comments",
+    ]);
+    expect(args).toContain("commit_id=abc");
     expect(args).toContain("path=src/x.ts");
     expect(args).toContain("body=detail");
+    expect(args).toContain("side=RIGHT");
     // line follows a -F flag (numeric), not -f.
     expect(args[args.indexOf("line=9") - 1]).toBe("-F");
   });

@@ -8,12 +8,12 @@
 // The query strings live in src/queries.ts.
 
 import type {
-  AddThreadData,
   ChecksData,
   GhCheckNode,
   GhGraphQlResponse,
   GhPrListRow,
   GhPullRequestNode,
+  GhRestReviewComment,
   GhReviewThreadNode,
   LastReviewData,
   PrIdData,
@@ -224,16 +224,17 @@ export const prIdResponse: GhGraphQlResponse<PrIdData> = {
   data: { repository: { pullRequest: { id: "PR_node_42" } } },
 };
 
-/** Viewer reviewed twice; the newest (last) commit is the resume marker. */
+/** Viewer reviewed twice (newest = resume marker); a trailing PENDING review must be ignored. */
 export const lastReviewResponse: GhGraphQlResponse<LastReviewData> = {
   data: {
     repository: {
       pullRequest: {
         reviews: {
           nodes: [
-            { viewerDidAuthor: true, commit: { oid: "oldsha" } },
-            { viewerDidAuthor: false, commit: { oid: "someoneelse" } },
-            { viewerDidAuthor: true, commit: { oid: "newsha" } },
+            { viewerDidAuthor: true, state: "COMMENTED", commit: { oid: "oldsha" } },
+            { viewerDidAuthor: false, state: "COMMENTED", commit: { oid: "someoneelse" } },
+            { viewerDidAuthor: true, state: "COMMENTED", commit: { oid: "newsha" } },
+            { viewerDidAuthor: true, state: "PENDING", commit: { oid: "pendingsha" } },
           ],
         },
       },
@@ -245,25 +246,11 @@ export const lastReviewEmpty: GhGraphQlResponse<LastReviewData> = {
   data: { repository: { pullRequest: { reviews: { nodes: [] } } } },
 };
 
-export const addThreadResponse: GhGraphQlResponse<AddThreadData> = {
-  data: {
-    addPullRequestReviewThread: {
-      thread: {
-        id: "RT_new",
-        isResolved: false,
-        isOutdated: false,
-        path: "src/x.ts",
-        line: 9,
-        comments: {
-          nodes: [
-            {
-              author: { login: "tml" },
-              body: "<!-- tml:finding key=k1 --> detail",
-              ...noReactions,
-            },
-          ],
-        },
-      },
-    },
-  },
+/** A REST review comment as returned by `POST /pulls/{n}/comments`. */
+export const restReviewComment: GhRestReviewComment = {
+  node_id: "PRRC_new",
+  path: "src/x.ts",
+  line: 9,
+  body: "<!-- tml:finding key=k1 --> detail",
+  user: { login: "tml" },
 };

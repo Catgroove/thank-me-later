@@ -63,27 +63,12 @@ export const PR_ID_QUERY = `query($owner: String!, $repo: String!, $number: Int!
   repository(owner: $owner, name: $repo) { pullRequest(number: $number) { id } }
 }`;
 
-/** Viewer-authored reviews newest-last, each tied to the commit it reviewed (the resume marker). */
+/** Viewer-authored reviews newest-last, each with its state + the commit it reviewed (the resume
+ *  marker). `state` lets us ignore a leftover PENDING review and read only submitted ones. */
 export const LAST_REVIEW_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      reviews(last: 50) { nodes { viewerDidAuthor commit { oid } } }
-    }
-  }
-}`;
-
-/** Post a new line-anchored review thread; returns the created thread for mapping back. */
-export const ADD_THREAD_MUTATION = `mutation($prId: ID!, $body: String!, $path: String!, $line: Int!) {
-  addPullRequestReviewThread(input: {
-    pullRequestId: $prId, body: $body, path: $path, line: $line, side: RIGHT, subjectType: LINE
-  }) {
-    thread {
-      id
-      isResolved
-      isOutdated
-      path
-      line
-      comments(first: 1) { ${COMMENT_SELECTION} }
+      reviews(last: 50) { nodes { viewerDidAuthor state commit { oid } } }
     }
   }
 }`;
@@ -175,18 +160,35 @@ function mutationArgs(
   return args;
 }
 
-export function createThreadArgs(input: {
-  prId: string;
+/**
+ * Post a new line-anchored review comment via the REST API. Unlike GraphQL's
+ * `addPullRequestReviewThread` (which adds to a *pending* review and would collide with our
+ * separate review-submit), a REST review comment is published immediately and starts its own
+ * resolvable thread. `commit_id` anchors it to the reviewed head; `line`/`side` to the new side.
+ */
+export function createReviewCommentArgs(input: {
+  prNumber: number;
   path: string;
   line: number;
   body: string;
+  commitSha: string;
 }): string[] {
-  return mutationArgs(ADD_THREAD_MUTATION, [
-    { name: "prId", value: input.prId },
-    { name: "body", value: input.body },
-    { name: "path", value: input.path },
-    { name: "line", value: String(input.line), numeric: true },
-  ]);
+  return [
+    "api",
+    "--method",
+    "POST",
+    `repos/{owner}/{repo}/pulls/${input.prNumber}/comments`,
+    "-f",
+    `body=${input.body}`,
+    "-f",
+    `commit_id=${input.commitSha}`,
+    "-f",
+    `path=${input.path}`,
+    "-F",
+    `line=${input.line}`,
+    "-f",
+    "side=RIGHT",
+  ];
 }
 
 export function replyThreadArgs(input: { threadId: string; body: string }): string[] {

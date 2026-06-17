@@ -14,21 +14,21 @@ import type {
 
 import { defaultRunner, type GhRunner } from "./gh.ts";
 import {
-  type AddThreadData,
   type ChecksData,
   type GhGraphQlResponse,
   type GhPrListRow,
+  type GhRestReviewComment,
   type LastReviewData,
   mapChecks,
   mapLastReviewedSha,
   mapPullRequest,
-  mapReviewThread,
+  mapRestReviewComment,
   type PrIdData,
   type SnapshotData,
 } from "./map.ts";
 import {
   checksArgs,
-  createThreadArgs,
+  createReviewCommentArgs,
   lastReviewArgs,
   prCreateArgs,
   prEditBodyArgs,
@@ -106,12 +106,12 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
       path: string;
       line: number;
       body: string;
+      commitSha: string;
     }): Promise<ReviewThread> {
-      // GitHub anchors a new thread to the PR's latest commit (== the head `review` reviewed).
-      const prId = await prNodeId(input.prNumber);
-      const args = createThreadArgs({ prId, path: input.path, line: input.line, body: input.body });
-      const res = JSON.parse(await run(args)) as GhGraphQlResponse<AddThreadData>;
-      return mapReviewThread(res.data.addPullRequestReviewThread.thread);
+      // A published REST review comment (not a pending-review GraphQL thread) — anchored to the
+      // reviewed head and immediately visible/resolvable, so it never collides with submitReview.
+      const out = await run(createReviewCommentArgs(input));
+      return mapRestReviewComment(JSON.parse(out) as GhRestReviewComment);
     },
 
     async replyToThread(input: { threadId: string; body: string }): Promise<void> {

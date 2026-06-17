@@ -154,21 +154,28 @@ export function reviewStep(): Step {
           continue;
         }
         seen.add(key);
-        await ctx.forge.createReviewThread({
-          prNumber: pr.number,
-          path: loc.path,
-          line: loc.line,
-          body: findingThreadBody(f),
-          commitSha: pr.headSha,
-        });
-        posted += 1;
+        // GitHub rejects a comment on a line that isn't part of the diff; don't let one bad anchor
+        // abort the whole review — log it and move on.
+        try {
+          await ctx.forge.createReviewThread({
+            prNumber: pr.number,
+            path: loc.path,
+            line: loc.line,
+            body: findingThreadBody(f),
+            commitSha: pr.headSha,
+          });
+          posted += 1;
+        } catch (err) {
+          ctx.log(`review: could not post a thread for "${f.title}" (${(err as Error).message})`);
+        }
       }
 
       // The "needs your decision" tally points at the unresolved tml threads now on the PR:
       // the ones that were already open plus the ones just posted.
       const stillOpen = pr.threads.filter((t) => !t.resolved && isTmlThread(t)).length;
       const summary = summarize(passes, fixSummary, stillOpen + posted);
-      const body = replaceReviewBlock(pr.body, reviewBlock(summary));
+      const current = await ctx.forge.getPullRequest(pr.number);
+      const body = replaceReviewBlock(current.body, reviewBlock(summary));
       await ctx.forge.updatePullRequestBody({ prNumber: pr.number, body });
 
       // Advance the resume marker now that we've reviewed the current head.

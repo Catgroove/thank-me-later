@@ -61,7 +61,18 @@ export interface GhReviewThreadNode {
 /** A viewer-authored review, tied to the commit it reviewed (the `lastReviewedSha` source). */
 export interface GhReviewNode {
   readonly viewerDidAuthor: boolean;
+  /** PENDING | COMMENTED | APPROVED | CHANGES_REQUESTED | DISMISSED */
+  readonly state: string;
   readonly commit: { readonly oid: string } | null;
+}
+
+/** A review comment returned by the REST `POST /pulls/{n}/comments` endpoint (createReviewThread). */
+export interface GhRestReviewComment {
+  readonly node_id: string;
+  readonly path: string;
+  readonly line: number | null;
+  readonly body: string;
+  readonly user: { readonly login: string } | null;
 }
 
 /** The last commit on the PR carries the status-check rollup. */
@@ -118,11 +129,6 @@ export interface LastReviewData {
   readonly repository: {
     readonly pullRequest: { readonly reviews: { readonly nodes: readonly GhReviewNode[] } };
   };
-}
-
-/** `data` shape of the add-thread mutation. */
-export interface AddThreadData {
-  readonly addPullRequestReviewThread: { readonly thread: GhReviewThreadNode };
 }
 
 /** A row of `gh pr list --json number,state`. */
@@ -277,10 +283,26 @@ export function mapReviewThread(node: GhReviewThreadNode): ReviewThread {
   return node.line === null ? withPath : { ...withPath, line: node.line };
 }
 
-/** The SHA of the viewer's most recent submitted review, or `null` when there is none. */
+/** The SHA of the viewer's most recent *submitted* review, or `null` when there is none. A still
+ *  PENDING review (e.g. left by an interrupted run) is ignored — only submitted reviews mark a
+ *  reviewed head. */
 export function mapLastReviewedSha(reviews: readonly GhReviewNode[]): string | null {
-  const mine = reviews.filter((r) => r.viewerDidAuthor && r.commit !== null);
+  const mine = reviews.filter(
+    (r) => r.viewerDidAuthor && r.state !== "PENDING" && r.commit !== null,
+  );
   return mine.at(-1)?.commit?.oid ?? null;
+}
+
+/** Map a REST review comment into a (single-comment, unresolved) ReviewThread. */
+export function mapRestReviewComment(c: GhRestReviewComment): ReviewThread {
+  const comment: ReviewComment = {
+    author: c.user?.login ?? "",
+    body: c.body,
+    reactions: { thumbsUp: 0, thumbsDown: 0 },
+  };
+  const base: ReviewThread = { id: c.node_id, body: c.body, resolved: false, comments: [comment] };
+  const withPath = c.path === "" ? base : { ...base, path: c.path };
+  return c.line === null ? withPath : { ...withPath, line: c.line };
 }
 
 export function mapPullRequest(node: GhPullRequestNode): PullRequest {
