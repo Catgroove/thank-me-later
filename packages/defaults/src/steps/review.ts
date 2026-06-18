@@ -34,6 +34,7 @@ import {
   parsePassResult,
   replaceReviewBlock,
   reviewBlock,
+  stripReviewBlock,
   summarize,
 } from "../review/synthesize.ts";
 import {
@@ -47,6 +48,7 @@ import {
 /** Run one read-only review pass: structured reply against the given schema, validated. */
 async function runPass(agent: Harness, prompt: string, schema: object): Promise<PassResult> {
   const result = await agent.run(prompt, { schema });
+  if (!result.ok) throw new Error(`review: pass failed: ${result.summary}`);
   return parsePassResult(result.output);
 }
 
@@ -104,7 +106,12 @@ async function runReview(
   // Only safe, non-behavioural findings are auto-fixed; ask-user findings become threads. Skip the
   // fix pass (and its agent call) when there's nothing to fix.
   const fixable = passes.flatMap((p) => p.result.findings).filter((f) => f.action === "auto-fix");
-  const fixSummary = fixable.length > 0 ? (await agent.run(fixPrompt(fixable))).summary : "";
+  let fixSummary = "";
+  if (fixable.length > 0) {
+    const fix = await agent.run(fixPrompt(fixable));
+    if (!fix.ok) throw new Error(`review: fix pass failed: ${fix.summary}`);
+    fixSummary = fix.summary;
+  }
   return { passes, fixSummary };
 }
 
@@ -125,7 +132,7 @@ export function reviewStep(): Step {
         return { reviewSummary: "No new commits since the last review — review skipped." };
       }
 
-      const { passes, fixSummary } = await runReview(ctx, ctx.read(prBody));
+      const { passes, fixSummary } = await runReview(ctx, stripReviewBlock(ctx.read(prBody)));
 
       // Post each ask-user finding as a marked, line-anchored thread — skipping any whose key
       // already has a thread (open or resolved), so a settled finding is never re-posted.

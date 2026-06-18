@@ -16,6 +16,7 @@ const ROLLUP_SELECTION = `commits(last: 1) {
             ... on CheckRun { name status conclusion }
             ... on StatusContext { context state }
           }
+          pageInfo { hasNextPage endCursor }
         }
       }
     }
@@ -29,6 +30,7 @@ const PAGE_INFO_SELECTION = `pageInfo { hasNextPage endCursor }`;
 const COMMENT_SELECTION = `nodes {
   author { login }
   body
+  viewerDidAuthor
   reactionGroups { content reactors { totalCount } }
 }`;
 
@@ -81,6 +83,29 @@ export const REVIEW_THREAD_COMMENTS_PAGE_QUERY = `query($threadId: ID!, $comment
   }
 }`;
 
+export const CHECK_CONTEXTS_PAGE_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $checksCursor: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              contexts(first: 100, after: $checksCursor) {
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion }
+                  ... on StatusContext { context state }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
 /** The PR's GraphQL node id — needed as input to the thread/review mutations. */
 export const PR_ID_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) { pullRequest(number: $number) { id } }
@@ -90,7 +115,21 @@ export const PR_ID_QUERY = `query($owner: String!, $repo: String!, $number: Int!
 export const LAST_REVIEW_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      reviews(last: 50) { nodes { viewerDidAuthor state body commit { oid } } }
+      reviews(last: 100) {
+        nodes { viewerDidAuthor state body commit { oid } }
+        pageInfo { hasPreviousPage startCursor }
+      }
+    }
+  }
+}`;
+
+export const LAST_REVIEWS_PAGE_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $reviewsCursor: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviews(last: 100, before: $reviewsCursor) {
+        nodes { viewerDidAuthor state body commit { oid } }
+        pageInfo { hasPreviousPage startCursor }
+      }
     }
   }
 }`;
@@ -178,6 +217,13 @@ export function reviewThreadCommentsPageArgs(threadId: string, cursor: string): 
   );
 }
 
+export function checkContextsPageArgs(prNumber: number, cursor: string): string[] {
+  return graphqlArgs(CHECK_CONTEXTS_PAGE_QUERY, [
+    { name: "number", value: String(prNumber), numeric: true },
+    { name: "checksCursor", value: cursor },
+  ]);
+}
+
 export function checksArgs(prNumber: number): string[] {
   return prGraphqlArgs(CHECKS_QUERY, prNumber);
 }
@@ -188,6 +234,13 @@ export function prNodeIdArgs(prNumber: number): string[] {
 
 export function lastReviewArgs(prNumber: number): string[] {
   return prGraphqlArgs(LAST_REVIEW_QUERY, prNumber);
+}
+
+export function lastReviewsPageArgs(prNumber: number, cursor: string): string[] {
+  return graphqlArgs(LAST_REVIEWS_PAGE_QUERY, [
+    { name: "number", value: String(prNumber), numeric: true },
+    { name: "reviewsCursor", value: cursor },
+  ]);
 }
 
 /** Build `gh api graphql` argv for a mutation; string vars use `-f`, numeric vars `-F`. */

@@ -12,5 +12,5 @@ it, a reply is interpreted and acted on (a reply outweighs a reaction), and a th
 open gets a reply but is left open. A ping-pong guard hands a thread to a human after three tml
 turns. A new terminal `merge-gate` step reports readiness — green checks, no changes-requested
 review, every thread resolved, and mergeable (`unknown` counts as not-ready) — and **never
-merges**. Adds `ReviewThread.isOutdated`, `PullRequest.reviewDecision`, and the `replyToThread`/
-`resolveThread` Forge methods, implemented in `@tml/github`.
+merges**. Adds `ReviewThread.isOutdated`, `ReviewComment.isMine`, `PullRequest.reviewDecision`,
+and the `replyToThread`/`resolveThread` Forge methods, implemented in `@tml/github`.

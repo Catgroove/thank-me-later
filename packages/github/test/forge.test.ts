@@ -7,6 +7,7 @@ import type { GhRunner } from "../src/gh.ts";
 import { createGitHubForge as fromIndex } from "../src/index.ts";
 import * as pkg from "../src/index.ts";
 import {
+  checkQueued,
   checksAllDone,
   checksEmpty,
   checksPending,
@@ -43,7 +44,9 @@ const isCreateComment = (args: string[]) =>
 const isAddReply = (args: string[]) => has(args, "addPullRequestReviewThreadReply");
 const isResolve = (args: string[]) => has(args, "resolveReviewThread");
 const isAddReview = (args: string[]) => has(args, "addPullRequestReview(input");
-const isLastReview = (args: string[]) => has(args, "reviews(last:");
+const isLastReview = (args: string[]) => has(args, "reviews(last: 100)");
+const isLastReviewsPage = (args: string[]) => has(args, "reviewsCursor");
+const isCheckContextsPage = (args: string[]) => has(args, "checksCursor");
 
 function forgeWith(handler: (args: string[]) => string): {
   forge: ReturnType<typeof createGitHubForge>;
@@ -193,6 +196,61 @@ describe("getChecks polling", () => {
     const result = await createGitHubForge("/repo", { run }).getChecks(42).poll();
     expect(result.done).toBe(true);
   });
+
+  test("loads every check context page before mapping readiness", async () => {
+    const firstPage = {
+      data: {
+        repository: {
+          pullRequest: {
+            commits: {
+              nodes: [
+                {
+                  commit: {
+                    statusCheckRollup: {
+                      contexts: {
+                        nodes: [],
+                        pageInfo: { hasNextPage: true, endCursor: "checks-1" },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const secondPage = {
+      data: {
+        repository: {
+          pullRequest: {
+            commits: {
+              nodes: [
+                {
+                  commit: {
+                    statusCheckRollup: {
+                      contexts: {
+                        nodes: [checkQueued],
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const { forge, calls } = forgeWith((args) => {
+      if (isCheckContextsPage(args)) return JSON.stringify(secondPage);
+      if (args.some((a) => a.includes("statusCheckRollup"))) return JSON.stringify(firstPage);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    expect(await forge.getChecks(42).poll()).toEqual({ done: false });
+    expect(calls.find(isCheckContextsPage)).toContain("checksCursor=checks-1");
+  });
 });
 
 describe("updatePullRequestBody", () => {
@@ -293,6 +351,55 @@ describe("lastReviewedSha", () => {
       throw new Error(`unexpected args: ${args.join(" ")}`);
     });
     expect(await forge.lastReviewedSha(42)).toBe(null);
+  });
+
+  test("loads older review pages when the latest page has no tml review", async () => {
+    const latestPage = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviews: {
+              nodes: [
+                {
+                  viewerDidAuthor: true,
+                  state: "COMMENTED",
+                  body: "manual review",
+                  commit: { oid: "manualsha" },
+                },
+              ],
+              pageInfo: { hasPreviousPage: true, startCursor: "reviews-1" },
+            },
+          },
+        },
+      },
+    };
+    const olderPage = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviews: {
+              nodes: [
+                {
+                  viewerDidAuthor: true,
+                  state: "COMMENTED",
+                  body: "<!-- tml:review -->\nold",
+                  commit: { oid: "oldsha" },
+                },
+              ],
+              pageInfo: { hasPreviousPage: false, startCursor: null },
+            },
+          },
+        },
+      },
+    };
+    const { forge, calls } = forgeWith((args) => {
+      if (isLastReviewsPage(args)) return JSON.stringify(olderPage);
+      if (isLastReview(args)) return JSON.stringify(latestPage);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    expect(await forge.lastReviewedSha(42)).toBe("oldsha");
+    expect(calls.find(isLastReviewsPage)).toContain("reviewsCursor=reviews-1");
   });
 });
 

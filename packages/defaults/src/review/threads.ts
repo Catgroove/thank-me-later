@@ -28,14 +28,16 @@ export function findingKey(f: Finding): string {
   return hash(`${f.location ?? ""}:${f.title}`);
 }
 
-/** A thread is tml's own when its root body carries the finding marker. */
+/** A thread is tml's own when its root comment is ours and carries the finding marker. */
 export function isTmlThread(t: ReviewThread): boolean {
-  return FINDING_RE.test(t.body);
+  return threadKey(t) !== null;
 }
 
-/** The dedup key embedded in a thread's marker, or `null` when it carries none. */
+/** The dedup key embedded in tml's thread marker, or `null` when it carries none. */
 export function threadKey(t: ReviewThread): string | null {
-  return t.body.match(FINDING_RE)?.[1] ?? null;
+  const root = t.comments[0];
+  if (root?.isMine !== true) return null;
+  return root.body.match(FINDING_RE)?.[1] ?? null;
 }
 
 /** Keys of every tml finding thread (open or resolved) — the dedup set a re-run skips against. */
@@ -70,17 +72,17 @@ export function findingThreadBody(f: Finding): string {
 
 // --- The reconciliation protocol (read by `respond-comments`) ----------------------------------
 // Every tml-authored comment carries a `<!-- tml:… -->` marker, so the loop can tell its own
-// turns from a human's/bot's without a bot identity — used both to detect replies and to cap the
-// per-thread ping-pong.
+// Forge-owned turns from a human's/bot's — used both to detect replies and to cap the per-thread
+// ping-pong.
 
 export const TML_REPLY_MARKER = "<!-- tml:reply -->";
 export const TML_HANDOFF_MARKER = "<!-- tml:handoff -->";
 
 const TML_COMMENT_RE = /<!-- tml:/;
 
-/** True when a comment was authored by tml (it carries a `tml:…` marker). */
-export function isTmlComment(comment: { body: string }): boolean {
-  return TML_COMMENT_RE.test(comment.body);
+/** True when a comment was authored by tml and carries a `tml:…` marker. */
+export function isTmlComment(comment: { body: string; isMine?: boolean }): boolean {
+  return comment.isMine === true && TML_COMMENT_RE.test(comment.body);
 }
 
 /** Number of tml-authored comments in a thread — the ping-pong counter. */
@@ -133,7 +135,7 @@ export function handoffReply(): string {
 
 /** True once a thread already carries tml's hand-off reply — so re-entries leave it untouched. */
 export function isHandedOff(t: ReviewThread): boolean {
-  return t.comments.some((c) => c.body.includes(TML_HANDOFF_MARKER));
+  return t.comments.some((c) => isTmlComment(c) && c.body.includes(TML_HANDOFF_MARKER));
 }
 
 /** Render a thread's comments as plain text for an agent prompt. */

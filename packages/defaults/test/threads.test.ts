@@ -15,6 +15,12 @@ function finding(over: Partial<Finding> = {}): Finding {
   return { severity: "warning", action: "ask-user", title: "T", detail: "D", ...over };
 }
 
+const NONE = { thumbsUp: 0, thumbsDown: 0 };
+
+function ownComment(body: string) {
+  return { author: "tml", body, reactions: NONE, isMine: true };
+}
+
 function thread(over: Partial<ReviewThread> = {}): ReviewThread {
   return { id: "RT", body: "", resolved: false, comments: [], ...over };
 }
@@ -36,11 +42,15 @@ describe("marker round-trip", () => {
   test("findingMarker embeds the key and threadKey reads it back", () => {
     const key = findingKey(finding({ location: "a.ts:1" }));
     const body = `${findingMarker(key)}\n\ndetail`;
-    expect(threadKey(thread({ body }))).toBe(key);
+    expect(threadKey(thread({ body, comments: [ownComment(body)] }))).toBe(key);
   });
 
   test("isTmlThread is true only for marked threads", () => {
-    expect(isTmlThread(thread({ body: findingMarker("k") }))).toBe(true);
+    const body = findingMarker("k");
+    expect(isTmlThread(thread({ body, comments: [ownComment(body)] }))).toBe(true);
+    expect(isTmlThread(thread({ body, comments: [{ ...ownComment(body), isMine: false }] }))).toBe(
+      false,
+    );
     expect(isTmlThread(thread({ body: "a human comment" }))).toBe(false);
     expect(threadKey(thread({ body: "no marker" }))).toBe(null);
   });
@@ -53,7 +63,7 @@ describe("marker round-trip", () => {
       location: "a.ts:3",
     });
     const body = findingThreadBody(f);
-    expect(threadKey(thread({ body }))).toBe(findingKey(f));
+    expect(threadKey(thread({ body, comments: [ownComment(body)] }))).toBe(findingKey(f));
     expect(body).toContain("🔴 **Critical**"); // severity surfaced per comment, CodeRabbit-style
     expect(body).toContain("Confirm");
     expect(body).toContain("intent?");
@@ -70,9 +80,23 @@ describe("existingKeys", () => {
     const k1 = findingKey(finding({ location: "a.ts:1", title: "A" }));
     const k2 = findingKey(finding({ location: "b.ts:2", title: "B" }));
     const threads = [
-      thread({ id: "1", body: findingMarker(k1), resolved: false }),
-      thread({ id: "2", body: findingMarker(k2), resolved: true }),
-      thread({ id: "3", body: "a human thread" }),
+      thread({
+        id: "1",
+        body: findingMarker(k1),
+        resolved: false,
+        comments: [ownComment(findingMarker(k1))],
+      }),
+      thread({
+        id: "2",
+        body: findingMarker(k2),
+        resolved: true,
+        comments: [ownComment(findingMarker(k2))],
+      }),
+      thread({
+        id: "3",
+        body: findingMarker("spoof"),
+        comments: [{ ...ownComment(findingMarker("spoof")), isMine: false }],
+      }),
     ];
     const keys = existingKeys(threads);
     expect(keys.has(k1)).toBe(true);

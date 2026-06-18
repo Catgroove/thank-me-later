@@ -55,7 +55,8 @@ async function respondToTmlThread(ctx: Ctx, t: ReviewThread): Promise<string> {
   const threadId = t.id;
   const action = tmlThreadAction(t);
   if (action === "fix") {
-    await ctx.agent.run(respondFixPrompt(t));
+    const res = await ctx.agent.run(respondFixPrompt(t));
+    if (!res.ok) throw new Error(`respond-comments: could not fix ${threadId}: ${res.summary}`);
     await ctx.forge.resolveThread(threadId);
     return `fixed + resolved ${threadId}`;
   }
@@ -65,6 +66,7 @@ async function respondToTmlThread(ctx: Ctx, t: ReviewThread): Promise<string> {
   }
   if (action === "interpret-reply") {
     const res = await ctx.agent.run(interpretReplyPrompt(t), { schema: replyActionSchema });
+    if (!res.ok) throw new Error(`respond-comments: could not address ${threadId}: ${res.summary}`);
     const { status, note } = parseReplyAction(res.output);
     await ctx.forge.replyToThread({ threadId, body: tmlReply(note) });
     if (status === "resolved") {
@@ -106,6 +108,8 @@ export function respondCommentsStep(): Step {
             continue;
           }
           const res = await ctx.agent.run(classifyThreadPrompt(t), { schema: humanReplySchema });
+          if (!res.ok)
+            throw new Error(`respond-comments: could not reply to ${t.id}: ${res.summary}`);
           await ctx.forge.replyToThread({
             threadId: t.id,
             body: tmlReply(parseHumanReply(res.output)),

@@ -6,6 +6,7 @@ import {
   replaceReviewBlock,
   reviewBlock,
   riskOf,
+  stripReviewBlock,
   summarize,
 } from "../src/review/synthesize.ts";
 
@@ -169,6 +170,15 @@ describe("review block helpers", () => {
   test("reviewBlock wraps the summary in the delimited region", () => {
     const block = reviewBlock("**Risk: low**");
     expect(block).toBe("<!-- tml:review -->\n**Risk: low**\n<!-- /tml:review -->");
+  });
+
+  test("stripReviewBlock removes only the delimited region", () => {
+    const body = "Before.\n\n<!-- tml:review -->old<!-- /tml:review -->\n\nAfter.";
+    const out = stripReviewBlock(body);
+    expect(out).toContain("Before.");
+    expect(out).toContain("After.");
+    expect(out).not.toContain("old");
+    expect(out).not.toContain("tml:review");
   });
 
   test("replaceReviewBlock appends when the body has no block yet", () => {

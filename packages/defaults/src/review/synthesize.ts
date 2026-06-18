@@ -189,6 +189,17 @@ export function reviewBlock(summary: string): string {
   return `${REVIEW_BLOCK_START}\n${summary}\n${REVIEW_BLOCK_END}`;
 }
 
+export function stripReviewBlock(body: string): string {
+  const start = body.indexOf(REVIEW_BLOCK_START);
+  const end = body.indexOf(REVIEW_BLOCK_END);
+  if (start !== -1 && end !== -1 && end > start) {
+    const before = body.slice(0, start);
+    const after = body.slice(end + REVIEW_BLOCK_END.length);
+    return `${before}${after}`.trim();
+  }
+  return body;
+}
+
 /** Replace the delimited region in `body` with `block`, or append it when none exists yet. */
 export function replaceReviewBlock(body: string, block: string): string {
   const start = body.indexOf(REVIEW_BLOCK_START);

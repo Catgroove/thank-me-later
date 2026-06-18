@@ -20,6 +20,8 @@ function gateForge(over: Partial<PullRequest> = {}): FakeForge {
   forge.threads = over.threads ?? [];
   forge.reviewDecision = over.reviewDecision ?? null;
   forge.mergeable = over.mergeable ?? "mergeable";
+  forge.headShaValue = over.headSha ?? "headsha";
+  forge.lastReviewedShaValue = forge.headShaValue;
   return forge;
 }
 
@@ -45,7 +47,7 @@ function readinessOf(result: unknown): MergeReadiness {
 }
 
 describe("merge-gate step", () => {
-  test("ready when all four conditions hold", async () => {
+  test("ready when all conditions hold", async () => {
     const forge = gateForge({ threads: [resolvedThread("RT1")], mergeable: "mergeable" });
     const { ctx } = fakeCtx({ forge, reads: reads() });
 
@@ -85,6 +87,17 @@ describe("merge-gate step", () => {
 
     expect(r.ready).toBe(false);
     expect(r.blockers).toContain("review required");
+  });
+
+  test("blocks when the current head has not been reviewed by tml", async () => {
+    const forge = gateForge({ headSha: "new-headsha" });
+    forge.lastReviewedShaValue = "old-headsha";
+    const { ctx } = fakeCtx({ forge, reads: reads() });
+
+    const r = readinessOf(await mergeGateStep().run(ctx));
+
+    expect(r.ready).toBe(false);
+    expect(r.blockers).toContain("head not reviewed by tml");
   });
 
   test("blocks on unresolved threads", async () => {

@@ -17,6 +17,7 @@ function tmlThread(id: string, key: string, reactions: Reactions): ReviewThread 
     author: "tml",
     body: `${findingMarker(key)} please confirm`,
     reactions,
+    isMine: true,
   };
   return { id, body: root.body, resolved: false, comments: [root] };
 }

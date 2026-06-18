@@ -133,7 +133,14 @@ describe("queries", () => {
   });
 
   test("the snapshot query selects the new thread/PR fields", () => {
-    for (const field of ["reviewDecision", "headRefOid", "isOutdated", "line", "reactionGroups"]) {
+    for (const field of [
+      "reviewDecision",
+      "headRefOid",
+      "isOutdated",
+      "line",
+      "viewerDidAuthor",
+      "reactionGroups",
+    ]) {
       expect(SNAPSHOT_QUERY).toContain(field);
     }
   });

@@ -1,7 +1,8 @@
-// `merge-gate` — the terminal step. It reads a fresh PR snapshot and computes readiness from four
-// conditions: every check succeeded, the PR isn't blocked by review state, every review thread is
-// resolved, and GitHub reports it mergeable (an `unknown` mergeable counts as not-ready —
-// conservative, the gate stays closed). It reports the verdict + the list of blockers and produces
+// `merge-gate` — the terminal step. It reads a fresh PR snapshot and computes readiness from these
+// conditions: every check succeeded, the head was reviewed by tml, the PR isn't blocked by review
+// state, every review thread is resolved, and GitHub reports it mergeable (an `unknown` mergeable
+// counts as not-ready — conservative, the gate stays closed). It reports the verdict + the list of
+// blockers and produces
 // `mergeReadiness`. It **does not merge and never will** — that is an explicit non-goal. When not
 // ready the run simply finishes parked (not failed); a re-entry re-evaluates.
 
@@ -22,6 +23,8 @@ export function mergeGateStep(): Step {
       if (failing.length > 0) {
         blockers.push(`checks not green: ${failing.map((c) => c.name).join(", ")}`);
       }
+      const lastReviewed = await ctx.forge.lastReviewedSha(pr.number);
+      if (lastReviewed !== pr.headSha) blockers.push("head not reviewed by tml");
       if (pr.reviewDecision === "changes_requested") blockers.push("changes requested");
       if (pr.reviewDecision === "review_required") blockers.push("review required");
       const unresolved = pr.threads.filter((t) => !t.resolved).length;

@@ -171,8 +171,8 @@ describe("mapReviewThread", () => {
       resolved: false,
       isOutdated: false,
       comments: [
-        { author: "reviewer", body: "nit: rename this", reactions: noReactions },
-        { author: "author", body: "done", reactions: noReactions },
+        { author: "reviewer", body: "nit: rename this", reactions: noReactions, isMine: false },
+        { author: "author", body: "done", reactions: noReactions, isMine: false },
       ],
     });
   });
@@ -183,7 +183,7 @@ describe("mapReviewThread", () => {
       body: "general comment",
       resolved: true,
       isOutdated: false,
-      comments: [{ author: "", body: "general comment", reactions: noReactions }],
+      comments: [{ author: "", body: "general comment", reactions: noReactions, isMine: false }],
     });
     expect("path" in mapped).toBe(false);
     expect("line" in mapped).toBe(false);

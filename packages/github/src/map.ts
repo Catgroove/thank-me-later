@@ -48,6 +48,7 @@ export interface GhReactionGroup {
 export interface GhReviewCommentNode {
   readonly author: { readonly login: string } | null;
   readonly body: string;
+  readonly viewerDidAuthor: boolean;
   readonly reactionGroups: readonly GhReactionGroup[];
 }
 
@@ -56,9 +57,19 @@ export interface GhPageInfo {
   readonly endCursor: string | null;
 }
 
+export interface GhPreviousPageInfo {
+  readonly hasPreviousPage: boolean;
+  readonly startCursor: string | null;
+}
+
 export interface GhConnection<T> {
   readonly nodes: readonly T[];
   readonly pageInfo?: GhPageInfo;
+}
+
+export interface GhPreviousConnection<T> {
+  readonly nodes: readonly T[];
+  readonly pageInfo?: GhPreviousPageInfo;
 }
 
 export interface GhReviewThreadNode {
@@ -83,7 +94,7 @@ export interface GhReviewNode {
 export interface GhCommitNode {
   readonly commit: {
     readonly statusCheckRollup: {
-      readonly contexts: { readonly nodes: readonly GhCheckNode[] };
+      readonly contexts: GhConnection<GhCheckNode>;
     } | null;
   };
 }
@@ -141,7 +152,7 @@ export interface PrIdData {
 /** `data` shape of the viewer-reviews query (lastReviewedSha). */
 export interface LastReviewData {
   readonly repository: {
-    readonly pullRequest: { readonly reviews: { readonly nodes: readonly GhReviewNode[] } };
+    readonly pullRequest: { readonly reviews: GhPreviousConnection<GhReviewNode> };
   };
 }
 
@@ -281,6 +292,7 @@ export function mapReviewComment(node: GhReviewCommentNode): ReviewComment {
     author: node.author?.login ?? "",
     body: node.body,
     reactions: mapReactions(node.reactionGroups),
+    isMine: node.viewerDidAuthor,
   };
 }
 

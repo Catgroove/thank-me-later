@@ -84,8 +84,13 @@ export const threadUnresolved: GhReviewThreadNode = {
   line: 12,
   comments: {
     nodes: [
-      { author: { login: "reviewer" }, body: "nit: rename this", ...noReactions },
-      { author: { login: "author" }, body: "done", ...noReactions },
+      {
+        author: { login: "reviewer" },
+        body: "nit: rename this",
+        viewerDidAuthor: false,
+        ...noReactions,
+      },
+      { author: { login: "author" }, body: "done", viewerDidAuthor: false, ...noReactions },
     ],
   },
 };
@@ -97,7 +102,7 @@ export const threadResolved: GhReviewThreadNode = {
   path: null,
   line: null,
   comments: {
-    nodes: [{ author: null, body: "general comment", ...noReactions }],
+    nodes: [{ author: null, body: "general comment", viewerDidAuthor: false, ...noReactions }],
   },
 };
 
@@ -113,6 +118,7 @@ export const threadThumbsUp: GhReviewThreadNode = {
       {
         author: { login: "tml" },
         body: "<!-- tml:finding key=abc --> consider extracting this",
+        viewerDidAuthor: true,
         reactionGroups: [
           { content: "THUMBS_UP", reactors: { totalCount: 1 } },
           { content: "THUMBS_DOWN", reactors: { totalCount: 0 } },

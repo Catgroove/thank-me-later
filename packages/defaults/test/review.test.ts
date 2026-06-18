@@ -61,6 +61,19 @@ describe("review step", () => {
     expect(summaryOf(result)).toContain("**Risk: low**");
   });
 
+  test("strips the prior review block before building the context prompt", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(...cleanPasses());
+    const body = "Human description.\n\n<!-- tml:review -->\nSTALE FINDING\n<!-- /tml:review -->";
+    const { ctx } = fakeCtx({ agent, reads: { prBody: body, pullRequest: prWith(body) } });
+
+    await reviewStep().run(ctx);
+
+    expect(agent.tasks[0]).toContain("Human description.");
+    expect(agent.tasks[0]).not.toContain("STALE FINDING");
+    expect(agent.tasks[0]).not.toContain("tml:review");
+  });
+
   test("threads the context pass understanding into the later passes", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
@@ -184,6 +197,37 @@ describe("review step", () => {
     expect(summary).toContain("fixed the off-by-one");
   });
 
+  test("failed fix pass aborts before marking auto-fix findings fixed", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      pass([]),
+      pass([], { verdict: "proceed" }),
+      pass([
+        { severity: "warning", action: "auto-fix", title: "Off-by-one", detail: "loop overruns" },
+      ]),
+      pass([]),
+      pass([]),
+      { ok: false, summary: "could not fix safely" },
+    );
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    let caught: unknown;
+    try {
+      await reviewStep().run(ctx);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as Error | undefined)?.message).toContain("could not fix safely");
+    expect(forge.bodyUpdates).toHaveLength(0);
+    expect(forge.reviews).toHaveLength(0);
+  });
+
   test("posts a located ask-user finding as a marked thread, counts it, and never lists it", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
@@ -272,7 +316,12 @@ describe("review step", () => {
       body: findingMarker(key),
       resolved: true,
       comments: [
-        { author: "tml", body: findingMarker(key), reactions: { thumbsUp: 0, thumbsDown: 0 } },
+        {
+          author: "tml",
+          body: findingMarker(key),
+          reactions: { thumbsUp: 0, thumbsDown: 0 },
+          isMine: true,
+        },
       ],
     });
     const { ctx } = fakeCtx({ agent, forge, reads: { prBody: "body", pullRequest: pr } });
@@ -363,6 +412,32 @@ describe("review step", () => {
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain("structured pass result");
+    expect(forge.bodyUpdates).toHaveLength(0);
+    expect(forge.reviews).toHaveLength(0);
+  });
+
+  test("propagates failed review pass results", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push({
+      ok: false,
+      summary: "schema extraction failed",
+      output: { findings: [] },
+    });
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    let caught: unknown;
+    try {
+      await reviewStep().run(ctx);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as Error | undefined)?.message).toContain("schema extraction failed");
     expect(forge.bodyUpdates).toHaveLength(0);
     expect(forge.reviews).toHaveLength(0);
   });

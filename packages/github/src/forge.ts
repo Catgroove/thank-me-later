@@ -9,8 +9,10 @@ import { defaultRunner, type GhRunner } from "./gh.ts";
 import { markedReviewBody } from "./markers.ts";
 import {
   type ChecksData,
+  type GhCommitNode,
   type GhGraphQlResponse,
   type GhPrListRow,
+  type GhPreviousPageInfo,
   type LastReviewData,
   mapChecks,
   mapLastReviewedSha,
@@ -23,9 +25,11 @@ import {
   type SnapshotData,
 } from "./map.ts";
 import {
+  checkContextsPageArgs,
   checksArgs,
   createReviewCommentArgs,
   lastReviewArgs,
+  lastReviewsPageArgs,
   prCreateArgs,
   prEditBodyArgs,
   prListArgs,
@@ -58,8 +62,56 @@ function pageInfoOf(connection: { readonly pageInfo?: GhPageInfo }): GhPageInfo 
   return connection.pageInfo ?? donePage;
 }
 
+const donePreviousPage: GhPreviousPageInfo = { hasPreviousPage: false, startCursor: null };
+
+function previousPageInfoOf(connection: {
+  readonly pageInfo?: GhPreviousPageInfo;
+}): GhPreviousPageInfo {
+  return connection.pageInfo ?? donePreviousPage;
+}
+
 export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): Forge {
   const run = opts.run ?? defaultRunner(cwd);
+
+  async function hydrateCheckContexts(
+    prNumber: number,
+    commits: { readonly nodes: readonly GhCommitNode[] },
+  ): Promise<{ readonly nodes: readonly GhCommitNode[] }> {
+    const commitNode = commits.nodes[0];
+    const rollup = commitNode?.commit.statusCheckRollup;
+    if (commitNode === undefined || rollup === null || rollup === undefined) return commits;
+
+    const contexts = [...rollup.contexts.nodes];
+    let pageInfo = pageInfoOf(rollup.contexts);
+    while (pageInfo.hasNextPage) {
+      if (pageInfo.endCursor === null) throw new Error(`missing checks cursor for PR ${prNumber}`);
+      const page = JSON.parse(
+        await run(checkContextsPageArgs(prNumber, pageInfo.endCursor)),
+      ) as GhGraphQlResponse<ChecksData>;
+      const connection =
+        page.data.repository.pullRequest.commits.nodes[0]?.commit.statusCheckRollup?.contexts;
+      if (connection === undefined) throw new Error(`could not load checks for PR ${prNumber}`);
+      contexts.push(...connection.nodes);
+      pageInfo = pageInfoOf(connection);
+    }
+
+    return {
+      ...commits,
+      nodes: [
+        {
+          ...commitNode,
+          commit: {
+            ...commitNode.commit,
+            statusCheckRollup: {
+              ...rollup,
+              contexts: { ...rollup.contexts, nodes: contexts, pageInfo: donePage },
+            },
+          },
+        },
+        ...commits.nodes.slice(1),
+      ],
+    };
+  }
 
   async function hydrateThreadComments(thread: GhReviewThreadNode): Promise<GhReviewThreadNode> {
     const comments = [...thread.comments.nodes];
@@ -95,11 +147,13 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
 
     const hydratedThreads: GhReviewThreadNode[] = [];
     for (const thread of threads) hydratedThreads.push(await hydrateThreadComments(thread));
+    const commits = await hydrateCheckContexts(prNumber, pr.commits);
 
     return {
       repository: {
         pullRequest: {
           ...pr,
+          commits,
           reviewThreads: { ...pr.reviewThreads, nodes: hydratedThreads, pageInfo: donePage },
         },
       },
@@ -139,7 +193,11 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
       return {
         async poll() {
           const res = JSON.parse(await run(checksArgs(prNumber))) as GhGraphQlResponse<ChecksData>;
-          const checks = mapChecks(res.data.repository.pullRequest.commits);
+          const commits = await hydrateCheckContexts(
+            prNumber,
+            res.data.repository.pullRequest.commits,
+          );
+          const checks = mapChecks(commits);
           const pending = checks.some((c) => c.status === "queued" || c.status === "in_progress");
           return pending ? { done: false } : { done: true, value: checks };
         },
@@ -185,7 +243,19 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
       const res = JSON.parse(
         await run(lastReviewArgs(prNumber)),
       ) as GhGraphQlResponse<LastReviewData>;
-      return mapLastReviewedSha(res.data.repository.pullRequest.reviews.nodes);
+      const reviews = [...res.data.repository.pullRequest.reviews.nodes];
+      let pageInfo = previousPageInfoOf(res.data.repository.pullRequest.reviews);
+      while (pageInfo.hasPreviousPage) {
+        if (pageInfo.startCursor === null)
+          throw new Error(`missing reviews cursor for PR ${prNumber}`);
+        const page = JSON.parse(
+          await run(lastReviewsPageArgs(prNumber, pageInfo.startCursor)),
+        ) as GhGraphQlResponse<LastReviewData>;
+        const connection = page.data.repository.pullRequest.reviews;
+        reviews.unshift(...connection.nodes);
+        pageInfo = previousPageInfoOf(connection);
+      }
+      return mapLastReviewedSha(reviews);
     },
   };
 }

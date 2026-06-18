@@ -27,6 +27,7 @@ export interface ReviewComment {
   readonly author: string;
   readonly body: string;
   readonly reactions: Reactions;
+  readonly isMine?: boolean;
 }
 
 export interface ReviewThread {

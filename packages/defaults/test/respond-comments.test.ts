@@ -7,7 +7,13 @@ import { FakeForge, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 const NONE: Reactions = { thumbsUp: 0, thumbsDown: 0 };
 
 function comment(over: Partial<ReviewComment> = {}): ReviewComment {
-  return { author: "human", body: "comment", reactions: NONE, ...over };
+  return {
+    author: "human",
+    body: "comment",
+    reactions: NONE,
+    ...(over.author === "tml" ? { isMine: true } : {}),
+    ...over,
+  };
 }
 
 function thread(over: Partial<ReviewThread> = {}): ReviewThread {
@@ -59,6 +65,28 @@ describe("respond-comments step", () => {
     expect(agent.opts[0]?.schema).toBeUndefined(); // fix needs no schema
     expect(forge.resolved).toEqual(["RT1"]);
     expect(forge.replies).toHaveLength(0);
+  });
+
+  test("failed 👍 fix leaves the tml thread unresolved", async () => {
+    const agent = new FakeHarness();
+    agent.result = { ok: false, summary: "could not apply cleanly" };
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { pullRequest: prWithThreads([tmlThread("RT1", { thumbsUp: 1, thumbsDown: 0 })]) },
+    });
+
+    let caught: unknown;
+    try {
+      await respondCommentsStep().run(ctx);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as Error | undefined)?.message).toContain("could not apply cleanly");
+    expect(agent.tasks).toHaveLength(1);
+    expect(forge.resolved).toHaveLength(0);
   });
 
   test("👎 on a tml thread → resolve without changing anything", async () => {
@@ -168,6 +196,30 @@ describe("respond-comments step", () => {
     expect(agent.tasks).toHaveLength(1);
     expect(forge.replies[0]?.body).toContain("good catch");
     expect(forge.resolved).toHaveLength(0); // tml never resolves a thread it didn't open
+  });
+
+  test("failed human-thread reply leaves the thread untouched", async () => {
+    const agent = new FakeHarness();
+    agent.result = { ok: false, summary: "could not classify" };
+    const forge = new FakeForge();
+    const human = thread({
+      id: "RT_human",
+      body: "please rename this",
+      comments: [comment({ author: "reviewer", body: "please rename this" })],
+    });
+    const { ctx } = fakeCtx({ agent, forge, reads: { pullRequest: prWithThreads([human]) } });
+
+    let caught: unknown;
+    try {
+      await respondCommentsStep().run(ctx);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as Error | undefined)?.message).toContain("could not classify");
+    expect(agent.tasks).toHaveLength(1);
+    expect(forge.replies).toHaveLength(0);
+    expect(forge.resolved).toHaveLength(0);
   });
 
   test("a human's thread with tml as the latest commenter → wait for a new human reply", async () => {
