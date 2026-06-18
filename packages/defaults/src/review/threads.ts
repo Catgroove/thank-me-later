@@ -4,7 +4,7 @@
 // re-runs use these to recognise and skip findings that already have a thread (open or resolved).
 
 import type { ReviewThread } from "@tml/core";
-import type { Finding } from "./synthesize.ts";
+import type { Finding, Severity } from "./synthesize.ts";
 
 /** The invisible marker stamped on a tml-authored finding thread, carrying its dedup key. */
 export function findingMarker(key: string): string {
@@ -55,10 +55,17 @@ export function parseLocation(location: string | undefined): { path: string; lin
   return m === null ? null : { path: m[1] ?? "", line: Number(m[2]) };
 }
 
-/** The thread body for an `ask-user` finding: the marker, then the human-facing detail. */
+/** A CodeRabbit-style severity badge that heads each posted thread. */
+const SEVERITY_BADGE: Record<Severity, string> = {
+  critical: "🔴 **Critical**",
+  warning: "🟠 **Warning**",
+  nit: "🔵 **Nit**",
+};
+
+/** The thread body for an `ask-user` finding: the marker, a severity badge + title, then detail. */
 export function findingThreadBody(f: Finding): string {
   const loc = f.location ? ` \`${f.location}\`` : "";
-  return `${findingMarker(findingKey(f))}\n\n**${f.title}**${loc}\n\n${f.detail}`;
+  return `${findingMarker(findingKey(f))}\n${SEVERITY_BADGE[f.severity]} — ${f.title}${loc}\n\n${f.detail}`;
 }
 
 // --- The reconciliation protocol (read by `respond-comments`) ----------------------------------

@@ -45,12 +45,23 @@ describe("marker round-trip", () => {
     expect(threadKey(thread({ body: "no marker" }))).toBe(null);
   });
 
-  test("findingThreadBody carries the marker, title, and detail", () => {
-    const f = finding({ title: "Confirm", detail: "intent?", location: "a.ts:3" });
+  test("findingThreadBody carries the marker, a severity badge, title, and detail", () => {
+    const f = finding({
+      severity: "critical",
+      title: "Confirm",
+      detail: "intent?",
+      location: "a.ts:3",
+    });
     const body = findingThreadBody(f);
     expect(threadKey(thread({ body }))).toBe(findingKey(f));
+    expect(body).toContain("🔴 **Critical**"); // severity surfaced per comment, CodeRabbit-style
     expect(body).toContain("Confirm");
     expect(body).toContain("intent?");
+  });
+
+  test("findingThreadBody badges each severity level", () => {
+    expect(findingThreadBody(finding({ severity: "warning" }))).toContain("🟠 **Warning**");
+    expect(findingThreadBody(finding({ severity: "nit" }))).toContain("🔵 **Nit**");
   });
 });
 
