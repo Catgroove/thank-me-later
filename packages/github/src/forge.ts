@@ -3,13 +3,7 @@
 // builder through `run`, parses JSON, and hands it to a mapper. The only state is
 // the (injectable) runner.
 
-import type {
-  CheckRun,
-  Forge,
-  OpenPullRequestInput,
-  Pending,
-  PullRequest,
-} from "@tml/core";
+import type { CheckRun, Forge, OpenPullRequestInput, Pending, PullRequest } from "@tml/core";
 
 import { defaultRunner, type GhRunner } from "./gh.ts";
 import { markedReviewBody } from "./markers.ts";
@@ -182,7 +176,9 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
       body: string;
     }): Promise<void> {
       const prId = await prNodeId(input.prNumber);
-      await run(submitReviewArgs({ prId, commit: input.commitSha, body: markedReviewBody(input.body) }));
+      await run(
+        submitReviewArgs({ prId, commit: input.commitSha, body: markedReviewBody(input.body) }),
+      );
     },
 
     async lastReviewedSha(prNumber: number): Promise<string | null> {

@@ -342,11 +342,11 @@ describe("review step", () => {
 
   test("propagates pass results that are not schema-valid", async () => {
     const agent = new FakeHarness();
-    agent.responses.push(
-      pass([], { understanding: "intent" }),
-      pass([], { verdict: "proceed" }),
-      { ok: true, summary: "broke", output: "not a structured pass result" },
-    );
+    agent.responses.push(pass([], { understanding: "intent" }), pass([], { verdict: "proceed" }), {
+      ok: true,
+      summary: "broke",
+      output: "not a structured pass result",
+    });
     const forge = new FakeForge();
     const { ctx } = fakeCtx({
       agent,

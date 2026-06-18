@@ -3,12 +3,7 @@
 // Provider is real (see git.test.ts), so it has no fake here.
 
 import { AbortError, type Pending } from "../src/pending.ts";
-import type {
-  CheckRun,
-  Forge,
-  OpenPullRequestInput,
-  PullRequest,
-} from "../src/providers/forge.ts";
+import type { CheckRun, Forge, OpenPullRequestInput, PullRequest } from "../src/providers/forge.ts";
 import type {
   AgentProgress,
   AgentResult,

@@ -16,14 +16,7 @@
 //     (replacing only that region) and submits a COMMENT review tied to the head — the resume
 //     marker the delta gate reads next time. The same markdown is the `reviewSummary` artifact.
 
-import {
-  type Ctx,
-  defineStep,
-  type Git,
-  type GitStatus,
-  type Harness,
-  type Step,
-} from "@tml/core";
+import { type Ctx, defineStep, type Git, type GitStatus, type Harness, type Step } from "@tml/core";
 import { prBody, pullRequest, reviewSummary } from "../artifacts.ts";
 import {
   architecturePrompt,
@@ -89,7 +82,11 @@ async function runReview(
   try {
     const context = await runPass(agent, contextPrompt(prBodyText), findingsSchema);
     const understanding = context.understanding ?? "";
-    const architecture = await runPass(agent, architecturePrompt(understanding), architectureSchema);
+    const architecture = await runPass(
+      agent,
+      architecturePrompt(understanding),
+      architectureSchema,
+    );
     const correctness = await runPass(agent, correctnessPrompt(understanding), findingsSchema);
     const design = await runPass(agent, designPrompt(understanding), findingsSchema);
     const micro = await runPass(agent, microPrompt(understanding), findingsSchema);
