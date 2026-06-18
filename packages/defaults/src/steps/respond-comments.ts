@@ -29,6 +29,7 @@ import {
   handoffReply,
   isHandedOff,
   isTmlThread,
+  latestCommentIsTml,
   tmlReply,
   tmlRoundCount,
   tmlThreadAction,
@@ -100,6 +101,10 @@ export function respondCommentsStep(): Step {
           actions.push(await respondToTmlThread(ctx, t));
         } else {
           // A thread tml didn't open: reply and leave it open — never resolve it.
+          if (latestCommentIsTml(t)) {
+            actions.push(`left ${t.id} awaiting a human`);
+            continue;
+          }
           const res = await ctx.agent.run(classifyThreadPrompt(t), { schema: humanReplySchema });
           await ctx.forge.replyToThread({
             threadId: t.id,

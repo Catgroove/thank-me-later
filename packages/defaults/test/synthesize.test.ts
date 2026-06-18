@@ -134,6 +134,23 @@ describe("summarize", () => {
     expect(out).not.toContain("### Design & non-functional"); // the otherwise-empty section is dropped
   });
 
+  test("unthreaded ask-user findings are listed in the full review", () => {
+    const unthreaded = finding({
+      action: "ask-user",
+      title: "API shape",
+      detail: "confirm the contract",
+    });
+    const out = summarize(
+      [{ title: "Design & non-functional", result: { findings: [unthreaded] } }],
+      "",
+      0,
+      [unthreaded],
+    );
+    expect(out).toContain("### Design & non-functional");
+    expect(out).toContain("API shape");
+    expect(out).toContain("confirm the contract");
+  });
+
   test("the decision tally is singular for one open thread and absent for none", () => {
     const passes: ReviewPass[] = [{ title: "Context & intent", result: { findings: [] } }];
     expect(summarize(passes, "", 1)).toContain("1 thread needs your decision");

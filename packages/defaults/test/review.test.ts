@@ -220,7 +220,7 @@ describe("review step", () => {
     expect(summary).not.toContain("Confirm contract"); // not listed — it lives as the thread
   });
 
-  test("skips (and logs) an ask-user finding with no path:line location", async () => {
+  test("keeps an ask-user finding with no path:line location in the summary", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([]),
@@ -238,9 +238,11 @@ describe("review step", () => {
       reads: { prBody: "body", pullRequest: prWith("body") },
     });
 
-    await reviewStep().run(ctx);
+    const summary = summaryOf(await reviewStep().run(ctx));
 
     expect(forge.createdThreads).toHaveLength(0);
+    expect(summary).toContain("Confirm contract");
+    expect(summary).toContain("intent?");
     expect(logs.some((l) => l.includes("no path:line"))).toBe(true);
   });
 
@@ -309,10 +311,11 @@ describe("review step", () => {
       reads: { prBody: "body", pullRequest: prWith("body") },
     });
 
-    await reviewStep().run(ctx);
+    const summary = summaryOf(await reviewStep().run(ctx));
 
     expect(forge.bodyUpdates).toHaveLength(1); // the run still wrote the block
     expect(forge.reviews).toHaveLength(1); // and advanced the resume marker
+    expect(summary).toContain("Confirm contract");
     expect(logs.some((l) => l.includes("could not post a thread"))).toBe(true);
   });
 

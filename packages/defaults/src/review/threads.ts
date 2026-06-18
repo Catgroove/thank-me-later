@@ -88,9 +88,16 @@ export function tmlRoundCount(t: ReviewThread): number {
   return t.comments.filter(isTmlComment).length;
 }
 
-/** True when someone other than tml has replied beyond the root comment. */
+/** True when the latest reply beyond the root comment was authored by someone other than tml. */
 export function hasHumanReply(t: ReviewThread): boolean {
-  return t.comments.slice(1).some((c) => !isTmlComment(c));
+  const latestReply = t.comments.slice(1).at(-1);
+  return latestReply !== undefined && !isTmlComment(latestReply);
+}
+
+/** True when the latest comment in the thread is one of tml's own replies. */
+export function latestCommentIsTml(t: ReviewThread): boolean {
+  const latest = t.comments.at(-1);
+  return latest !== undefined && isTmlComment(latest);
 }
 
 /** The ack signal carried by the thread root's reactions (👍 approve, 👎 dismiss). */

@@ -102,8 +102,7 @@ function label(severity: Severity): string {
 function renderFinding(f: Finding): string {
   const loc = f.location ? ` \`${f.location}\`` : "";
   const text = `${label(f.severity)}${loc} ${f.title} — ${f.detail}`;
-  // `auto-fix` findings were handed to the fix pass, so they read as already handled. `ask-user`
-  // findings are not rendered here — they live as their own resolvable review threads on the PR.
+  // `auto-fix` findings were handed to the fix pass, so they read as already handled.
   if (f.action === "auto-fix") return `- ~~${text}~~ ✅ fixed`;
   return `- ${text}`;
 }
@@ -118,8 +117,10 @@ export function summarize(
   passes: readonly ReviewPass[],
   fixSummary: string,
   openThreads = 0,
+  inlineAskUser: readonly Finding[] = [],
 ): string {
   const all = passes.flatMap((p) => p.result.findings);
+  const inlineAskUserSet = new Set(inlineAskUser);
   const blocked = passes.some((p) => p.result.verdict === "block");
   const fixes = fixSummary.trim();
 
@@ -148,12 +149,13 @@ export function summarize(
   if (tally.length > 0) head.push(tally.join(" · "), "");
   if (fixes.length > 0) head.push(`**Fixes applied:** ${fixes}`, "");
 
-  // The full, per-phase breakdown — collapsed by default. `ask-user` findings are excluded here;
-  // they become their own review threads, so the dashboard summarizes auto-fixes + informational
-  // notes and the headline tally points at the threads that need a decision.
+  // The full, per-phase breakdown — collapsed by default. `ask-user` findings are excluded here
+  // once they have their own review threads; unthreaded ones stay visible in the PR body.
   const body: string[] = [];
   for (const pass of passes) {
-    const shown = pass.result.findings.filter((f) => f.action !== "ask-user");
+    const shown = pass.result.findings.filter(
+      (f) => f.action !== "ask-user" || inlineAskUserSet.has(f),
+    );
     if (shown.length === 0 && pass.result.verdict !== "block") continue;
     body.push(`### ${pass.title}`);
     if (shown.length === 0) {

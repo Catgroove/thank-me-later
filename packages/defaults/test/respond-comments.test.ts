@@ -120,6 +120,22 @@ describe("respond-comments step", () => {
     expect(forge.resolved).toHaveLength(0); // left open
   });
 
+  test("a tml reply after the last human reply → leave the thread parked on re-entry", async () => {
+    const agent = new FakeHarness();
+    const forge = new FakeForge();
+    const t = tmlThread("RT1", NONE, [
+      comment({ author: "human", body: "fix it" }),
+      comment({ author: "tml", body: tmlReply("which file did you mean?") }),
+    ]);
+    const { ctx } = fakeCtx({ agent, forge, reads: { pullRequest: prWithThreads([t]) } });
+
+    await respondCommentsStep().run(ctx);
+
+    expect(agent.tasks).toHaveLength(0);
+    expect(forge.replies).toHaveLength(0);
+    expect(forge.resolved).toHaveLength(0);
+  });
+
   test("no signal on a tml thread → leave it parked (no reply, no resolve)", async () => {
     const agent = new FakeHarness();
     const forge = new FakeForge();
@@ -152,6 +168,26 @@ describe("respond-comments step", () => {
     expect(agent.tasks).toHaveLength(1);
     expect(forge.replies[0]?.body).toContain("good catch");
     expect(forge.resolved).toHaveLength(0); // tml never resolves a thread it didn't open
+  });
+
+  test("a human's thread with tml as the latest commenter → wait for a new human reply", async () => {
+    const agent = new FakeHarness();
+    const forge = new FakeForge();
+    const human = thread({
+      id: "RT_human",
+      body: "please rename this",
+      comments: [
+        comment({ author: "reviewer", body: "please rename this" }),
+        comment({ author: "tml", body: tmlReply("renamed in this push") }),
+      ],
+    });
+    const { ctx } = fakeCtx({ agent, forge, reads: { pullRequest: prWithThreads([human]) } });
+
+    await respondCommentsStep().run(ctx);
+
+    expect(agent.tasks).toHaveLength(0);
+    expect(forge.replies).toHaveLength(0);
+    expect(forge.resolved).toHaveLength(0);
   });
 
   test("ping-pong guard: ≥3 tml comments → hand off and leave open, no agent", async () => {

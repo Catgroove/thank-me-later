@@ -10,7 +10,8 @@
 //   - Delta gate: if the PR head matches the last SHA tml reviewed, it runs zero passes — there's
 //     nothing new to review — and leaves the prior body block untouched.
 //   - `ask-user` findings become resolvable, line-anchored review threads, each stamped with a
-//     `tml:finding` marker and skipped on re-runs if a thread already exists (open or resolved).
+//     `tml:finding` marker and skipped on re-runs if a thread already exists (open or resolved);
+//     any finding that cannot be posted as a thread stays visible in the review summary.
 //   - It writes its headline + dashboard into a delimited `tml:review` block on the PR body
 //     (replacing only that region) and submits a COMMENT review tied to the head — the resume
 //     marker the delta gate reads next time. The same markdown is the `reviewSummary` artifact.
@@ -144,16 +145,18 @@ export function reviewStep(): Step {
       const askUser = passes
         .flatMap((p) => p.result.findings)
         .filter((f) => f.action === "ask-user");
+      const unthreadedAskUser: typeof askUser = [];
       let posted = 0;
       for (const f of askUser) {
         const key = findingKey(f);
         if (seen.has(key)) continue;
+        seen.add(key);
         const loc = parseLocation(f.location);
         if (loc === null) {
-          ctx.log(`review: "${f.title}" has no path:line location — skipping its thread`);
+          ctx.log(`review: "${f.title}" has no path:line location — keeping it in the summary`);
+          unthreadedAskUser.push(f);
           continue;
         }
-        seen.add(key);
         // GitHub rejects a comment on a line that isn't part of the diff; don't let one bad anchor
         // abort the whole review — log it and move on.
         try {
@@ -167,13 +170,14 @@ export function reviewStep(): Step {
           posted += 1;
         } catch (err) {
           ctx.log(`review: could not post a thread for "${f.title}" (${(err as Error).message})`);
+          unthreadedAskUser.push(f);
         }
       }
 
       // The "needs your decision" tally points at the unresolved tml threads now on the PR:
       // the ones that were already open plus the ones just posted.
       const stillOpen = pr.threads.filter((t) => !t.resolved && isTmlThread(t)).length;
-      const summary = summarize(passes, fixSummary, stillOpen + posted);
+      const summary = summarize(passes, fixSummary, stillOpen + posted, unthreadedAskUser);
       const current = await ctx.forge.getPullRequest(pr.number);
       const body = replaceReviewBlock(current.body, reviewBlock(summary));
       await ctx.forge.updatePullRequestBody({ prNumber: pr.number, body });
