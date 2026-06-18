@@ -241,6 +241,7 @@ describe("review step", () => {
     const summary = summaryOf(await reviewStep().run(ctx));
 
     expect(forge.createdThreads).toHaveLength(0);
+    expect(summary).toContain("1 finding needs your decision");
     expect(summary).toContain("Confirm contract");
     expect(summary).toContain("intent?");
     expect(logs.some((l) => l.includes("no path:line"))).toBe(true);
@@ -315,6 +316,7 @@ describe("review step", () => {
 
     expect(forge.bodyUpdates).toHaveLength(1); // the run still wrote the block
     expect(forge.reviews).toHaveLength(1); // and advanced the resume marker
+    expect(summary).toContain("1 finding needs your decision");
     expect(summary).toContain("Confirm contract");
     expect(logs.some((l) => l.includes("could not post a thread"))).toBe(true);
   });
@@ -338,28 +340,58 @@ describe("review step", () => {
     expect(logs.some((l) => l.includes("no new commits"))).toBe(true);
   });
 
-  test("a pass that returns no schema-valid findings is treated as empty, not fatal", async () => {
+  test("propagates pass results that are not schema-valid", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([], { understanding: "intent" }),
       pass([], { verdict: "proceed" }),
-      { ok: true, summary: "broke", output: "not a structured pass result" }, // correctness pass: garbage
-      pass([]),
-      pass([]),
+      { ok: true, summary: "broke", output: "not a structured pass result" },
     );
     const forge = new FakeForge();
-    const { ctx, logs } = fakeCtx({
+    const { ctx } = fakeCtx({
       agent,
       forge,
       reads: { prBody: "body", pullRequest: prWith("body") },
     });
 
-    const summary = summaryOf(await reviewStep().run(ctx));
+    let caught: unknown;
+    try {
+      await reviewStep().run(ctx);
+    } catch (err) {
+      caught = err;
+    }
 
-    expect(agent.tasks).toHaveLength(5); // all five passes still ran
-    expect(forge.bodyUpdates).toHaveLength(1); // the run completed and wrote the block
-    expect(summary).toContain("**Risk: low**"); // the bad pass folded in as empty findings
-    expect(logs.some((l) => l.includes("no valid findings"))).toBe(true);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("structured pass result");
+    expect(forge.bodyUpdates).toHaveLength(0);
+    expect(forge.reviews).toHaveLength(0);
+  });
+
+  test("propagates agent structured-output failures from review passes", async () => {
+    class ThrowingHarness extends FakeHarness {
+      override run() {
+        return Promise.reject(new Error("no schema-valid JSON object found in agent output"));
+      }
+    }
+    const agent = new ThrowingHarness();
+    const forge = new FakeForge();
+    const { ctx } = fakeCtx({
+      agent,
+      forge,
+      reads: { prBody: "body", pullRequest: prWith("body") },
+    });
+
+    let caught: unknown;
+    try {
+      await reviewStep().run(ctx);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("no schema-valid JSON object");
+    expect(forge.bodyUpdates).toHaveLength(0);
+    expect(forge.reviews).toHaveLength(0);
   });
 
   test("advances the resume marker via submitReview tied to the head", async () => {

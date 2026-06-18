@@ -9,21 +9,23 @@ import type {
   OpenPullRequestInput,
   Pending,
   PullRequest,
-  ReviewThread,
 } from "@tml/core";
 
 import { defaultRunner, type GhRunner } from "./gh.ts";
+import { markedReviewBody } from "./markers.ts";
 import {
   type ChecksData,
   type GhGraphQlResponse,
   type GhPrListRow,
-  type GhRestReviewComment,
   type LastReviewData,
   mapChecks,
   mapLastReviewedSha,
   mapPullRequest,
-  mapRestReviewComment,
+  type GhPageInfo,
+  type GhReviewThreadNode,
   type PrIdData,
+  type ReviewThreadCommentsPageData,
+  type ReviewThreadsPageData,
   type SnapshotData,
 } from "./map.ts";
 import {
@@ -36,6 +38,8 @@ import {
   prNodeIdArgs,
   replyThreadArgs,
   resolveThreadArgs,
+  reviewThreadCommentsPageArgs,
+  reviewThreadsPageArgs,
   snapshotArgs,
   submitReviewArgs,
 } from "./queries.ts";
@@ -54,12 +58,63 @@ function parsePrNumber(out: string): number {
   return Number(match[1]);
 }
 
+const donePage: GhPageInfo = { hasNextPage: false, endCursor: null };
+
+function pageInfoOf(connection: { readonly pageInfo?: GhPageInfo }): GhPageInfo {
+  return connection.pageInfo ?? donePage;
+}
+
 export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): Forge {
   const run = opts.run ?? defaultRunner(cwd);
 
-  async function getPullRequest(prNumber: number): Promise<PullRequest> {
+  async function hydrateThreadComments(thread: GhReviewThreadNode): Promise<GhReviewThreadNode> {
+    const comments = [...thread.comments.nodes];
+    let pageInfo = pageInfoOf(thread.comments);
+    while (pageInfo.hasNextPage) {
+      if (pageInfo.endCursor === null) throw new Error(`missing comments cursor for ${thread.id}`);
+      const res = JSON.parse(
+        await run(reviewThreadCommentsPageArgs(thread.id, pageInfo.endCursor)),
+      ) as GhGraphQlResponse<ReviewThreadCommentsPageData>;
+      const connection = res.data.node?.comments;
+      if (connection === undefined) throw new Error(`could not load comments for ${thread.id}`);
+      comments.push(...connection.nodes);
+      pageInfo = pageInfoOf(connection);
+    }
+    return { ...thread, comments: { ...thread.comments, nodes: comments, pageInfo: donePage } };
+  }
+
+  async function loadSnapshot(prNumber: number): Promise<SnapshotData> {
     const res = JSON.parse(await run(snapshotArgs(prNumber))) as GhGraphQlResponse<SnapshotData>;
-    return mapPullRequest(res.data.repository.pullRequest);
+    const pr = res.data.repository.pullRequest;
+    const threads = [...pr.reviewThreads.nodes];
+    let pageInfo = pageInfoOf(pr.reviewThreads);
+    while (pageInfo.hasNextPage) {
+      if (pageInfo.endCursor === null)
+        throw new Error(`missing review threads cursor for PR ${prNumber}`);
+      const page = JSON.parse(
+        await run(reviewThreadsPageArgs(prNumber, pageInfo.endCursor)),
+      ) as GhGraphQlResponse<ReviewThreadsPageData>;
+      const connection = page.data.repository.pullRequest.reviewThreads;
+      threads.push(...connection.nodes);
+      pageInfo = pageInfoOf(connection);
+    }
+
+    const hydratedThreads: GhReviewThreadNode[] = [];
+    for (const thread of threads) hydratedThreads.push(await hydrateThreadComments(thread));
+
+    return {
+      repository: {
+        pullRequest: {
+          ...pr,
+          reviewThreads: { ...pr.reviewThreads, nodes: hydratedThreads, pageInfo: donePage },
+        },
+      },
+    };
+  }
+
+  async function getPullRequest(prNumber: number): Promise<PullRequest> {
+    const data = await loadSnapshot(prNumber);
+    return mapPullRequest(data.repository.pullRequest);
   }
 
   // The thread/review mutations key off the PR's GraphQL node id, not its number.
@@ -107,11 +162,10 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
       line: number;
       body: string;
       commitSha: string;
-    }): Promise<ReviewThread> {
+    }): Promise<void> {
       // A published REST review comment (not a pending-review GraphQL thread) — anchored to the
       // reviewed head and immediately visible/resolvable, so it never collides with submitReview.
-      const out = await run(createReviewCommentArgs(input));
-      return mapRestReviewComment(JSON.parse(out) as GhRestReviewComment);
+      await run(createReviewCommentArgs(input));
     },
 
     async replyToThread(input: { threadId: string; body: string }): Promise<void> {
@@ -128,7 +182,7 @@ export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): F
       body: string;
     }): Promise<void> {
       const prId = await prNodeId(input.prNumber);
-      await run(submitReviewArgs({ prId, commit: input.commitSha, body: input.body }));
+      await run(submitReviewArgs({ prId, commit: input.commitSha, body: markedReviewBody(input.body) }));
     },
 
     async lastReviewedSha(prNumber: number): Promise<string | null> {

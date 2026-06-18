@@ -137,7 +137,6 @@ export class FakeForge implements Forge {
   readonly reviews: { prNumber: number; commitSha: string; body: string }[] = [];
 
   private nextNumber = 1;
-  private nextThreadId = 1;
 
   private snapshotFor(number: number, head: string, title: string, body: string): PullRequest {
     return {
@@ -183,17 +182,9 @@ export class FakeForge implements Forge {
     line: number;
     body: string;
     commitSha: string;
-  }): Promise<ReviewThread> {
+  }): Promise<void> {
     this.createdThreads.push(input);
-    const thread: ReviewThread = {
-      id: `RT_${this.nextThreadId++}`,
-      path: input.path,
-      line: input.line,
-      body: input.body,
-      resolved: false,
-      comments: [{ author: "tml", body: input.body, reactions: { thumbsUp: 0, thumbsDown: 0 } }],
-    };
-    return Promise.resolve(thread);
+    return Promise.resolve();
   }
   replyToThread(input: { threadId: string; body: string }): Promise<void> {
     this.replies.push(input);

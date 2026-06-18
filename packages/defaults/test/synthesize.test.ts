@@ -146,6 +146,7 @@ describe("summarize", () => {
       0,
       [unthreaded],
     );
+    expect(out).toContain("1 finding needs your decision");
     expect(out).toContain("### Design & non-functional");
     expect(out).toContain("API shape");
     expect(out).toContain("confirm the contract");

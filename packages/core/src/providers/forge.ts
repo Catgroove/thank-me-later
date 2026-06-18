@@ -84,7 +84,7 @@ export interface Forge {
     line: number;
     body: string;
     commitSha: string;
-  }): Promise<ReviewThread>;
+  }): Promise<void>;
   /** Reply to any existing thread (tml's, a human's, a bot's). */
   replyToThread(input: { threadId: string; body: string }): Promise<void>;
   /** Resolve a thread tml is allowed to resolve (its own). */

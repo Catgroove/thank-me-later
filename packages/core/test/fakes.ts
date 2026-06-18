@@ -8,7 +8,6 @@ import type {
   Forge,
   OpenPullRequestInput,
   PullRequest,
-  ReviewThread,
 } from "../src/providers/forge.ts";
 import type {
   AgentProgress,
@@ -85,16 +84,8 @@ export class FakeForge implements Forge {
   updatePullRequestBody(): Promise<void> {
     return Promise.resolve();
   }
-  createReviewThread(input: { prNumber: number; path: string; line: number; body: string }) {
-    const thread: ReviewThread = {
-      id: "RT_fake",
-      path: input.path,
-      line: input.line,
-      body: input.body,
-      resolved: false,
-      comments: [{ author: "", body: input.body, reactions: { thumbsUp: 0, thumbsDown: 0 } }],
-    };
-    return Promise.resolve(thread);
+  createReviewThread(): Promise<void> {
+    return Promise.resolve();
   }
   replyToThread(): Promise<void> {
     return Promise.resolve();

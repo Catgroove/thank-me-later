@@ -23,11 +23,27 @@ const ROLLUP_SELECTION = `commits(last: 1) {
 }`;
 
 /** A review comment with its 👍/👎 reaction tallies (the root comment carries the ack signal). */
+const PAGE_INFO_SELECTION = `pageInfo { hasNextPage endCursor }`;
+
 const COMMENT_SELECTION = `nodes {
+  id
   author { login }
   body
   reactionGroups { content reactors { totalCount } }
 }`;
+
+const COMMENT_CONNECTION_SELECTION = `${COMMENT_SELECTION}
+  ${PAGE_INFO_SELECTION}`;
+
+const REVIEW_THREADS_SELECTION = `nodes {
+  id
+  isResolved
+  isOutdated
+  path
+  line
+  comments(first: 100) { ${COMMENT_CONNECTION_SELECTION} }
+}
+${PAGE_INFO_SELECTION}`;
 
 /** Full snapshot: PR fields + mergeable + review decision + head sha + checks + review threads. */
 export const SNAPSHOT_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
@@ -44,16 +60,23 @@ export const SNAPSHOT_QUERY = `query($owner: String!, $repo: String!, $number: I
       reviewDecision
       headRefOid
       ${ROLLUP_SELECTION}
-      reviewThreads(first: 100) {
-        nodes {
-          id
-          isResolved
-          isOutdated
-          path
-          line
-          comments(first: 100) { ${COMMENT_SELECTION} }
-        }
-      }
+      reviewThreads(first: 100) { ${REVIEW_THREADS_SELECTION} }
+    }
+  }
+}`;
+
+export const REVIEW_THREADS_PAGE_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $threadsCursor: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $threadsCursor) { ${REVIEW_THREADS_SELECTION} }
+    }
+  }
+}`;
+
+export const REVIEW_THREAD_COMMENTS_PAGE_QUERY = `query($threadId: ID!, $commentsCursor: String!) {
+  node(id: $threadId) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $commentsCursor) { ${COMMENT_CONNECTION_SELECTION} }
     }
   }
 }`;
@@ -63,12 +86,11 @@ export const PR_ID_QUERY = `query($owner: String!, $repo: String!, $number: Int!
   repository(owner: $owner, name: $repo) { pullRequest(number: $number) { id } }
 }`;
 
-/** Viewer-authored reviews newest-last, each with its state + the commit it reviewed (the resume
- *  marker). `state` lets us ignore a leftover PENDING review and read only submitted ones. */
+/** Viewer-authored reviews newest-last, with enough fields to identify submitted tml markers. */
 export const LAST_REVIEW_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      reviews(last: 50) { nodes { viewerDidAuthor state commit { oid } } }
+      reviews(last: 50) { nodes { viewerDidAuthor state body commit { oid } } }
     }
   }
 }`;
@@ -99,19 +121,19 @@ export const CHECKS_QUERY = `query($owner: String!, $repo: String!, $number: Int
   }
 }`;
 
-function graphqlArgs(query: string, prNumber: number): string[] {
-  return [
-    "api",
-    "graphql",
-    "-f",
-    `query=${query}`,
-    "-F",
-    "owner={owner}",
-    "-F",
-    "repo={repo}",
-    "-F",
-    `number=${prNumber}`,
-  ];
+function graphqlArgs(
+  query: string,
+  vars: readonly { name: string; value: string; numeric?: boolean }[],
+  repoVars = true,
+): string[] {
+  const args = ["api", "graphql", "-f", `query=${query}`];
+  if (repoVars) args.push("-F", "owner={owner}", "-F", "repo={repo}");
+  for (const v of vars) args.push(v.numeric ? "-F" : "-f", `${v.name}=${v.value}`);
+  return args;
+}
+
+function prGraphqlArgs(query: string, prNumber: number): string[] {
+  return graphqlArgs(query, [{ name: "number", value: String(prNumber), numeric: true }]);
 }
 
 /** Resolve PR numbers for a head branch (idempotency hook); include state to prefer an open PR. */
@@ -135,19 +157,37 @@ export function prCreateArgs(input: OpenPullRequestInput): string[] {
 }
 
 export function snapshotArgs(prNumber: number): string[] {
-  return graphqlArgs(SNAPSHOT_QUERY, prNumber);
+  return prGraphqlArgs(SNAPSHOT_QUERY, prNumber);
+}
+
+export function reviewThreadsPageArgs(prNumber: number, cursor: string): string[] {
+  return graphqlArgs(REVIEW_THREADS_PAGE_QUERY, [
+    { name: "number", value: String(prNumber), numeric: true },
+    { name: "threadsCursor", value: cursor },
+  ]);
+}
+
+export function reviewThreadCommentsPageArgs(threadId: string, cursor: string): string[] {
+  return graphqlArgs(
+    REVIEW_THREAD_COMMENTS_PAGE_QUERY,
+    [
+      { name: "threadId", value: threadId },
+      { name: "commentsCursor", value: cursor },
+    ],
+    false,
+  );
 }
 
 export function checksArgs(prNumber: number): string[] {
-  return graphqlArgs(CHECKS_QUERY, prNumber);
+  return prGraphqlArgs(CHECKS_QUERY, prNumber);
 }
 
 export function prNodeIdArgs(prNumber: number): string[] {
-  return graphqlArgs(PR_ID_QUERY, prNumber);
+  return prGraphqlArgs(PR_ID_QUERY, prNumber);
 }
 
 export function lastReviewArgs(prNumber: number): string[] {
-  return graphqlArgs(LAST_REVIEW_QUERY, prNumber);
+  return prGraphqlArgs(LAST_REVIEW_QUERY, prNumber);
 }
 
 /** Build `gh api graphql` argv for a mutation; string vars use `-f`, numeric vars `-F`. */

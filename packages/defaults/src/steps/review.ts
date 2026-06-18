@@ -16,7 +16,14 @@
 //     (replacing only that region) and submits a COMMENT review tied to the head — the resume
 //     marker the delta gate reads next time. The same markdown is the `reviewSummary` artifact.
 
-import { type Ctx, defineStep, type Git, type GitStatus, type Harness, type Step } from "@tml/core";
+import {
+  type Ctx,
+  defineStep,
+  type Git,
+  type GitStatus,
+  type Harness,
+  type Step,
+} from "@tml/core";
 import { prBody, pullRequest, reviewSummary } from "../artifacts.ts";
 import {
   architecturePrompt,
@@ -44,24 +51,10 @@ import {
   parseLocation,
 } from "../review/threads.ts";
 
-/** Run one read-only review pass: structured reply against the given schema, validated. A pass
- *  that fails to return schema-valid output (a flaky agent turn) is logged and treated as empty
- *  rather than aborting the whole ship — the other passes and the rest of the pipeline proceed. */
-async function runPass(
-  agent: Harness,
-  prompt: string,
-  schema: object,
-  log: (m: string) => void,
-): Promise<PassResult> {
-  try {
-    const result = await agent.run(prompt, { schema });
-    return parsePassResult(result.output);
-  } catch (err) {
-    log(
-      `review: a pass returned no valid findings (${(err as Error).message}); treating it as empty`,
-    );
-    return { findings: [] };
-  }
+/** Run one read-only review pass: structured reply against the given schema, validated. */
+async function runPass(agent: Harness, prompt: string, schema: object): Promise<PassResult> {
+  const result = await agent.run(prompt, { schema });
+  return parsePassResult(result.output);
 }
 
 /** The set of files git reports as changed (staged or unstaged), for before/after comparison. */
@@ -92,26 +85,24 @@ async function runReview(
   const { agent } = ctx;
   const log = (m: string) => ctx.log(m);
   const before = await ctx.git.status();
-  const context = await runPass(agent, contextPrompt(prBodyText), findingsSchema, log);
-  const understanding = context.understanding ?? "";
-  const architecture = await runPass(
-    agent,
-    architecturePrompt(understanding),
-    architectureSchema,
-    log,
-  );
-  const correctness = await runPass(agent, correctnessPrompt(understanding), findingsSchema, log);
-  const design = await runPass(agent, designPrompt(understanding), findingsSchema, log);
-  const micro = await runPass(agent, microPrompt(understanding), findingsSchema, log);
-  await revertRogueEdits(ctx.git, before, log);
-
-  const passes: ReviewPass[] = [
-    { title: "Context & intent", result: context },
-    { title: "Architecture & scope", result: architecture },
-    { title: "Correctness & testing", result: correctness },
-    { title: "Design & non-functional", result: design },
-    { title: "Maintainability & nits", result: micro },
-  ];
+  let passes: ReviewPass[] = [];
+  try {
+    const context = await runPass(agent, contextPrompt(prBodyText), findingsSchema);
+    const understanding = context.understanding ?? "";
+    const architecture = await runPass(agent, architecturePrompt(understanding), architectureSchema);
+    const correctness = await runPass(agent, correctnessPrompt(understanding), findingsSchema);
+    const design = await runPass(agent, designPrompt(understanding), findingsSchema);
+    const micro = await runPass(agent, microPrompt(understanding), findingsSchema);
+    passes = [
+      { title: "Context & intent", result: context },
+      { title: "Architecture & scope", result: architecture },
+      { title: "Correctness & testing", result: correctness },
+      { title: "Design & non-functional", result: design },
+      { title: "Maintainability & nits", result: micro },
+    ];
+  } finally {
+    await revertRogueEdits(ctx.git, before, log);
+  }
 
   // Only safe, non-behavioural findings are auto-fixed; ask-user findings become threads. Skip the
   // fix pass (and its agent call) when there's nothing to fix.

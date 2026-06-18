@@ -8,7 +8,6 @@ import {
   mapLastReviewedSha,
   mapMergeable,
   mapPullRequest,
-  mapRestReviewComment,
   mapReviewDecision,
   mapReviewThread,
   mapState,
@@ -60,7 +59,7 @@ describe("mapReviewDecision", () => {
 });
 
 describe("mapLastReviewedSha", () => {
-  test("returns the newest submitted viewer review, ignoring a trailing PENDING review", () => {
+  test("returns the newest submitted tml review, ignoring manual and trailing PENDING reviews", () => {
     expect(mapLastReviewedSha(lastReviewResponse.data.repository.pullRequest.reviews.nodes)).toBe(
       "newsha",
     );
@@ -72,46 +71,22 @@ describe("mapLastReviewedSha", () => {
   });
   test("null when the viewer's only review is still pending", () => {
     expect(
-      mapLastReviewedSha([{ viewerDidAuthor: true, state: "PENDING", commit: { oid: "p" } }]),
+      mapLastReviewedSha([
+        {
+          viewerDidAuthor: true,
+          state: "PENDING",
+          body: "<!-- tml:review -->\npending",
+          commit: { oid: "p" },
+        },
+      ]),
     ).toBe(null);
   });
-});
-
-describe("mapRestReviewComment", () => {
-  test("maps a REST review comment into an unresolved single-comment thread", () => {
+  test("null when the viewer's only review lacks the tml marker", () => {
     expect(
-      mapRestReviewComment({
-        node_id: "PRRC_1",
-        path: "src/a.ts",
-        line: 12,
-        body: "<!-- tml:finding key=k --> detail",
-        user: { login: "tml" },
-      }),
-    ).toEqual({
-      id: "PRRC_1",
-      path: "src/a.ts",
-      line: 12,
-      body: "<!-- tml:finding key=k --> detail",
-      resolved: false,
-      comments: [
-        {
-          author: "tml",
-          body: "<!-- tml:finding key=k --> detail",
-          reactions: { thumbsUp: 0, thumbsDown: 0 },
-        },
-      ],
-    });
-  });
-  test("omits a null line and maps a null author to empty string", () => {
-    const t = mapRestReviewComment({
-      node_id: "PRRC_2",
-      path: "src/a.ts",
-      line: null,
-      body: "b",
-      user: null,
-    });
-    expect("line" in t).toBe(false);
-    expect(t.comments[0]?.author).toBe("");
+      mapLastReviewedSha([
+        { viewerDidAuthor: true, state: "COMMENTED", body: "manual", commit: { oid: "m" } },
+      ]),
+    ).toBe(null);
   });
 });
 

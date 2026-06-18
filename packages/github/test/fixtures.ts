@@ -13,7 +13,6 @@ import type {
   GhGraphQlResponse,
   GhPrListRow,
   GhPullRequestNode,
-  GhRestReviewComment,
   GhReviewThreadNode,
   LastReviewData,
   PrIdData,
@@ -231,10 +230,36 @@ export const lastReviewResponse: GhGraphQlResponse<LastReviewData> = {
       pullRequest: {
         reviews: {
           nodes: [
-            { viewerDidAuthor: true, state: "COMMENTED", commit: { oid: "oldsha" } },
-            { viewerDidAuthor: false, state: "COMMENTED", commit: { oid: "someoneelse" } },
-            { viewerDidAuthor: true, state: "COMMENTED", commit: { oid: "newsha" } },
-            { viewerDidAuthor: true, state: "PENDING", commit: { oid: "pendingsha" } },
+            {
+              viewerDidAuthor: true,
+              state: "COMMENTED",
+              body: "<!-- tml:review -->\nold",
+              commit: { oid: "oldsha" },
+            },
+            {
+              viewerDidAuthor: false,
+              state: "COMMENTED",
+              body: "<!-- tml:review -->\nsomeone else",
+              commit: { oid: "someoneelse" },
+            },
+            {
+              viewerDidAuthor: true,
+              state: "COMMENTED",
+              body: "manual review",
+              commit: { oid: "manualsha" },
+            },
+            {
+              viewerDidAuthor: true,
+              state: "COMMENTED",
+              body: "<!-- tml:review -->\nnew",
+              commit: { oid: "newsha" },
+            },
+            {
+              viewerDidAuthor: true,
+              state: "PENDING",
+              body: "<!-- tml:review -->\npending",
+              commit: { oid: "pendingsha" },
+            },
           ],
         },
       },
@@ -244,13 +269,4 @@ export const lastReviewResponse: GhGraphQlResponse<LastReviewData> = {
 
 export const lastReviewEmpty: GhGraphQlResponse<LastReviewData> = {
   data: { repository: { pullRequest: { reviews: { nodes: [] } } } },
-};
-
-/** A REST review comment as returned by `POST /pulls/{n}/comments`. */
-export const restReviewComment: GhRestReviewComment = {
-  node_id: "PRRC_new",
-  path: "src/x.ts",
-  line: 9,
-  body: "<!-- tml:finding key=k1 --> detail",
-  user: { login: "tml" },
 };

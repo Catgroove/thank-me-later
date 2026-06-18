@@ -125,7 +125,9 @@ export function summarize(
   const fixes = fixSummary.trim();
 
   const fixed = all.filter((f) => f.action === "auto-fix").length;
-  const decide = openThreads;
+  const inlineDecide = inlineAskUser.length;
+  const threadDecisionLabel = openThreads === 1 ? "thread needs" : "threads need";
+  const inlineDecisionLabel = inlineDecide === 1 ? "finding needs" : "findings need";
   const info = all.filter((f) => f.action === "no-op").length;
 
   const head: string[] = [];
@@ -141,9 +143,8 @@ export function summarize(
 
   const tally = [
     fixed > 0 ? `✅ ${fixed} fixed` : null,
-    decide > 0
-      ? `⚠️ ${decide} ${decide === 1 ? "thread needs" : "threads need"} your decision`
-      : null,
+    openThreads > 0 ? `⚠️ ${openThreads} ${threadDecisionLabel} your decision` : null,
+    inlineDecide > 0 ? `⚠️ ${inlineDecide} ${inlineDecisionLabel} your decision` : null,
     info > 0 ? `ℹ️ ${info} informational` : null,
   ].filter((s): s is string => s !== null);
   if (tally.length > 0) head.push(tally.join(" · "), "");

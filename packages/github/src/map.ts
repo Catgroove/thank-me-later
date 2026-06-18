@@ -15,6 +15,8 @@ import type {
   ReviewThread,
 } from "@tml/core";
 
+import { TML_REVIEW_MARKER } from "./markers.ts";
+
 // --- Raw `gh` response shapes (pre-mapping) -------------------------------------
 
 /** A check from the GraphQL Checks API. */
@@ -49,30 +51,32 @@ export interface GhReviewCommentNode {
   readonly reactionGroups: readonly GhReactionGroup[];
 }
 
+export interface GhPageInfo {
+  readonly hasNextPage: boolean;
+  readonly endCursor: string | null;
+}
+
+export interface GhConnection<T> {
+  readonly nodes: readonly T[];
+  readonly pageInfo?: GhPageInfo;
+}
+
 export interface GhReviewThreadNode {
   readonly id: string;
   readonly isResolved: boolean;
   readonly isOutdated: boolean;
   readonly path: string | null;
   readonly line: number | null;
-  readonly comments: { readonly nodes: readonly GhReviewCommentNode[] };
+  readonly comments: GhConnection<GhReviewCommentNode>;
 }
 
-/** A viewer-authored review, tied to the commit it reviewed (the `lastReviewedSha` source). */
+/** A review row used by `lastReviewedSha`. */
 export interface GhReviewNode {
   readonly viewerDidAuthor: boolean;
   /** PENDING | COMMENTED | APPROVED | CHANGES_REQUESTED | DISMISSED */
   readonly state: string;
-  readonly commit: { readonly oid: string } | null;
-}
-
-/** A review comment returned by the REST `POST /pulls/{n}/comments` endpoint (createReviewThread). */
-export interface GhRestReviewComment {
-  readonly node_id: string;
-  readonly path: string;
-  readonly line: number | null;
   readonly body: string;
-  readonly user: { readonly login: string } | null;
+  readonly commit: { readonly oid: string } | null;
 }
 
 /** The last commit on the PR carries the status-check rollup. */
@@ -99,7 +103,7 @@ export interface GhPullRequestNode {
   readonly reviewDecision: string | null;
   readonly headRefOid: string;
   readonly commits: { readonly nodes: readonly GhCommitNode[] };
-  readonly reviewThreads: { readonly nodes: readonly GhReviewThreadNode[] };
+  readonly reviewThreads: GhConnection<GhReviewThreadNode>;
 }
 
 /** `gh api graphql` wraps the selection under `data`. */
@@ -110,6 +114,16 @@ export interface GhGraphQlResponse<T> {
 /** `data` shape of the full-snapshot query (getPullRequest / findPullRequest). */
 export interface SnapshotData {
   readonly repository: { readonly pullRequest: GhPullRequestNode };
+}
+
+export interface ReviewThreadsPageData {
+  readonly repository: {
+    readonly pullRequest: { readonly reviewThreads: GhConnection<GhReviewThreadNode> };
+  };
+}
+
+export interface ReviewThreadCommentsPageData {
+  readonly node: { readonly comments: GhConnection<GhReviewCommentNode> } | null;
 }
 
 /** `data` shape of the lighter checks-only query (getChecks poll). */
@@ -283,26 +297,16 @@ export function mapReviewThread(node: GhReviewThreadNode): ReviewThread {
   return node.line === null ? withPath : { ...withPath, line: node.line };
 }
 
-/** The SHA of the viewer's most recent *submitted* review, or `null` when there is none. A still
- *  PENDING review (e.g. left by an interrupted run) is ignored — only submitted reviews mark a
- *  reviewed head. */
+/** The SHA of tml's most recent submitted review, or `null` when there is none. */
 export function mapLastReviewedSha(reviews: readonly GhReviewNode[]): string | null {
   const mine = reviews.filter(
-    (r) => r.viewerDidAuthor && r.state !== "PENDING" && r.commit !== null,
+    (r) =>
+      r.viewerDidAuthor &&
+      r.state !== "PENDING" &&
+      r.commit !== null &&
+      r.body.includes(TML_REVIEW_MARKER),
   );
   return mine.at(-1)?.commit?.oid ?? null;
-}
-
-/** Map a REST review comment into a (single-comment, unresolved) ReviewThread. */
-export function mapRestReviewComment(c: GhRestReviewComment): ReviewThread {
-  const comment: ReviewComment = {
-    author: c.user?.login ?? "",
-    body: c.body,
-    reactions: { thumbsUp: 0, thumbsDown: 0 },
-  };
-  const base: ReviewThread = { id: c.node_id, body: c.body, resolved: false, comments: [comment] };
-  const withPath = c.path === "" ? base : { ...base, path: c.path };
-  return c.line === null ? withPath : { ...withPath, line: c.line };
 }
 
 export function mapPullRequest(node: GhPullRequestNode): PullRequest {

@@ -77,6 +77,16 @@ describe("merge-gate step", () => {
     expect(r.blockers).toContain("changes requested");
   });
 
+  test("blocks when review is required", async () => {
+    const forge = gateForge({ reviewDecision: "review_required" });
+    const { ctx } = fakeCtx({ forge, reads: reads() });
+
+    const r = readinessOf(await mergeGateStep().run(ctx));
+
+    expect(r.ready).toBe(false);
+    expect(r.blockers).toContain("review required");
+  });
+
   test("blocks on unresolved threads", async () => {
     const forge = gateForge({ threads: [resolvedThread("RT1"), openThread("RT2")] });
     const { ctx } = fakeCtx({ forge, reads: reads() });
@@ -100,7 +110,7 @@ describe("merge-gate step", () => {
   test("lists every blocker at once and never merges (there is no merge op)", async () => {
     const forge = gateForge({
       checks: [{ name: "build", status: "completed", conclusion: "failure" }],
-      reviewDecision: "changes_requested",
+      reviewDecision: "review_required",
       threads: [openThread("RT2")],
       mergeable: "conflicted",
     });
@@ -109,6 +119,7 @@ describe("merge-gate step", () => {
     const r = readinessOf(await mergeGateStep().run(ctx));
 
     expect(r.ready).toBe(false);
+    expect(r.blockers).toContain("review required");
     expect(r.blockers).toHaveLength(4);
     // The Forge exposes no merge method — the gate cannot merge by construction.
     expect("merge" in forge).toBe(false);

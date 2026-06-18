@@ -18,7 +18,6 @@ import {
   prIdResponse,
   prListEmpty,
   prListHit,
-  restReviewComment,
   snapshotConflictedResponse,
   snapshotOpenResponse,
 } from "./fixtures.ts";
@@ -208,13 +207,13 @@ describe("updatePullRequestBody", () => {
 });
 
 describe("createReviewThread", () => {
-  test("posts a published REST review comment anchored to the reviewed head, and maps it back", async () => {
+  test("posts a published REST review comment anchored to the reviewed head", async () => {
     const { forge, calls } = forgeWith((args) => {
-      if (isCreateComment(args)) return JSON.stringify(restReviewComment);
+      if (isCreateComment(args)) return "{}";
       throw new Error(`unexpected args: ${args.join(" ")}`);
     });
 
-    const thread = await forge.createReviewThread({
+    await forge.createReviewThread({
       prNumber: 42,
       path: "src/x.ts",
       line: 9,
@@ -222,9 +221,6 @@ describe("createReviewThread", () => {
       commitSha: "deadbeef",
     });
 
-    expect(thread.id).toBe("PRRC_new");
-    expect(thread.line).toBe(9);
-    expect(thread.resolved).toBe(false);
     const call = calls.find(isCreateComment);
     expect(call).toEqual([
       "api",
@@ -278,11 +274,12 @@ describe("submitReview", () => {
     const call = calls.find(isAddReview);
     expect(call).toContain("prId=PR_node_42");
     expect(call).toContain("commit=headsha");
+    expect(call).toContain("body=<!-- tml:review -->\nReviewed.");
   });
 });
 
 describe("lastReviewedSha", () => {
-  test("returns the newest viewer-authored review commit", async () => {
+  test("returns the newest tml review commit", async () => {
     const { forge } = forgeWith((args) => {
       if (isLastReview(args)) return JSON.stringify(lastReviewResponse);
       throw new Error(`unexpected args: ${args.join(" ")}`);
