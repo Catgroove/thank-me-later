@@ -22,11 +22,11 @@ const ROLLUP_SELECTION = `commits(last: 1) {
   }
 }`;
 
-/** A review comment with its 👍/👎 reaction tallies (the root comment carries the ack signal). */
+/** Pagination fields shared by GraphQL connections. */
 const PAGE_INFO_SELECTION = `pageInfo { hasNextPage endCursor }`;
 
+/** A review comment with its 👍/👎 reaction tallies (the root comment carries the ack signal). */
 const COMMENT_SELECTION = `nodes {
-  id
   author { login }
   body
   reactionGroups { content reactors { totalCount } }
