@@ -29,22 +29,44 @@ export function createCliApprovalResponder(): ApprovalResponder {
   };
 }
 
-function renderApprovalInput(input: ApproveFindingsInput): void {
-  process.stderr.write(`\n${input.prompt}\n`);
-  if (input.context?.trim()) process.stderr.write(`\n${input.context.trim()}\n`);
+export function renderApprovalInput(input: ApproveFindingsInput): void {
+  process.stderr.write(`\n${sanitizeTerminalText(input.prompt, { preserveNewlines: true })}\n`);
+  if (input.context?.trim()) {
+    process.stderr.write(
+      `\n${sanitizeTerminalText(input.context.trim(), { preserveNewlines: true })}\n`,
+    );
+  }
   process.stderr.write("\nFindings:\n");
   input.findings.forEach((finding, index) => {
     process.stderr.write(`${index + 1}. ${formatFinding(finding)}\n`);
-    process.stderr.write(`   id: ${finding.id}\n`);
+    process.stderr.write(`   id: ${sanitizeTerminalText(finding.id)}\n`);
   });
   if (input.selectedFindingIds && input.selectedFindingIds.length > 0) {
-    process.stderr.write(`Suggested fix selection: ${input.selectedFindingIds.join(", ")}\n`);
+    const selection = input.selectedFindingIds.map((id) => sanitizeTerminalText(id)).join(", ");
+    process.stderr.write(`Suggested fix selection: ${selection}\n`);
   }
 }
 
+export function sanitizeTerminalText(
+  value: string,
+  options: { readonly preserveNewlines?: boolean } = {},
+): string {
+  let output = "";
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    const isControl = code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+    if (!isControl || (options.preserveNewlines === true && character === "\n")) {
+      output += character;
+    } else {
+      output += `\\u${code.toString(16).padStart(4, "0")}`;
+    }
+  }
+  return output;
+}
+
 function formatFinding(finding: Finding): string {
-  const location = finding.location ? ` ${finding.location}` : "";
-  return `${finding.severity}${location}: ${finding.title} - ${finding.detail} (${finding.action})`;
+  const location = finding.location ? ` ${sanitizeTerminalText(finding.location)}` : "";
+  return `${finding.severity}${location}: ${sanitizeTerminalText(finding.title)} - ${sanitizeTerminalText(finding.detail)} (${finding.action})`;
 }
 
 function parseDecision(answer: string, input: ApproveFindingsInput): ApprovalDecision | undefined {
