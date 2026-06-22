@@ -1,6 +1,6 @@
 // `tmlDefaults` — the blessed default pipeline as an injected-API Plugin. In order:
 //   branch → describe → commit(the change) → rebase → {format,lint,typecheck,test}+commit
-//          → review+commit → open-pr → ci-wait
+//          → review (commits its own fixes through the core round executor) → open-pr → ci-wait
 // The work lands as a clean history — your change, then tml's fixes in their own commits. `rebase`
 // runs once the change is committed (clean worktree) so the checks, review, and CI all see the
 // freshly fetched base; turn it off with `disable: ["rebase"]` in tml.json.
@@ -30,7 +30,7 @@ export const tmlDefaults: Plugin = (tml) => {
     commitStep("commit-change", prTitle), // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
     ...commitGroup(formatStep(), lintStep(), typecheckStep(), testStep()),
-    ...commitGroup(reviewStep()),
+    reviewStep(),
     openPrStep(),
     ciWaitStep(),
   );

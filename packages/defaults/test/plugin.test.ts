@@ -31,7 +31,6 @@ describe("tmlDefaults plugin", () => {
       "test",
       "commit(format+lint+typecheck+test)",
       "review",
-      "commit(review)",
       "open-pr",
       "ci-wait",
     ]);

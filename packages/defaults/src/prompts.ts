@@ -121,16 +121,21 @@ export function microPrompt(understanding: string): string {
 /** The fix pass - the only one that edits files; applies the auto-fix findings in place. */
 type FixPromptFinding = Pick<Finding, "severity" | "action" | "title" | "detail" | "location">;
 
-export function fixPrompt(findings: readonly FixPromptFinding[]): string {
+export function fixPrompt(findings: readonly FixPromptFinding[], historyText?: string): string {
   const list = findings
     .map((f) => `- ${f.title}${f.location ? ` (${f.location})` : ""}: ${f.detail}`)
     .join("\n");
+  const history = historyText?.trim();
+  const prior =
+    history && history !== "No prior rounds." ? "\n\nPrior review round history:\n" + history : "";
   return (
     "A review of this branch produced the findings below. Apply fixes for them in place. Always " +
     "start by double-checking that each finding is legitimate, and skip any that are not. Prefer " +
     "the smallest correct root-cause fix within the changed area over patching only the reported " +
     "line. Do not revert the author's intentional changes, and do not add code comments " +
-    "explaining your fixes. Summarise what you changed in one short line.\n\nFindings:\n" +
+    "explaining your fixes. Summarise what you changed in one short line." +
+    prior +
+    "\n\nFindings:\n" +
     list
   );
 }

@@ -80,7 +80,7 @@ describe("review step", () => {
     expect(agent.tasks).toHaveLength(5); // ask-user is not auto-fix, so no fix pass
   });
 
-  test("runs the fix pass only when there are auto-fix findings", async () => {
+  test("runs the fix pass for auto-fix findings, then verifies with fresh passes", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([]),
@@ -91,13 +91,24 @@ describe("review step", () => {
       pass([]),
       pass([]),
       { ok: true, summary: "fixed the off-by-one" }, // the fix pass reply
+      pass([]),
+      pass([], { verdict: "proceed" }),
+      pass([]),
+      pass([]),
+      pass([]),
     );
     const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
 
-    const summary = summaryOf(await reviewStep().run(ctx));
+    const result = await reviewStep().run(ctx);
+    const summary = summaryOf(result);
+    const stepResult = result as { rounds?: { trigger?: string }[] };
 
-    expect(agent.tasks).toHaveLength(6);
+    expect(agent.tasks).toHaveLength(11);
     expect(agent.opts[5]?.schema).toBeUndefined(); // the fix pass requests no schema
+    expect(agent.tasks[5]).toContain("Prior review round history");
+    expect(agent.tasks[5]).toContain("Round 0: initial");
+    expect(agent.tasks[6]).toContain("Prior review round history");
+    expect(stepResult.rounds?.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
     expect(summary).toContain("fixed the off-by-one");
   });
 

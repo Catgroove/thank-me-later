@@ -86,23 +86,42 @@ export function riskOf(findings: readonly Finding[], blocked = false): Risk {
   return "low";
 }
 
-function renderFinding(f: Finding): string {
+function renderFinding(f: Finding, fixedFindingIds: ReadonlySet<string> | undefined): string {
   const text = renderFindingForPr(f);
-  // `auto-fix` findings were handed to the fix pass, so they read as already handled; the rest
-  // are left for the human, with `ask-user` ones called out as needing a decision.
-  if (f.action === "auto-fix") return `- ~~${text.slice(2)}~~ (fixed)`;
+  // By default, preserve the original one-shot review behavior: auto-fix findings in the
+  // summarized passes were handed to the fix pass and read as already handled. Round-based review
+  // can pass an explicit fixed-id set when summarizing a verification pass, where an auto-fix
+  // finding still present is unresolved and must not be struck through.
+  if (f.action === "auto-fix" && (fixedFindingIds === undefined || fixedFindingIds.has(f.id))) {
+    return `- ~~${text.slice(2)}~~ (fixed)`;
+  }
   return text;
+}
+
+export interface SummarizeOptions {
+  readonly fixedFindingIds?: readonly string[];
 }
 
 /** Fold the passes into the `reviewSummary` markdown. Above the fold: a blocking banner (if
  *  any), the risk, a one-line tally, and the fixes applied. The full per-phase breakdown is
  *  tucked into a collapsible `<details>` so the PR body stays scannable. Deterministic. */
-export function summarize(passes: readonly ReviewPass[], fixSummary: string): string {
+export function summarize(
+  passes: readonly ReviewPass[],
+  fixSummary: string,
+  options: SummarizeOptions = {},
+): string {
   const all = passes.flatMap((p) => p.result.findings);
   const blocked = passes.some((p) => p.result.verdict === "block");
   const fixes = fixSummary.trim();
+  const fixedFindingIds =
+    options.fixedFindingIds === undefined ? undefined : new Set(options.fixedFindingIds);
 
-  const fixed = all.filter((f) => f.action === "auto-fix").length;
+  const fixed = all.filter(
+    (f) => f.action === "auto-fix" && (fixedFindingIds === undefined || fixedFindingIds.has(f.id)),
+  ).length;
+  const unresolvedAutoFix = all.filter(
+    (f) => f.action === "auto-fix" && fixedFindingIds !== undefined && !fixedFindingIds.has(f.id),
+  ).length;
   const decide = all.filter((f) => f.action === "ask-user").length;
   const info = all.filter((f) => f.action === "no-op").length;
 
@@ -119,6 +138,9 @@ export function summarize(passes: readonly ReviewPass[], fixSummary: string): st
 
   const tally = [
     fixed > 0 ? `${fixed} fixed` : null,
+    unresolvedAutoFix > 0
+      ? `${unresolvedAutoFix} ${unresolvedAutoFix === 1 ? "still needs" : "still need"} an auto-fix`
+      : null,
     decide > 0 ? `${decide} ${decide === 1 ? "needs" : "need"} your decision` : null,
     info > 0 ? `${info} informational` : null,
   ].filter((s): s is string => s !== null);
@@ -133,7 +155,7 @@ export function summarize(passes: readonly ReviewPass[], fixSummary: string): st
     if (pass.result.findings.length === 0) {
       body.push("- Blocking verdict returned without specific findings.");
     } else {
-      for (const f of pass.result.findings) body.push(renderFinding(f));
+      for (const f of pass.result.findings) body.push(renderFinding(f, fixedFindingIds));
     }
     body.push("");
   }

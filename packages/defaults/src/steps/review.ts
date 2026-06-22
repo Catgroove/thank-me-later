@@ -1,14 +1,22 @@
 // `review` - a pre-push review of the branch's diff that mimics how a staff engineer reads a
-// change: five focused read-only passes (context → architecture → correctness → design+NFR →
-// micro), then one fix pass that applies the safe fixes the passes surfaced. Read-only is the
-// passes' contract; the prompts ask for it and a before/after worktree check reverts any edits a
-// pass makes anyway, so only the fix pass can change files. Synthesis and the
-// overall risk are computed in code (see `../review/synthesize.ts`), not by the agent. The
-// architecture pass can `block`, which is recorded as a high-risk banner - it does not halt the
-// run. The resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR
-// body.
+// change: five focused read-only passes (context -> architecture -> correctness -> design+NFR ->
+// micro), then a core round loop applies safe fixes and verifies them with fresh passes. Read-only
+// is the passes' contract; the prompts ask for it and a before/after worktree check reverts any
+// edits a pass makes anyway, so only the fix callback can change files. Synthesis and the overall
+// risk are computed in code (see `../review/synthesize.ts`), not by the agent. The architecture
+// pass can `block`, which is recorded as a high-risk banner - it does not halt the run. The
+// resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR body.
 
-import { defineStep, type Git, type GitStatus, type Harness, type Step } from "@tml/core";
+import {
+  defineStep,
+  executeRoundLoop,
+  type Ctx,
+  type Git,
+  type GitStatus,
+  type Harness,
+  type RoundCheckInput,
+  type Step,
+} from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import {
   architecturePrompt,
@@ -27,6 +35,14 @@ import {
   summarize,
 } from "../review/synthesize.ts";
 
+const REVIEW_PASS_TITLES = {
+  context: "Context & intent",
+  architecture: "Architecture & scope",
+  correctness: "Correctness & testing",
+  design: "Design & non-functional",
+  micro: "Maintainability & nits",
+} as const;
+
 /** Run one read-only review pass: structured reply against the given schema, validated. */
 async function runPass(
   agent: Harness,
@@ -44,17 +60,68 @@ function touched(status: GitStatus): string {
 
 /** Read-only is prompt-enforced, not sandboxed: the passes call the same edit-capable Harness.
  *  This guard makes read-only a real invariant - if a pass modified the worktree despite the
- *  prompt, those edits are reverted so they can't be misattributed to the fix pass and committed
- *  by the trailing commit(review). The pipeline commits all prior work before review runs, so the
- *  worktree is clean here and reverting to HEAD discards exactly the rogue edits. */
+ *  prompt, those edits are reverted so they can't be misattributed to the fix pass and committed.
+ *  The pipeline commits all prior work before review runs, and the round executor commits each
+ *  fix before verification, so reverting to HEAD discards exactly the rogue edits. */
 async function revertRogueEdits(
   git: Git,
   before: GitStatus,
   log: (m: string) => void,
 ): Promise<void> {
   if (touched(await git.status()) === touched(before)) return;
-  log("warning: a read-only review pass modified the worktree; reverting before the fix pass");
+  log("warning: a read-only review pass modified the worktree; reverting before continuing");
   await git.discardChanges();
+}
+
+function withRoundHistory(prompt: string, input: RoundCheckInput): string {
+  if (input.trigger === "initial") return prompt;
+  const history = input.historyText.trim();
+  if (history.length === 0 || history === "No prior rounds.") return prompt;
+  return (
+    prompt +
+    "\n\nPrior review round history from this run. Use it explicitly: verify that previous " +
+    "auto-fix findings were actually fixed, do not re-report resolved findings, and explain any " +
+    "remaining or newly introduced findings against the current diff.\n" +
+    history
+  );
+}
+
+async function runReviewPasses(
+  ctx: Ctx<readonly [typeof prBody]>,
+  input: RoundCheckInput,
+): Promise<ReviewPass[]> {
+  const { agent } = ctx;
+  const before = await ctx.git.status();
+  const body = ctx.read(prBody);
+  const context = await runPass(agent, withRoundHistory(contextPrompt(body), input));
+  const understanding = context.understanding ?? "";
+  const architecture = await runPass(
+    agent,
+    withRoundHistory(architecturePrompt(understanding), input),
+    architectureSchema,
+  );
+  const correctness = await runPass(
+    agent,
+    withRoundHistory(correctnessPrompt(understanding), input),
+  );
+  const design = await runPass(agent, withRoundHistory(designPrompt(understanding), input));
+  const micro = await runPass(agent, withRoundHistory(microPrompt(understanding), input));
+  await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+
+  return [
+    { title: REVIEW_PASS_TITLES.context, result: context },
+    { title: REVIEW_PASS_TITLES.architecture, result: architecture },
+    { title: REVIEW_PASS_TITLES.correctness, result: correctness },
+    { title: REVIEW_PASS_TITLES.design, result: design },
+    { title: REVIEW_PASS_TITLES.micro, result: micro },
+  ];
+}
+
+function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): string {
+  return rounds
+    .map((round) => round.fixSummary?.trim() ?? "")
+    .filter((summary) => summary.length > 0)
+    .join("; ");
 }
 
 export function reviewStep(): Step {
@@ -63,45 +130,27 @@ export function reviewStep(): Step {
     consumes: [prBody],
     produces: [reviewSummary],
     async run(ctx) {
-      const { agent } = ctx;
-      const before = await ctx.git.status();
-      const context = await runPass(agent, contextPrompt(ctx.read(prBody)));
-      const understanding = context.understanding ?? "";
-      const architecture = await runPass(
-        agent,
-        architecturePrompt(understanding),
-        architectureSchema,
-      );
-      const correctness = await runPass(agent, correctnessPrompt(understanding));
-      const design = await runPass(agent, designPrompt(understanding));
-      const micro = await runPass(agent, microPrompt(understanding));
-      await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+      let latestPasses: ReviewPass[] = [];
 
-      const passes: ReviewPass[] = [
-        { title: "Context & intent", result: context },
-        { title: "Architecture & scope", result: architecture },
-        { title: "Correctness & testing", result: correctness },
-        { title: "Design & non-functional", result: design },
-        { title: "Maintainability & nits", result: micro },
-      ];
-
-      // Only safe, non-behavioural findings are auto-fixed; ask-user findings go to the human
-      // via the summary. Skip the fix pass (and its agent call) when there's nothing to fix.
-      const fixable = passes
-        .flatMap((p) => p.result.findings)
-        .filter((f) => f.action === "auto-fix");
-      const fixSummary = fixable.length > 0 ? (await agent.run(fixPrompt(fixable))).summary : "";
+      const result = await executeRoundLoop(ctx, {
+        async check(input) {
+          latestPasses = await runReviewPasses(ctx, input);
+          return { findings: latestPasses.flatMap((p) => p.result.findings) };
+        },
+        async fix(input) {
+          const result = await ctx.agent.run(fixPrompt(input.findings, input.historyText));
+          return { summary: result.summary };
+        },
+        commitMessage: "chore: apply fixes from review",
+      });
 
       return {
-        artifacts: { reviewSummary: summarize(passes, fixSummary) },
-        rounds: [
-          {
-            trigger: "initial",
-            findings: passes.flatMap((p) => p.result.findings),
-            selectedFindingIds: fixable.map((f) => f.id),
-            ...(fixSummary.trim().length > 0 ? { fixSummary: fixSummary.trim() } : {}),
-          },
-        ],
+        artifacts: {
+          reviewSummary: summarize(latestPasses, fixSummaries(result.rounds), {
+            fixedFindingIds: [],
+          }),
+        },
+        rounds: result.rounds,
       };
     },
   });
