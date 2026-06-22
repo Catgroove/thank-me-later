@@ -1,6 +1,6 @@
 // Test doubles for unit-testing a single `step.run(ctx)` in isolation. Core's FakeGitProvider /
 // FakeHarness live in its test dir (not on its public surface), so the defaults package
-// keeps its own minimal, call-recording fakes mirroring those shapes — plus a FakeGit
+// keeps its own minimal, call-recording fakes mirroring those shapes - plus a FakeGit
 // (core's Git is real, so it ships no fake). `fakeCtx` assembles them into a `Ctx`.
 
 import {
@@ -18,6 +18,8 @@ import {
   type Pending,
   type PullRequest,
   type RebaseResult,
+  type RoundRecord,
+  type RoundRecordInput,
   until,
 } from "@tml/core";
 
@@ -141,7 +143,7 @@ export class FakeGitProvider implements GitProvider {
 
 export class FakeHarness implements Harness {
   readonly tasks: string[] = [];
-  /** The `opts` of each `run` call, parallel to `tasks` — lets tests assert a `schema` was set. */
+  /** The `opts` of each `run` call, parallel to `tasks` - lets tests assert a `schema` was set. */
   readonly opts: (AgentRunOpts | undefined)[] = [];
   /** Default reply, used when no per-call response is scripted. */
   result: AgentResult = { ok: true, summary: "done" };
@@ -163,17 +165,20 @@ export interface FakeCtxParts {
   reads?: Record<string, unknown>;
   ask?: (prompt: string) => Promise<string>;
   signal?: AbortSignal;
+  stepName?: string;
 }
 
 export interface FakeCtxResult {
   ctx: Ctx;
   logs: string[];
   asks: string[];
+  rounds: RoundRecord[];
 }
 
 export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const logs: string[] = [];
   const asks: string[] = [];
+  const rounds: RoundRecord[] = [];
   const reads = parts.reads ?? {};
   const signal = parts.signal ?? new AbortController().signal;
   const ask = parts.ask ?? ((_prompt: string) => Promise.resolve(""));
@@ -193,10 +198,15 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
       asks.push(prompt);
       return ask(prompt);
     },
+    recordRound(round: RoundRecordInput) {
+      const record = { ...round, step: parts.stepName ?? "fake-step", index: rounds.length };
+      rounds.push(record);
+      return Promise.resolve(record);
+    },
     log(message) {
       logs.push(message);
     },
   };
 
-  return { ctx, logs, asks };
+  return { ctx, logs, asks, rounds };
 }

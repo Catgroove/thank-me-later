@@ -7,6 +7,7 @@
 
 import type { Artifact } from "./artifact.ts";
 import type { Pending } from "./pending.ts";
+import type { RoundRecord, RoundRecordInput } from "./round.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import type { Git } from "./providers/git.ts";
 import type { Harness } from "./providers/harness.ts";
@@ -32,6 +33,9 @@ export interface Ctx<
 
   /** Escalate a decision to a human or agent; resolves to their free-text reply. */
   ask(prompt: string): Promise<string>;
+
+  /** Persist one completed Step round to the Run journal. The engine supplies step + index. */
+  recordRound(round: RoundRecordInput): Promise<RoundRecord>;
 
   /** Emit a progress line into the Run's event stream. */
   log(message: string): void;

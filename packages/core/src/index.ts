@@ -6,6 +6,21 @@ export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
 export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
 export type { Ctx } from "./context.ts";
+export { type RoundJournal, createFileRoundJournal, roundJournalPath } from "./journal.ts";
+export {
+  type Finding,
+  type FindingAction,
+  type FindingInput,
+  type FindingSeverity,
+  type RoundRecord,
+  type RoundRecordInput,
+  type RoundTrigger,
+  findingId,
+  makeFinding,
+  renderFindingForPr,
+  renderRoundForPr,
+  renderRoundsForPr,
+} from "./round.ts";
 export { defineStep, type Step, type StepRun } from "./step.ts";
 export { type Config, type ModelMap, type Pipeline, type Providers } from "./pipeline.ts";
 export {

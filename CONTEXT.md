@@ -205,6 +205,20 @@ from a person or an agent — becomes a Re-entry that resumes the Run at the sus
 Step. An unanswered Ask is simply a suspended Run, not a failure.
 _Avoid_: Prompt, confirm, question
 
+**Finding**:
+A normalized outcome from review, lint, typecheck, tests, or CI: severity, action, title,
+detail, optional location, and a deterministic id. Findings are records, not provider-specific
+messages. They are the shared language for deciding what can be auto-fixed, what needs a user,
+and what is informational.
+_Avoid_: Comment, check result, issue
+
+**Round record**:
+One completed pass by a Step over a set of Findings. A Round record names the Step, the Step-local
+round index, why it ran (`initial`, `auto_fix`, `user_fix`, `verify`), findings, selected finding
+ids, optional user notes, fix summary, and commit SHA. Completed rounds are appended to the
+out-of-tree journal so review, checks, and CI can be summarized from one record shape.
+_Avoid_: Pass log, report, transcript
+
 **Review thread**:
 The unit of work for the reentrant review loop: a line-anchored (`path:line`), resolvable
 conversation on the PR, modelled in core as `ReviewThread` (`resolved` boolean +

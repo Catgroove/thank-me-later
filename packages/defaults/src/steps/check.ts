@@ -1,9 +1,9 @@
 // The agent-driven check Steps. `checkStep` is the shared shape: hand the agent a task and
-// let it discover the toolchain and apply fixes (ARCHITECTURE — no tml-side detection). A
+// let it discover the toolchain and apply fixes (ARCHITECTURE - no tml-side detection). A
 // non-`ok` result is work the agent could not finish on its own, so it escalates via
 // `ctx.ask`. The four named checks differ only in their prompt.
 
-import { defineStep, type Step } from "@tml/core";
+import { defineStep, makeFinding, type Step } from "@tml/core";
 import { formatPrompt, lintPrompt, testPrompt, typecheckPrompt } from "../prompts.ts";
 
 export function checkStep(name: string, prompt: string): Step {
@@ -11,7 +11,28 @@ export function checkStep(name: string, prompt: string): Step {
     name,
     async run(ctx) {
       const result = await ctx.agent.run(prompt);
-      if (!result.ok) await ctx.ask(`${name} could not be completed: ${result.summary}`);
+      const findings = result.ok
+        ? []
+        : [
+            makeFinding(name, {
+              severity: "error",
+              action: "ask-user",
+              title: `${name} incomplete`,
+              detail: result.summary,
+            }),
+          ];
+      const userNotes: Record<string, string> = {};
+      if (!result.ok) {
+        const answer = await ctx.ask(`${name} could not be completed: ${result.summary}`);
+        userNotes[findings[0]?.id ?? `${name}:unknown`] = answer;
+      }
+      await ctx.recordRound({
+        trigger: "initial",
+        findings,
+        ...(Object.keys(userNotes).length > 0 ? { userNotes } : {}),
+        ...(result.summary.trim().length > 0 ? { fixSummary: result.summary.trim() } : {}),
+        commitSha: await ctx.git.headSha(),
+      });
       return {};
     },
   });

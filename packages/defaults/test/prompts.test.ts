@@ -86,9 +86,9 @@ describe("default pipeline prompts", () => {
   test("findingsSchema requires findings and constrains severity + action", () => {
     expect(findingsSchema.required).toEqual(["findings"]);
     expect(findingsSchema.properties.findings.items.properties.severity.enum).toEqual([
-      "critical",
+      "error",
       "warning",
-      "nit",
+      "info",
     ]);
     expect(findingsSchema.properties.findings.items.properties.action.enum).toEqual([
       "auto-fix",

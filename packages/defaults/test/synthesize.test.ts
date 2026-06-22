@@ -8,7 +8,7 @@ import {
 } from "../src/review/synthesize.ts";
 
 function finding(over: Partial<Finding> = {}): Finding {
-  return { severity: "nit", action: "no-op", title: "T", detail: "D", ...over };
+  return { id: "finding:1", severity: "info", action: "no-op", title: "T", detail: "D", ...over };
 }
 
 describe("parsePassResult", () => {
@@ -28,7 +28,7 @@ describe("parsePassResult", () => {
 
   test("omits empty optional fields", () => {
     const r = parsePassResult({
-      findings: [{ severity: "nit", action: "no-op", title: "t", detail: "d", location: "  " }],
+      findings: [{ severity: "info", action: "no-op", title: "t", detail: "d", location: "  " }],
       understanding: "   ",
     });
     expect(r.understanding).toBeUndefined();
@@ -45,7 +45,9 @@ describe("parsePassResult", () => {
       }),
     ).toThrow();
     expect(() =>
-      parsePassResult({ findings: [{ severity: "nit", action: "no-op", title: "", detail: "d" }] }),
+      parsePassResult({
+        findings: [{ severity: "info", action: "no-op", title: "", detail: "d" }],
+      }),
     ).toThrow();
     expect(() => parsePassResult({ findings: [], verdict: "blocked" })).toThrow();
   });
@@ -55,8 +57,7 @@ describe("riskOf", () => {
   test("empty findings are low", () => expect(riskOf([])).toBe("low"));
   test("a warning is medium", () =>
     expect(riskOf([finding({ severity: "warning" })])).toBe("medium"));
-  test("a critical is high", () =>
-    expect(riskOf([finding({ severity: "critical" })])).toBe("high"));
+  test("an error is high", () => expect(riskOf([finding({ severity: "error" })])).toBe("high"));
   test("a block forces high even with no findings", () => expect(riskOf([], true)).toBe("high"));
 });
 
@@ -78,7 +79,7 @@ describe("summarize", () => {
         result: {
           findings: [
             finding({
-              severity: "critical",
+              severity: "error",
               action: "auto-fix",
               title: "NPE",
               detail: "null deref",
@@ -88,14 +89,14 @@ describe("summarize", () => {
       },
     ];
     const out = summarize(passes, "fixed the NPE");
-    expect(out).toContain("**Risk: high**"); // critical present
+    expect(out).toContain("**Risk: high**"); // error present
     expect(out).toContain("<details>"); // full breakdown is collapsible
     expect(out).toContain("### Architecture & scope");
     expect(out).toContain("Warning:");
-    expect(out).toContain("Critical:");
-    expect(out).toContain("✅ 1 fixed"); // headline tally
-    expect(out).toContain("~~"); // the auto-fixed critical is struck through
-    expect(out).toContain("✅ fixed");
+    expect(out).toContain("Error:");
+    expect(out).toContain("1 fixed"); // headline tally
+    expect(out).toContain("~~"); // the auto-fixed error is struck through
+    expect(out).toContain("(fixed)");
     expect(out).toContain("**Fixes applied:** fixed the NPE");
     expect(out).not.toContain("### Context & intent"); // empty section omitted
   });

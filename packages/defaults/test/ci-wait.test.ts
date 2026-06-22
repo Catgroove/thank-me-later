@@ -23,22 +23,28 @@ describe("ci-wait step", () => {
       { name: "build", status: "completed", conclusion: "success" },
       { name: "lint", status: "completed", conclusion: "success" },
     ];
-    const { ctx, logs } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+    const { ctx, logs, rounds } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
 
     const result = await ciWaitStep().run(ctx);
 
     expect(result).toEqual({});
-    expect(logs).toEqual(["ci: build → success", "ci: lint → success"]);
+    expect(logs).toEqual(["ci: build -> success", "ci: lint -> success"]);
+    expect(rounds).toMatchObject([{ trigger: "verify", findings: [] }]);
   });
 
   test("report-only: a failing check is logged, not a Run failure", async () => {
     const gitProvider = new FakeGitProvider();
     gitProvider.checks = [{ name: "build", status: "completed", conclusion: "failure" }];
-    const { ctx, logs } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+    const { ctx, logs, rounds } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
 
     // Resolves normally (no throw / cancel) even though CI is red.
     const result = await ciWaitStep().run(ctx);
     expect(result).toEqual({});
-    expect(logs).toEqual(["ci: build → failure"]);
+    expect(logs).toEqual(["ci: build -> failure"]);
+    expect(rounds[0]?.findings[0]).toMatchObject({
+      severity: "error",
+      action: "ask-user",
+      title: "build did not pass",
+    });
   });
 });
