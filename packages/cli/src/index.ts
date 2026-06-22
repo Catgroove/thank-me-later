@@ -7,6 +7,7 @@ import {
   type EngineOptions,
   createRunJournal,
   type RunJournal,
+  type RunJournalResumeMode,
 } from "@tml/core";
 import {
   createCliRenderer,
@@ -27,6 +28,10 @@ export interface ShipDeps {
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
   /** Override or disable the local Run Journal. Production creates one per checkout. */
   journal?: RunJournal | false;
+  /** Journal selection policy when production creates the journal. Defaults to auto-resume. */
+  journalResume?: RunJournalResumeMode;
+  /** Exact run id for `journalResume: "exact"`, or a stable id for tests. */
+  runId?: string;
   /** Seal the full per-step trail instead of the quiet, results-forward default (`--verbose`). */
   verbose?: boolean;
   /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
@@ -74,7 +79,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       deps.journal === false
         ? undefined
         : (deps.journal ??
-          (deps.engineFor === undefined ? createRunJournal({ checkoutPath: cwd }) : undefined));
+          (deps.engineFor === undefined
+            ? createRunJournal({
+                checkoutPath: cwd,
+                resume: deps.journalResume ?? "auto",
+                ...(deps.runId ? { runId: deps.runId } : {}),
+              })
+            : undefined));
     const engine = engineFor(await buildConfig(cwd), { cwd, ...(journal ? { journal } : {}) });
     let view = initialView;
     let failed = false;
@@ -97,11 +108,56 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   }
 }
 
+interface ShipArgs {
+  readonly verbose: boolean;
+  readonly journalResume?: RunJournalResumeMode;
+  readonly runId?: string;
+}
+
+function parseShipArgs(args: string[]): ShipArgs {
+  let verbose = false;
+  let journalResume: RunJournalResumeMode | undefined;
+  let runId: string | undefined;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--verbose" || arg === "-v") {
+      verbose = true;
+      continue;
+    }
+    if (arg === "--fresh") {
+      journalResume = "fresh";
+      continue;
+    }
+    if (arg === "--resume") {
+      runId = args[i + 1];
+      if (runId === undefined || runId.startsWith("-"))
+        throw new Error("--resume requires a run id");
+      journalResume = "exact";
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--resume=")) {
+      runId = arg.slice("--resume=".length);
+      if (runId.length === 0) throw new Error("--resume requires a run id");
+      journalResume = "exact";
+      continue;
+    }
+    throw new Error(`Unknown ship option: ${arg}`);
+  }
+  return { verbose, ...(journalResume ? { journalResume } : {}), ...(runId ? { runId } : {}) };
+}
+
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (command === "ship") {
-    const verbose = rest.includes("--verbose") || rest.includes("-v");
-    return ship({ verbose });
+    let args: ShipArgs;
+    try {
+      args = parseShipArgs(rest);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      return 1;
+    }
+    return ship(args);
   }
   if (command === "init") {
     const force = rest.includes("--force") || rest.includes("-f");

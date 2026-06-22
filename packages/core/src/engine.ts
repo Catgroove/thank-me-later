@@ -20,7 +20,7 @@ import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import { until } from "./pending.ts";
 import { type EventQueue, createEventQueue } from "./queue.ts";
 import type { RoundRecordInput } from "./round.ts";
-import { createRunJournal, type RunJournal } from "./run-journal.ts";
+import { createRunJournal, type RunJournal, type RunJournalSnapshot } from "./run-journal.ts";
 import { isFlowSignal } from "./signals.ts";
 import type { Step } from "./step.ts";
 import { validatePipeline } from "./validate.ts";
@@ -97,7 +97,7 @@ async function drive(
   const git = opts.git ?? createGit(cwd);
   const journal =
     opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
-  await journal?.begin({ pipeline: pipeline.map((s) => s.name) });
+  const snapshot = await journal?.begin({ pipeline: pipeline.map((s) => s.name) });
   const ask =
     opts.ask ??
     (() =>
@@ -107,10 +107,10 @@ async function drive(
         ),
       ));
 
-  const store = new Map<string, unknown>();
+  const store = new Map<string, unknown>(snapshot?.artifacts);
   const stepByName = new Map<string, number>(pipeline.map((s, i): [string, number] => [s.name, i]));
   const retries = new Map<string, number>();
-  const roundIndexes = new Map<string, number>();
+  const roundIndexes = new Map<string, number>(snapshot?.roundIndexes);
 
   await emit(queue, journal, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
 
@@ -139,11 +139,23 @@ async function drive(
     }
   }
 
+  let replayFromJournal = true;
   let i = 0;
   while (i < pipeline.length) {
     const step = pipeline[i];
     if (step === undefined) break;
     if (signal.aborted) return cancelled(queue, journal, step.name);
+
+    if (step.resume === "reconcile") replayFromJournal = false;
+    try {
+      if (replayFromJournal && isStepReplayableFromJournal(step, snapshot)) {
+        await emit(queue, journal, { type: "step:skipped", step: step.name });
+        i += 1;
+        continue;
+      }
+    } catch (error) {
+      return failed(queue, journal, error, step.name);
+    }
 
     await emit(queue, journal, { type: "step:started", step: step.name });
     const ctx = makeContext(step, store, providers, git, queue, ask, signal, models, journal);
@@ -256,6 +268,20 @@ async function drive(
   await journal?.finish("finished");
   await emit(queue, journal, { type: "run:finished" });
   queue.close();
+}
+
+function isStepReplayableFromJournal(
+  step: Step,
+  snapshot: RunJournalSnapshot | undefined,
+): boolean {
+  if (snapshot === undefined || !snapshot.completedSteps.has(step.name)) return false;
+  const missing = step.produces.filter((artifact) => !snapshot.artifacts.has(artifact.name));
+  if (missing.length > 0) {
+    throw new Error(
+      `cannot replay Step "${step.name}" from the Run Journal: missing artifact "${missing[0]?.name}".`,
+    );
+  }
+  return true;
 }
 
 function stepResultParts(result: unknown): {

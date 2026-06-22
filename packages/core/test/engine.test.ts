@@ -80,6 +80,7 @@ describe("engine - happy path", () => {
           },
           artifacts: new Map(),
           completedSteps: new Set(),
+          roundIndexes: new Map(),
         }),
       recordArtifact: () => Promise.resolve(),
       recordStepCompleted: () => Promise.resolve(),

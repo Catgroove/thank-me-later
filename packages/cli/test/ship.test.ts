@@ -50,6 +50,12 @@ describe("tml CLI", () => {
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("tml ship");
   });
+
+  test("ship validates resume flags before building a run", async () => {
+    const { stderr, exitCode } = await runCli("ship", "--resume");
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("--resume requires a run id");
+  });
 });
 
 describe("assembleShipConfig", () => {

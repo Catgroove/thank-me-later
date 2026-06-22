@@ -16,6 +16,7 @@ const PRIVATE_FILE_MODE = 0o600;
 const RUN_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export type RunStatus = "running" | "finished" | "failed" | "cancelled";
+export type RunJournalResumeMode = "fresh" | "auto" | "exact";
 
 export interface RunMetadata {
   readonly runId: string;
@@ -32,10 +33,12 @@ export interface RunJournalSnapshot {
   readonly metadata: RunMetadata;
   readonly artifacts: ReadonlyMap<string, unknown>;
   readonly completedSteps: ReadonlySet<string>;
+  /** Next round index per Step, derived from already-persisted rounds. */
+  readonly roundIndexes: ReadonlyMap<string, number>;
 }
 
 export interface RunJournal {
-  /** Load an existing resumable run for this checkout, or create a new one. */
+  /** Select the configured fresh/resumed Run and return the durable replay snapshot. */
   begin(input: { pipeline: string[] }): Promise<RunJournalSnapshot>;
   /** Persist an artifact value before its producing Step is marked complete. */
   recordArtifact(input: { step: string; artifact: string; value: unknown }): Promise<void>;
@@ -56,8 +59,10 @@ export interface CreateRunJournalOptions {
   stateHome?: string;
   /** Environment lookup for XDG_STATE_HOME. Defaults to process.env. */
   env?: Record<string, string | undefined>;
-  /** Resume this exact run id instead of selecting the latest running compatible run. */
+  /** Optional stable Run id. `resume: "exact"` requires it to already exist. */
   runId?: string;
+  /** Fresh run, latest compatible local resume, or required exact run id. Defaults to `fresh`. */
+  resume?: RunJournalResumeMode;
   /** Persist events.jsonl. Defaults to true. */
   events?: boolean;
 }
@@ -72,6 +77,7 @@ export function createRunJournal(opts: CreateRunJournalOptions = {}): RunJournal
     checkoutKey,
     checkoutPath,
     runId: opts.runId,
+    resume: opts.resume ?? "fresh",
     events: opts.events ?? true,
   });
 }
@@ -92,6 +98,7 @@ interface FileRunJournalOptions {
   readonly checkoutKey: string;
   readonly checkoutPath: string;
   readonly runId?: string;
+  readonly resume: RunJournalResumeMode;
   readonly events: boolean;
 }
 
@@ -100,6 +107,7 @@ class FileRunJournal implements RunJournal {
   private readonly checkoutKey: string;
   private readonly checkoutPath: string;
   private readonly requestedRunId: string | undefined;
+  private readonly resume: RunJournalResumeMode;
   private readonly events: boolean;
   private runDir: string | undefined;
   private metadata: RunMetadata | undefined;
@@ -109,6 +117,10 @@ class FileRunJournal implements RunJournal {
     this.checkoutKey = opts.checkoutKey;
     this.checkoutPath = opts.checkoutPath;
     this.requestedRunId = opts.runId === undefined ? undefined : validateRunId(opts.runId);
+    this.resume = opts.resume;
+    if (this.resume === "exact" && this.requestedRunId === undefined) {
+      throw new Error('tml: resume "exact" requires a runId.');
+    }
     this.events = opts.events;
   }
 
@@ -144,11 +156,13 @@ class FileRunJournal implements RunJournal {
     }
 
     const artifacts = await this.readArtifacts();
+    const roundIndexes = await this.readRoundIndexes();
     const currentMetadata = this.requireMetadata();
     return {
       metadata: currentMetadata,
       artifacts,
       completedSteps: new Set(currentMetadata.completedSteps),
+      roundIndexes,
     };
   }
 
@@ -197,14 +211,41 @@ class FileRunJournal implements RunJournal {
     await this.writeMetadata();
   }
 
-  private async selectRun(pipeline: string[]): Promise<{
-    runId: string;
-    metadata: RunMetadata | undefined;
-  }> {
-    if (this.requestedRunId === undefined) return { runId: newRunId(), metadata: undefined };
-    const metadata = await readMetadataIfExists(join(this.root, "runs", this.requestedRunId));
-    if (metadata !== undefined) assertCompatible(metadata, pipeline, this.requestedRunId);
-    return { runId: this.requestedRunId, metadata };
+  private async selectRun(
+    pipeline: string[],
+  ): Promise<{ runId: string; metadata: RunMetadata | undefined }> {
+    const runsDir = join(this.root, "runs");
+    if (this.resume === "exact") {
+      const runId = this.requestedRunId as string;
+      const metadata = await readMetadataIfExists(join(runsDir, runId));
+      if (metadata === undefined) throw new Error(`tml: cannot resume run ${runId}: not found.`);
+      assertCompatible(metadata, pipeline, runId);
+      return { runId, metadata };
+    }
+    if (this.requestedRunId !== undefined) {
+      const metadata = await readMetadataIfExists(join(runsDir, this.requestedRunId));
+      if (metadata !== undefined) assertCompatible(metadata, pipeline, this.requestedRunId);
+      return { runId: this.requestedRunId, metadata };
+    }
+    if (this.resume === "auto") {
+      const metadata = await this.latestResumableRun(pipeline);
+      if (metadata !== undefined) return { runId: metadata.runId, metadata };
+    }
+    return { runId: newRunId(), metadata: undefined };
+  }
+
+  private async latestResumableRun(pipeline: string[]): Promise<RunMetadata | undefined> {
+    const runsDir = join(this.root, "runs");
+    if (!existsSync(runsDir)) return undefined;
+    const candidates: RunMetadata[] = [];
+    for (const runId of await readdir(runsDir)) {
+      const metadata = await readMetadataIfExists(join(runsDir, runId));
+      if (metadata === undefined || metadata.status === "finished") continue;
+      if (!samePipeline(metadata.pipeline, pipeline)) continue;
+      candidates.push(metadata);
+    }
+    candidates.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return candidates[0];
   }
 
   private async readArtifacts(): Promise<Map<string, unknown>> {
@@ -220,6 +261,21 @@ class FileRunJournal implements RunJournal {
       if (typeof record.artifact === "string") artifacts.set(record.artifact, record.value);
     }
     return artifacts;
+  }
+
+  private async readRoundIndexes(): Promise<Map<string, number>> {
+    const path = join(this.requireRunDir(), "rounds.jsonl");
+    const indexes = new Map<string, number>();
+    if (!existsSync(path)) return indexes;
+    for (const line of (await readFile(path, "utf8")).split("\n")) {
+      if (line.trim().length === 0) continue;
+      const parsed = JSON.parse(line) as unknown;
+      if (typeof parsed !== "object" || parsed === null) continue;
+      const record = parsed as { step?: unknown; index?: unknown };
+      if (typeof record.step !== "string" || typeof record.index !== "number") continue;
+      indexes.set(record.step, Math.max(indexes.get(record.step) ?? 0, record.index + 1));
+    }
+    return indexes;
   }
 
   private touch(updatedAt: string): void {

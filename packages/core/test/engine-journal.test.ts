@@ -31,7 +31,7 @@ const raw = defineArtifact<string>()("raw");
 const derived = defineArtifact<number>()("derived");
 
 describe("engine RunJournal integration", () => {
-  test("records state without replaying completed steps before resume policy exists", async () => {
+  test("restores artifacts and skips completed replayable steps", async () => {
     const stateHome = tempDir();
     const checkoutPath = join(stateHome, "repo");
     const journal = createRunJournal({ stateHome, checkoutPath, runId: "resume", events: false });
@@ -67,9 +67,87 @@ describe("engine RunJournal integration", () => {
       journal,
     );
 
-    expect(produceRuns).toBe(1);
-    expect(events).toContainEqual({ type: "step:started", step: "produce" });
-    expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=rerun" });
+    expect(produceRuns).toBe(0);
+    expect(events).toContainEqual({ type: "step:skipped", step: "produce" });
+    expect(events).not.toContainEqual({ type: "step:started", step: "produce" });
+    expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=hi" });
+    expect(events.at(-1)).toEqual({ type: "run:finished" });
+  });
+
+  test("fails instead of replaying a completed step with missing artifacts", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const journal = createRunJournal({ stateHome, checkoutPath, runId: "missing", events: false });
+    await journal.begin({ pipeline: ["produce"] });
+    await journal.recordStepCompleted("produce");
+
+    const produce = defineStep({
+      name: "produce",
+      produces: [raw],
+      run: () => Promise.resolve({ raw: "rerun" }),
+    });
+
+    const events = await collect(
+      {
+        pipeline: [produce],
+        providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
+      },
+      journal,
+    );
+    const last = events.at(-1);
+
+    expect(last).toMatchObject({ type: "run:failed", step: "produce" });
+    expect(last && "error" in last ? last.error : "").toContain("missing artifact");
+  });
+
+  test("reconcile steps are not skipped and stop later journal replay", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const journal = createRunJournal({ stateHome, checkoutPath, runId: "post-pr", events: false });
+    await journal.begin({ pipeline: ["local", "open-pr", "ci"] });
+    await journal.recordArtifact({ step: "local", artifact: "raw", value: "hi" });
+    await journal.recordStepCompleted("local");
+    await journal.recordStepCompleted("open-pr");
+    await journal.recordStepCompleted("ci");
+
+    const runs: string[] = [];
+    const local = defineStep({
+      name: "local",
+      produces: [raw],
+      run() {
+        runs.push("local");
+        return Promise.resolve({ raw: "rerun" });
+      },
+    });
+    const openPr = defineStep({
+      name: "open-pr",
+      consumes: [raw],
+      resume: "reconcile",
+      run(ctx) {
+        runs.push(`open-pr:${ctx.read(raw)}`);
+        return Promise.resolve({});
+      },
+    });
+    const ci = defineStep({
+      name: "ci",
+      run() {
+        runs.push("ci");
+        return Promise.resolve({});
+      },
+    });
+
+    const events = await collect(
+      {
+        pipeline: [local, openPr, ci],
+        providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
+      },
+      journal,
+    );
+
+    expect(runs).toEqual(["open-pr:hi", "ci"]);
+    expect(events).toContainEqual({ type: "step:skipped", step: "local" });
+    expect(events).toContainEqual({ type: "step:started", step: "open-pr" });
+    expect(events).toContainEqual({ type: "step:started", step: "ci" });
     expect(events.at(-1)).toEqual({ type: "run:finished" });
   });
 

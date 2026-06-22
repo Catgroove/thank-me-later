@@ -27,6 +27,7 @@ export function ciWaitStep(): Step {
   return defineStep({
     name: "ci-wait",
     consumes: [pullRequest],
+    resume: "reconcile",
     async run(ctx) {
       const pr = ctx.read(pullRequest);
       const checks = await ctx.until(ctx.gitProvider.getChecks(pr.number), {

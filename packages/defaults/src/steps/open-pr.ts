@@ -19,6 +19,7 @@ export function openPrStep(): Step {
     name: "open-pr",
     consumes: [branchName, prTitle, prBody, reviewSummary],
     produces: [pullRequest],
+    resume: "reconcile",
     async run(ctx) {
       const head = ctx.read(branchName);
 
