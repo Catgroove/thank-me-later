@@ -10,7 +10,7 @@ import {
   renderFindingForPr,
 } from "./round.ts";
 
-const MAX_AUTO_FIX_ATTEMPTS = 3;
+const DEFAULT_MAX_AUTO_FIX_ATTEMPTS = 3;
 
 export type RoundLoopStopReason =
   | "clean"
@@ -48,13 +48,38 @@ export interface RoundFixResult {
   readonly summary: string;
 }
 
+export interface RoundCommitInput {
+  readonly ctx: Ctx;
+  readonly fix: RoundFixInput;
+  readonly result: RoundFixResult;
+  readonly message?: string;
+}
+
+export interface RoundCommitResult {
+  readonly commitSha?: string;
+}
+
+export interface RoundStopPolicyInput {
+  readonly check: RoundCheckInput;
+  readonly findings: readonly Finding[];
+  readonly selectedFindings: readonly Finding[];
+  readonly rounds: readonly RoundRecordInput[];
+  readonly attempts: number;
+}
+
 export interface RoundLoopOptions {
   /** Run one fresh check or verification round. */
   check(input: RoundCheckInput): Promise<RoundCheckResult>;
   /** Run one fresh fix round for the selected findings. */
   fix(input: RoundFixInput): Promise<RoundFixResult>;
-  /** Commit subject for each fix round. */
-  commitMessage: string | ((input: RoundFixInput, result: RoundFixResult) => string);
+  /** Maximum number of fix rounds. Defaults to 3. */
+  maxAutoFixAttempts?: number;
+  /** Optional stop policy after each check round. Defaults to clean and no-selected stops. */
+  stopPolicy?(input: RoundStopPolicyInput): RoundLoopStopReason | undefined;
+  /** Commit subject for each fix round when using the default commit behavior. */
+  commitMessage?: string | ((input: RoundFixInput, result: RoundFixResult) => string);
+  /** Defaults to stage-all and commit. Set false for no commit, or provide custom behavior. */
+  commit?: false | ((input: RoundCommitInput) => Promise<RoundCommitResult>);
   /** Defaults to all `auto-fix` findings. */
   selectFindings?(findings: readonly Finding[], input: RoundCheckInput): readonly Finding[];
   /** Defaults to `ask-user` findings. */
@@ -78,6 +103,10 @@ export async function executeRoundLoop(
   options: RoundLoopOptions,
 ): Promise<RoundLoopResult> {
   const rounds: RoundRecordInput[] = [];
+  const maxAutoFixAttempts = options.maxAutoFixAttempts ?? DEFAULT_MAX_AUTO_FIX_ATTEMPTS;
+  if (!Number.isInteger(maxAutoFixAttempts) || maxAutoFixAttempts < 0) {
+    throw new Error("round executor: maxAutoFixAttempts must be a non-negative integer");
+  }
   let attempts = 0;
   let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
 
@@ -99,14 +128,15 @@ export async function executeRoundLoop(
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
     });
 
-    if (findings.length === 0) return done("clean", findings, rounds, attempts);
-    if (selected.length === 0) {
-      const stopReason = findings.some((f) => needsUser(options, f))
-        ? "needs_user"
-        : "remaining_findings";
-      return done(stopReason, findings, rounds, attempts);
-    }
-    if (attempts >= MAX_AUTO_FIX_ATTEMPTS) {
+    const stopReason = stopPolicy(options, {
+      check: checkInput,
+      findings,
+      selectedFindings: selected,
+      rounds: [...rounds],
+      attempts,
+    });
+    if (stopReason !== undefined) return done(stopReason, findings, rounds, attempts);
+    if (attempts >= maxAutoFixAttempts) {
       return done("auto_fix_limit_hit", findings, rounds, attempts);
     }
 
@@ -118,7 +148,7 @@ export async function executeRoundLoop(
       historyText: renderHistory(fixHistory),
     };
     const fix = await options.fix(fixInput);
-    const commitSha = await commitFix(ctx, commitMessage(options, fixInput, fix));
+    const commitSha = await commitFix(ctx, options, fixInput, fix);
     const fixSummary = fix.summary.trim();
 
     rounds.push({
@@ -165,8 +195,31 @@ function needsUser(options: RoundLoopOptions, finding: Finding): boolean {
   return options.needsUser ? options.needsUser(finding) : finding.action === "ask-user";
 }
 
-async function commitFix(ctx: Ctx, message: string): Promise<string | undefined> {
-  const subject = message.trim();
+function stopPolicy(
+  options: RoundLoopOptions,
+  input: RoundStopPolicyInput,
+): RoundLoopStopReason | undefined {
+  const custom = options.stopPolicy?.(input);
+  if (custom !== undefined) return custom;
+  if (input.findings.length === 0) return "clean";
+  if (input.selectedFindings.length > 0) return undefined;
+  return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
+}
+
+async function commitFix(
+  ctx: Ctx,
+  options: RoundLoopOptions,
+  input: RoundFixInput,
+  result: RoundFixResult,
+): Promise<string | undefined> {
+  if (options.commit === false) return undefined;
+
+  const message = commitMessage(options, input, result);
+  if (options.commit !== undefined) {
+    return (await options.commit({ ctx, fix: input, result, message })).commitSha;
+  }
+
+  const subject = message?.trim() ?? "";
   if (subject.length === 0) throw new Error("round executor: fix commit message must not be empty");
 
   await ctx.git.stageAll();
@@ -182,10 +235,10 @@ function commitMessage(
   options: RoundLoopOptions,
   input: RoundFixInput,
   result: RoundFixResult,
-): string {
+): string | undefined {
   return typeof options.commitMessage === "string"
     ? options.commitMessage
-    : options.commitMessage(input, result);
+    : options.commitMessage?.(input, result);
 }
 
 function done(

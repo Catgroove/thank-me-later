@@ -23,6 +23,15 @@ function mode(path: string): number {
   return statSync(path).mode & 0o777;
 }
 
+async function rejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected rejection");
+}
+
 describe("RunJournal", () => {
   test("persists run metadata, artifacts, rounds, and events in the checkout state tree", async () => {
     const stateHome = tempDir();
@@ -73,6 +82,32 @@ describe("RunJournal", () => {
     expect(snapshot.metadata.runId).toBe("run-1");
     expect([...snapshot.completedSteps]).toEqual(["produce"]);
     expect(snapshot.artifacts.get("raw")).toBe("hi");
+  });
+
+  test("rejects resuming an incompatible pipeline", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const first = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
+    await first.begin({ pipeline: ["produce", "consume"] });
+
+    const second = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
+    expect(String(await rejection(second.begin({ pipeline: ["produce", "different"] })))).toMatch(
+      /Pipeline no longer matches/,
+    );
+  });
+
+  test("persists terminal run status transitions", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+
+    for (const status of ["finished", "failed", "cancelled"] as const) {
+      const journal = createRunJournal({ stateHome, checkoutPath, runId: status, events: false });
+      await journal.begin({ pipeline: ["produce"] });
+      await journal.finish(status);
+
+      const runDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath), "runs", status);
+      expect(readJson(join(runDir, "run.json"))).toMatchObject({ status });
+    }
   });
 
   test("creates journal directories and files with private permissions", async () => {

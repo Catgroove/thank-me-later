@@ -256,4 +256,98 @@ describe("executeRoundLoop", () => {
     expect(result.stopReason).toBe("remaining_findings");
     expect(asks).toEqual([]);
   });
+
+  test("uses the configured auto-fix limit", async () => {
+    const issue = finding();
+    const git = new FakeGit();
+    git.stagedFiles = ["src/file.ts"];
+    const { ctx } = fakeCtx({ git });
+    let fixes = 0;
+
+    const result = await executeRoundLoop(ctx, {
+      check: () => Promise.resolve({ findings: [issue] }),
+      fix: () => {
+        fixes += 1;
+        return Promise.resolve({ summary: `fix ${fixes}` });
+      },
+      maxAutoFixAttempts: 1,
+      commitMessage: "chore: fix round findings",
+    });
+
+    expect(result.stopReason).toBe("auto_fix_limit_hit");
+    expect(result.attempts).toBe(1);
+    expect(fixes).toBe(1);
+    expect(result.rounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
+  });
+
+  test("lets a custom stop policy stop before fixing selected findings", async () => {
+    const issue = finding();
+    const { ctx } = fakeCtx();
+
+    const result = await executeRoundLoop(ctx, {
+      check: () => Promise.resolve({ findings: [issue] }),
+      fix() {
+        throw new Error("fix should not run");
+      },
+      stopPolicy(input) {
+        expect(input.selectedFindings).toEqual([issue]);
+        expect(input.rounds).toEqual([
+          { trigger: "initial", findings: [issue], selectedFindingIds: [issue.id] },
+        ]);
+        return "needs_user";
+      },
+      commitMessage: "chore: fix round findings",
+    });
+
+    expect(result.stopReason).toBe("needs_user");
+    expect(result.attempts).toBe(0);
+  });
+
+  test("can run fixes without committing", async () => {
+    const issue = finding();
+    const git = new FakeGit();
+    const { ctx } = fakeCtx({ git });
+
+    const result = await executeRoundLoop(ctx, {
+      check: ({ trigger }) => Promise.resolve({ findings: trigger === "initial" ? [issue] : [] }),
+      fix: () => Promise.resolve({ summary: "changed files" }),
+      commit: false,
+    });
+
+    expect(result.stopReason).toBe("clean");
+    expect(git.calls).toEqual([]);
+    expect(result.rounds).toEqual([
+      { trigger: "initial", findings: [issue], selectedFindingIds: [issue.id] },
+      {
+        trigger: "auto_fix",
+        findings: [issue],
+        selectedFindingIds: [issue.id],
+        fixSummary: "changed files",
+      },
+      { trigger: "verify", findings: [] },
+    ]);
+  });
+
+  test("can use custom commit behavior", async () => {
+    const issue = finding();
+    const git = new FakeGit();
+    const { ctx } = fakeCtx({ git });
+    const commits: string[] = [];
+
+    const result = await executeRoundLoop(ctx, {
+      check: ({ trigger }) => Promise.resolve({ findings: trigger === "initial" ? [issue] : [] }),
+      fix: () => Promise.resolve({ summary: "fixed" }),
+      commitMessage: ({ attempt }) => `custom commit ${attempt}`,
+      commit(input) {
+        commits.push(
+          `${input.message}|${input.fix.attempt}|${input.result.summary}|${input.ctx === ctx}`,
+        );
+        return Promise.resolve({ commitSha: "custom-sha" });
+      },
+    });
+
+    expect(commits).toEqual(["custom commit 1|1|fixed|true"]);
+    expect(git.calls).toEqual([]);
+    expect(result.rounds[1]).toMatchObject({ trigger: "auto_fix", commitSha: "custom-sha" });
+  });
 });
