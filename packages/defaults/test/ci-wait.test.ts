@@ -22,14 +22,16 @@ function settled<T>(value: T): Pending<T> {
 class SequencedGitProvider extends FakeGitProvider {
   readonly logRequests: { prNumber: number; checkNames?: string[] }[] = [];
   failedLogs = "failed log";
+  private index = 0;
+
   constructor(private readonly sequence: readonly CheckRun[][]) {
     super();
   }
 
   override getChecks(_prNumber: number): Pending<CheckRun[]> {
-    const next = this.sequence[0] ?? [];
-    if (this.sequence.length > 1) {
-      (this.sequence as CheckRun[][]).shift();
+    const next = this.sequence[this.index] ?? [];
+    if (this.index < this.sequence.length - 1) {
+      this.index += 1;
     }
     return settled(next);
   }

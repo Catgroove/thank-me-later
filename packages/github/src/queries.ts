@@ -48,8 +48,8 @@ export const CHECKS_QUERY = `query($owner: String!, $repo: String!, $number: Int
   }
 }`;
 
-/** Failed-log lookup query with action run links; not part of the base PullRequest snapshot. */
-export const FAILED_CHECK_LINKS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
+/** Check-log lookup query with action run links; not part of the base PullRequest snapshot. */
+export const CHECK_LOG_LINKS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       commits(last: 1) {
@@ -118,8 +118,8 @@ export function checksArgs(prNumber: number): string[] {
   return graphqlArgs(CHECKS_QUERY, prNumber);
 }
 
-export function failedCheckLinksArgs(prNumber: number): string[] {
-  return graphqlArgs(FAILED_CHECK_LINKS_QUERY, prNumber);
+export function checkLogLinksArgs(prNumber: number): string[] {
+  return graphqlArgs(CHECK_LOG_LINKS_QUERY, prNumber);
 }
 
 export function runViewFailedLogArgs(runId: string): string[] {

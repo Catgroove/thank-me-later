@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import {
   CHECKS_QUERY,
-  FAILED_CHECK_LINKS_QUERY,
+  CHECK_LOG_LINKS_QUERY,
   checksArgs,
-  failedCheckLinksArgs,
+  checkLogLinksArgs,
   prCreateArgs,
   prEditBodyArgs,
   prListArgs,
@@ -82,12 +82,12 @@ describe("argv builders", () => {
     ]);
   });
 
-  test("failedCheckLinksArgs requests check run links for failed-log lookup", () => {
-    expect(failedCheckLinksArgs(42)).toEqual([
+  test("checkLogLinksArgs requests check run links for failed-log lookup", () => {
+    expect(checkLogLinksArgs(42)).toEqual([
       "api",
       "graphql",
       "-f",
-      `query=${FAILED_CHECK_LINKS_QUERY}`,
+      `query=${CHECK_LOG_LINKS_QUERY}`,
       "-F",
       "owner={owner}",
       "-F",
@@ -106,13 +106,13 @@ describe("queries", () => {
   test("check queries select the status-check rollup", () => {
     expect(SNAPSHOT_QUERY).toContain("statusCheckRollup");
     expect(CHECKS_QUERY).toContain("statusCheckRollup");
-    expect(FAILED_CHECK_LINKS_QUERY).toContain("statusCheckRollup");
-    expect(FAILED_CHECK_LINKS_QUERY).toContain("detailsUrl");
+    expect(CHECK_LOG_LINKS_QUERY).toContain("statusCheckRollup");
+    expect(CHECK_LOG_LINKS_QUERY).toContain("detailsUrl");
   });
 
   test("base queries do not select review-thread conversation state", () => {
     expect(SNAPSHOT_QUERY).not.toContain("reviewThreads");
     expect(CHECKS_QUERY).not.toContain("reviewThreads");
-    expect(FAILED_CHECK_LINKS_QUERY).not.toContain("reviewThreads");
+    expect(CHECK_LOG_LINKS_QUERY).not.toContain("reviewThreads");
   });
 });

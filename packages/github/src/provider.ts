@@ -16,7 +16,7 @@ import {
 } from "./map.ts";
 import {
   checksArgs,
-  failedCheckLinksArgs,
+  checkLogLinksArgs,
   prCreateArgs,
   prEditBodyArgs,
   prListArgs,
@@ -29,7 +29,7 @@ export interface GitHubProviderOptions {
   readonly run?: GhRunner;
 }
 
-type GhFailedCheckNode =
+type GhCheckLogNode =
   | {
       readonly __typename: "CheckRun";
       readonly name: string;
@@ -44,7 +44,7 @@ type GhFailedCheckNode =
       readonly targetUrl?: string;
     };
 
-interface FailedCheckLinksData {
+interface CheckLogLinksData {
   readonly repository: {
     readonly pullRequest: { readonly commits: { readonly nodes: readonly GhCommitLinksNode[] } };
   };
@@ -53,12 +53,12 @@ interface FailedCheckLinksData {
 interface GhCommitLinksNode {
   readonly commit: {
     readonly statusCheckRollup: {
-      readonly contexts: { readonly nodes: readonly GhFailedCheckNode[] };
+      readonly contexts: { readonly nodes: readonly GhCheckLogNode[] };
     } | null;
   };
 }
 
-interface FailedCheckRow {
+interface CheckLogRow {
   readonly name: string;
   readonly state?: string;
   readonly conclusion?: string | null;
@@ -78,11 +78,13 @@ function parseActionsRunId(link: string | undefined): string | undefined {
   return link?.match(/\/actions\/runs\/(\d+)/)?.[1];
 }
 
-function isFailedRow(row: FailedCheckRow): boolean {
-  return row.conclusion?.toLowerCase() === "failure" || row.state?.toLowerCase() === "failure";
+function isFailedRow(row: CheckLogRow): boolean {
+  const conclusion = row.conclusion?.toLowerCase();
+  const state = row.state?.toLowerCase();
+  return conclusion === "failure" || state === "failure" || state === "error";
 }
 
-function failedCheckRow(node: GhFailedCheckNode): FailedCheckRow {
+function checkLogRow(node: GhCheckLogNode): CheckLogRow {
   if (node.__typename === "CheckRun") {
     return {
       name: node.name,
@@ -94,12 +96,12 @@ function failedCheckRow(node: GhFailedCheckNode): FailedCheckRow {
   return { name: node.context, state: node.state, link: node.targetUrl };
 }
 
-function failedCheckRows(data: FailedCheckLinksData): FailedCheckRow[] {
+function checkLogRows(data: CheckLogLinksData): CheckLogRow[] {
   const rollup = data.repository.pullRequest.commits.nodes[0]?.commit.statusCheckRollup;
-  return (rollup?.contexts.nodes ?? []).map(failedCheckRow);
+  return (rollup?.contexts.nodes ?? []).map(checkLogRow);
 }
 
-function renderCheckRows(rows: readonly FailedCheckRow[]): string {
+function renderCheckRows(rows: readonly CheckLogRow[]): string {
   if (rows.length === 0) return "No failed check rows were available from gh.";
   return rows
     .map(
@@ -161,9 +163,9 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
 
     async getFailedCheckLogs(input: { prNumber: number; checkNames?: string[] }): Promise<string> {
       const res = JSON.parse(
-        await run(failedCheckLinksArgs(input.prNumber)),
-      ) as GhGraphQlResponse<FailedCheckLinksData>;
-      const rows = failedCheckRows(res.data);
+        await run(checkLogLinksArgs(input.prNumber)),
+      ) as GhGraphQlResponse<CheckLogLinksData>;
+      const rows = checkLogRows(res.data);
       const names = new Set(input.checkNames ?? []);
       const failed = rows.filter(
         (row) => (names.size === 0 || names.has(row.name)) && isFailedRow(row),

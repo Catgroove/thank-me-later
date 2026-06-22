@@ -34,7 +34,7 @@ const isPrList = (args: string[]) => args[0] === "pr" && args[1] === "list";
 const isPrCreate = (args: string[]) => args[0] === "pr" && args[1] === "create";
 const isSnapshot = (args: string[]) => args.some((a) => a.includes("headRefName"));
 const isPrEdit = (args: string[]) => args[0] === "pr" && args[1] === "edit";
-const isFailedCheckLinks = (args: string[]) => args.some((a) => a.includes("detailsUrl"));
+const isCheckLogLinks = (args: string[]) => args.some((a) => a.includes("detailsUrl"));
 const isRunView = (args: string[]) => args[0] === "run" && args[1] === "view";
 
 function gitProviderWith(handler: (args: string[]) => string): {
@@ -168,7 +168,7 @@ describe("public surface", () => {
 describe("getFailedCheckLogs", () => {
   test("fetches failed logs for matching GitHub Actions runs", async () => {
     const { gitProvider, calls } = gitProviderWith((args) => {
-      if (isFailedCheckLinks(args)) {
+      if (isCheckLogLinks(args)) {
         return JSON.stringify({
           data: {
             repository: {
@@ -222,7 +222,7 @@ describe("getFailedCheckLogs", () => {
 
   test("falls back to check row summaries when no run link is available", async () => {
     const { gitProvider } = gitProviderWith((args) => {
-      if (isFailedCheckLinks(args)) {
+      if (isCheckLogLinks(args)) {
         return JSON.stringify({
           data: {
             repository: {
@@ -237,7 +237,7 @@ describe("getFailedCheckLogs", () => {
                               {
                                 __typename: "StatusContext",
                                 context: "external",
-                                state: "FAILURE",
+                                state: "ERROR",
                               },
                             ],
                           },
@@ -254,7 +254,10 @@ describe("getFailedCheckLogs", () => {
       throw new Error(`unexpected args: ${args.join(" ")}`);
     });
 
-    expect(await gitProvider.getFailedCheckLogs?.({ prNumber: 42 })).toContain("external");
+    const logs = await gitProvider.getFailedCheckLogs?.({ prNumber: 42 });
+
+    expect(logs).toContain("external");
+    expect(logs).toContain("ERROR");
   });
 });
 
