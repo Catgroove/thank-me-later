@@ -1,5 +1,5 @@
 // A reusable fresh-round loop for Steps. The caller supplies the check and fix work; this module
-// owns the no-mistakes control flow: check, select auto-fix findings, fix once, commit, verify,
+// owns the round control flow: check, select auto-fix findings, fix once, commit, verify,
 // and repeat until the work is clean or requires a human decision.
 
 import type { Ctx } from "./context.ts";
