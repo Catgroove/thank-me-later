@@ -20,7 +20,7 @@ import type { AgentRunOpts, Harness } from "./providers/harness.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import { until } from "./pending.ts";
 import { type EventQueue, createEventQueue } from "./queue.ts";
-import type { RoundRecordInput } from "./round.ts";
+import type { RoundRecord, RoundRecordInput } from "./round.ts";
 import { createRunJournal, type RunJournal, type RunJournalSnapshot } from "./run-journal.ts";
 import { isFlowSignal } from "./signals.ts";
 import type { Step } from "./step.ts";
@@ -121,6 +121,7 @@ async function drive(
   const store = new Map<string, unknown>(snapshot?.artifacts);
   const stepByName = new Map<string, number>(pipeline.map((s, i): [string, number] => [s.name, i]));
   const retries = new Map<string, number>();
+  const runRounds: RoundRecord[] = [...(snapshot?.rounds ?? [])];
   const roundIndexes = new Map<string, number>(snapshot?.roundIndexes);
 
   await emit(queue, journal, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
@@ -169,6 +170,7 @@ async function drive(
     }
 
     await emit(queue, journal, { type: "step:started", step: step.name });
+    const visibleRounds = runRounds.filter((round) => (stepByName.get(round.step) ?? Infinity) < i);
     const ctx = makeContext(
       step,
       store,
@@ -180,6 +182,7 @@ async function drive(
       signal,
       models,
       journal,
+      visibleRounds,
     );
 
     let result: Awaited<ReturnType<Step["run"]>>;
@@ -277,7 +280,7 @@ async function drive(
     }
 
     try {
-      await appendRounds(journal, roundIndexes, step.name, rounds);
+      runRounds.push(...(await appendRounds(journal, roundIndexes, step.name, rounds)));
     } catch (error) {
       return failed(queue, journal, error, step.name);
     }
@@ -322,12 +325,16 @@ async function appendRounds(
   roundIndexes: Map<string, number>,
   step: string,
   rounds: readonly RoundRecordInput[],
-): Promise<void> {
+): Promise<RoundRecord[]> {
+  const records: RoundRecord[] = [];
   for (const round of rounds) {
     const index = roundIndexes.get(step) ?? 0;
     roundIndexes.set(step, index + 1);
-    await journal?.recordRound({ ...round, step, index });
+    const record = { ...round, step, index };
+    records.push(record);
+    await journal?.recordRound(record);
   }
+  return records;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -383,6 +390,7 @@ function makeContext(
   signal: AbortSignal,
   models: ModelMap | undefined,
   journal: RunJournal | undefined,
+  visibleRounds: readonly RoundRecord[],
 ): Ctx {
   const read = (artifact: Artifact<unknown, string>): unknown => {
     if (!store.has(artifact.name)) {
@@ -469,6 +477,11 @@ function makeContext(
       queue.push(event);
       void journal?.recordEvent(event).catch(() => undefined);
       return approveFindings(input);
+    },
+    rounds(stepName?: string) {
+      return stepName === undefined
+        ? [...visibleRounds]
+        : visibleRounds.filter((round) => round.step === stepName);
     },
     log(message: string) {
       const event: RunEvent = { type: "step:log", step: step.name, message };

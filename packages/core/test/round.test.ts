@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
+  currentFindings,
   findingId,
   makeFinding,
   renderFindingForPr,
+  renderPipelineSummaryForPr,
   renderRoundForPr,
   renderRoundsForPr,
+  renderUnresolvedFindingsForPr,
+  summarizeStepRounds,
   type FindingInput,
 } from "../src/round.ts";
 
@@ -47,5 +51,44 @@ describe("PR summary rendering", () => {
     expect(rendered).toContain(finding.id);
     expect(renderRoundsForPr([round])).toBe(rendered);
     expect(renderRoundsForPr([])).toBe("No rounds recorded.");
+  });
+
+  test("summarizes current unresolved findings from the latest round per Step", () => {
+    const reviewFinding = makeFinding("review", input);
+    const lintFinding = makeFinding("lint", {
+      severity: "error",
+      action: "auto-fix",
+      title: "Lint failed",
+      detail: "Run the formatter.",
+    });
+    const rounds = [
+      { step: "review", index: 0, trigger: "initial" as const, findings: [reviewFinding] },
+      { step: "lint", index: 0, trigger: "initial" as const, findings: [lintFinding] },
+      { step: "lint", index: 1, trigger: "auto_fix" as const, findings: [lintFinding] },
+      { step: "lint", index: 2, trigger: "verify" as const, findings: [] },
+    ];
+
+    expect(currentFindings(rounds)).toEqual([reviewFinding]);
+    expect(summarizeStepRounds(rounds)).toEqual([
+      {
+        step: "review",
+        rounds: 1,
+        autoFixes: 0,
+        finalTrigger: "initial",
+        finalFindings: 1,
+        status: "unresolved",
+      },
+      {
+        step: "lint",
+        rounds: 3,
+        autoFixes: 1,
+        finalTrigger: "verify",
+        finalFindings: 0,
+        status: "clean",
+      },
+    ]);
+    expect(renderPipelineSummaryForPr(rounds)).toContain("| lint | clean | 3 | 1 | verify | 0 |");
+    expect(renderUnresolvedFindingsForPr(rounds)).toContain("Confirm contract");
+    expect(renderUnresolvedFindingsForPr(rounds)).not.toContain("Lint failed");
   });
 });

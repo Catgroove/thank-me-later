@@ -1,6 +1,6 @@
 // The Run context handed to every Step's `run`. Reads are typed to the Step's
 // declared `consumes` (the `C` tuple), so a Step can only read artifacts it
-// declared — and the engine has already guaranteed at assembly time that a
+// declared, and the engine has already guaranteed at assembly time that a
 // producer exists. Providers are the three distinct, typed domain interfaces;
 // `until` is the engine-owned temporal primitive; `ask` escalates a
 // free-text decision; `approveFindings` escalates a structured finding gate.
@@ -11,6 +11,7 @@ import type { Pending } from "./pending.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import type { Git } from "./providers/git.ts";
 import type { Harness } from "./providers/harness.ts";
+import type { RoundRecord } from "./round.ts";
 
 export interface Ctx<
   C extends readonly Artifact<unknown, string>[] = readonly Artifact<unknown, string>[],
@@ -36,6 +37,9 @@ export interface Ctx<
 
   /** Escalate a finding-based gate; resolves to a structured approval decision. */
   approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision>;
+
+  /** Completed rounds from earlier Steps in this Run, including journal-replayed rounds. */
+  rounds(step?: string): readonly RoundRecord[];
 
   /** Emit a progress line into the Run's event stream. */
   log(message: string): void;

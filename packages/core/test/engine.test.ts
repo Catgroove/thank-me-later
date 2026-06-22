@@ -63,6 +63,36 @@ describe("engine - happy path", () => {
     expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=hi" });
   });
 
+  test("exposes completed rounds to later Steps", async () => {
+    const finding = makeFinding("review", {
+      severity: "warning",
+      action: "ask-user",
+      title: "Confirm",
+      detail: "Needs a decision.",
+    });
+    const review = defineStep({
+      name: "review",
+      async run() {
+        return { artifacts: {}, rounds: [{ trigger: "initial" as const, findings: [finding] }] };
+      },
+    });
+    const summarize = defineStep({
+      name: "summarize",
+      async run(ctx) {
+        ctx.log(`rounds=${ctx.rounds().length};review=${ctx.rounds("review").length}`);
+        return {};
+      },
+    });
+
+    const events = await collect(engineFor([review, summarize]));
+
+    expect(events).toContainEqual({
+      type: "step:log",
+      step: "summarize",
+      message: "rounds=1;review=1",
+    });
+  });
+
   test("persists completed rounds with engine-assigned step indexes", async () => {
     const records: RoundRecord[] = [];
     const journal: RunJournal = {
@@ -80,6 +110,7 @@ describe("engine - happy path", () => {
           },
           artifacts: new Map(),
           completedSteps: new Set(),
+          rounds: [],
           roundIndexes: new Map(),
         }),
       recordArtifact: () => Promise.resolve(),

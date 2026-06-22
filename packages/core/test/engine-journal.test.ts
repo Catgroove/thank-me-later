@@ -106,8 +106,10 @@ describe("engine RunJournal integration", () => {
     const journal = createRunJournal({ stateHome, checkoutPath, runId: "post-pr", events: false });
     await journal.begin({ pipeline: ["local", "open-pr", "ci"] });
     await journal.recordArtifact({ step: "local", artifact: "raw", value: "hi" });
+    await journal.recordRound({ step: "local", index: 0, trigger: "initial", findings: [] });
     await journal.recordStepCompleted("local");
     await journal.recordStepCompleted("open-pr");
+    await journal.recordRound({ step: "ci", index: 0, trigger: "initial", findings: [] });
     await journal.recordStepCompleted("ci");
 
     const runs: string[] = [];
@@ -124,7 +126,12 @@ describe("engine RunJournal integration", () => {
       consumes: [raw],
       resume: "reconcile",
       run(ctx) {
-        runs.push(`open-pr:${ctx.read(raw)}`);
+        runs.push(
+          `open-pr:${ctx.read(raw)}:${ctx
+            .rounds()
+            .map((round) => round.step)
+            .join(",")}`,
+        );
         return Promise.resolve({});
       },
     });
@@ -144,7 +151,7 @@ describe("engine RunJournal integration", () => {
       journal,
     );
 
-    expect(runs).toEqual(["open-pr:hi", "ci"]);
+    expect(runs).toEqual(["open-pr:hi:local", "ci"]);
     expect(events).toContainEqual({ type: "step:skipped", step: "local" });
     expect(events).toContainEqual({ type: "step:started", step: "open-pr" });
     expect(events).toContainEqual({ type: "step:started", step: "ci" });

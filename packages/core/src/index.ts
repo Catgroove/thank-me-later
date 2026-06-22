@@ -23,11 +23,16 @@ export {
   type RoundRecord,
   type RoundRecordInput,
   type RoundTrigger,
+  type StepRoundSummary,
+  currentFindings,
   findingId,
   makeFinding,
   renderFindingForPr,
+  renderPipelineSummaryForPr,
   renderRoundForPr,
   renderRoundsForPr,
+  renderUnresolvedFindingsForPr,
+  summarizeStepRounds,
 } from "./round.ts";
 export {
   executeRoundLoop,

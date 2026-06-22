@@ -20,6 +20,7 @@ import {
   type Pending,
   type PullRequest,
   type RebaseResult,
+  type RoundRecord,
   until,
 } from "@tml/core";
 
@@ -172,6 +173,7 @@ export interface FakeCtxParts {
   reads?: Record<string, unknown>;
   ask?: (prompt: string) => Promise<string>;
   approveFindings?: (input: ApproveFindingsInput) => Promise<ApprovalDecision>;
+  rounds?: readonly RoundRecord[];
   signal?: AbortSignal;
 }
 
@@ -206,6 +208,12 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
     },
     approveFindings(input) {
       return approveFindings(input);
+    },
+    rounds(stepName?: string) {
+      const rounds = parts.rounds ?? [];
+      return stepName === undefined
+        ? [...rounds]
+        : rounds.filter((round) => round.step === stepName);
     },
     log(message) {
       logs.push(message);

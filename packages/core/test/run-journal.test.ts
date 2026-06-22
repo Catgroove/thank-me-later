@@ -74,6 +74,7 @@ describe("RunJournal", () => {
     const first = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
     await first.begin({ pipeline: ["produce", "consume"] });
     await first.recordArtifact({ step: "produce", artifact: "raw", value: "hi" });
+    await first.recordRound({ step: "produce", index: 0, trigger: "initial", findings: [] });
     await first.recordStepCompleted("produce");
 
     const second = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
@@ -82,6 +83,10 @@ describe("RunJournal", () => {
     expect(snapshot.metadata.runId).toBe("run-1");
     expect([...snapshot.completedSteps]).toEqual(["produce"]);
     expect(snapshot.artifacts.get("raw")).toBe("hi");
+    expect(snapshot.rounds).toEqual([
+      { step: "produce", index: 0, trigger: "initial", findings: [] },
+    ]);
+    expect([...snapshot.roundIndexes]).toEqual([["produce", 1]]);
   });
 
   test("rejects resuming an incompatible pipeline", async () => {

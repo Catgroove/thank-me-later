@@ -33,6 +33,8 @@ export interface RunJournalSnapshot {
   readonly metadata: RunMetadata;
   readonly artifacts: ReadonlyMap<string, unknown>;
   readonly completedSteps: ReadonlySet<string>;
+  /** Completed rounds already persisted for this Run. */
+  readonly rounds: readonly RoundRecord[];
   /** Next round index per Step, derived from already-persisted rounds. */
   readonly roundIndexes: ReadonlyMap<string, number>;
 }
@@ -156,12 +158,14 @@ class FileRunJournal implements RunJournal {
     }
 
     const artifacts = await this.readArtifacts();
-    const roundIndexes = await this.readRoundIndexes();
+    const rounds = await this.readRounds();
+    const roundIndexes = roundIndexesFor(rounds);
     const currentMetadata = this.requireMetadata();
     return {
       metadata: currentMetadata,
       artifacts,
       completedSteps: new Set(currentMetadata.completedSteps),
+      rounds,
       roundIndexes,
     };
   }
@@ -263,19 +267,20 @@ class FileRunJournal implements RunJournal {
     return artifacts;
   }
 
-  private async readRoundIndexes(): Promise<Map<string, number>> {
+  private async readRounds(): Promise<RoundRecord[]> {
     const path = join(this.requireRunDir(), "rounds.jsonl");
-    const indexes = new Map<string, number>();
-    if (!existsSync(path)) return indexes;
+    const rounds: RoundRecord[] = [];
+    if (!existsSync(path)) return rounds;
     for (const line of (await readFile(path, "utf8")).split("\n")) {
       if (line.trim().length === 0) continue;
       const parsed = JSON.parse(line) as unknown;
       if (typeof parsed !== "object" || parsed === null) continue;
-      const record = parsed as { step?: unknown; index?: unknown };
+      const record = parsed as Partial<RoundRecord>;
       if (typeof record.step !== "string" || typeof record.index !== "number") continue;
-      indexes.set(record.step, Math.max(indexes.get(record.step) ?? 0, record.index + 1));
+      if (!Array.isArray(record.findings) || typeof record.trigger !== "string") continue;
+      rounds.push(record as RoundRecord);
     }
-    return indexes;
+    return rounds;
   }
 
   private touch(updatedAt: string): void {
@@ -313,6 +318,14 @@ function assertCompatible(metadata: RunMetadata, pipeline: string[], runId: stri
 
 function samePipeline(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((step, i) => step === b[i]);
+}
+
+function roundIndexesFor(rounds: readonly RoundRecord[]): Map<string, number> {
+  const indexes = new Map<string, number>();
+  for (const record of rounds) {
+    indexes.set(record.step, Math.max(indexes.get(record.step) ?? 0, record.index + 1));
+  }
+  return indexes;
 }
 
 function newRunId(): string {

@@ -29,6 +29,15 @@ export interface RoundRecord {
   readonly commitSha?: string;
 }
 
+export interface StepRoundSummary {
+  readonly step: string;
+  readonly rounds: number;
+  readonly autoFixes: number;
+  readonly finalTrigger: RoundTrigger;
+  readonly finalFindings: number;
+  readonly status: "clean" | "unresolved";
+}
+
 export type FindingInput = Omit<Finding, "id">;
 export type RoundRecordInput = Omit<RoundRecord, "step" | "index">;
 
@@ -109,4 +118,67 @@ export function renderRoundForPr(round: RoundRecord): string {
 export function renderRoundsForPr(rounds: readonly RoundRecord[]): string {
   if (rounds.length === 0) return "No rounds recorded.";
   return rounds.map(renderRoundForPr).join("\n\n");
+}
+
+/** Current findings are the findings from the latest recorded round per Step. */
+export function currentFindings(rounds: readonly RoundRecord[]): Finding[] {
+  return summarizeStepRounds(rounds).flatMap(
+    (summary) => latestRound(rounds, summary.step).findings,
+  );
+}
+
+/** Deterministic, compact per-Step summary for PR bodies and other audit surfaces. */
+export function summarizeStepRounds(rounds: readonly RoundRecord[]): StepRoundSummary[] {
+  const byStep = new Map<string, RoundRecord[]>();
+  for (const round of rounds) {
+    const group = byStep.get(round.step) ?? [];
+    group.push(round);
+    byStep.set(round.step, group);
+  }
+
+  return [...byStep.entries()].map(([step, records]) => {
+    const latest = records.reduce((a, b) => (b.index > a.index ? b : a));
+    const finalFindings = latest.findings.length;
+    return {
+      step,
+      rounds: records.length,
+      autoFixes: records.filter((r) => r.trigger === "auto_fix").length,
+      finalTrigger: latest.trigger,
+      finalFindings,
+      status: finalFindings === 0 ? "clean" : "unresolved",
+    };
+  });
+}
+
+/** Pure Markdown rendering for a deterministic PR pipeline summary table. */
+export function renderPipelineSummaryForPr(rounds: readonly RoundRecord[]): string {
+  const summaries = summarizeStepRounds(rounds);
+  if (summaries.length === 0) return "No local rounds recorded.";
+  const lines = [
+    "| Step | Status | Rounds | Auto-fixes | Final trigger | Final findings |",
+    "| --- | --- | ---: | ---: | --- | ---: |",
+  ];
+  for (const s of summaries) {
+    lines.push(
+      `| ${escapeTableCell(s.step)} | ${s.status} | ${s.rounds} | ${s.autoFixes} | ${s.finalTrigger} | ${s.finalFindings} |`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/** Pure Markdown rendering for findings still present in the latest round of each Step. */
+export function renderUnresolvedFindingsForPr(rounds: readonly RoundRecord[]): string {
+  const findings = currentFindings(rounds);
+  if (findings.length === 0) return "No unresolved findings.";
+  return findings.map(renderFindingForPr).join("\n");
+}
+
+function latestRound(rounds: readonly RoundRecord[], step: string): RoundRecord {
+  const matches = rounds.filter((round) => round.step === step);
+  if (matches.length === 0) throw new Error(`no rounds recorded for Step ${step}`);
+  return matches.reduce((a, b) => (b.index > a.index ? b : a));
+}
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }

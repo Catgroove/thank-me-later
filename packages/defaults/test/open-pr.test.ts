@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PullRequest } from "@tml/core";
+import { makeFinding, type PullRequest, type RoundRecord } from "@tml/core";
 import { openPrStep } from "../src/steps/open-pr.ts";
 import { FakeGitProvider, FakeGit, fakeCtx } from "./fake-ctx.ts";
 
@@ -10,34 +10,48 @@ const reads = {
   reviewSummary: "fixed an off-by-one",
 };
 
+const finding = makeFinding("review", {
+  severity: "warning",
+  action: "ask-user",
+  title: "Confirm behavior",
+  detail: "Public behavior changed.",
+});
+
+const rounds: RoundRecord[] = [
+  { step: "lint", index: 0, trigger: "initial", findings: [] },
+  { step: "review", index: 0, trigger: "initial", findings: [finding] },
+];
+
 describe("open-pr step", () => {
-  test("pushes the branch and opens the PR, folding the review into the body", async () => {
+  test("pushes the branch and opens the PR with a generated audit block", async () => {
     const git = new FakeGit();
     const gitProvider = new FakeGitProvider();
-    const { ctx } = fakeCtx({ git, gitProvider, reads });
+    const { ctx } = fakeCtx({ git, gitProvider, reads, rounds });
 
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
-    // No commit — the work and fixes were committed by the commit Steps already.
+    // No commit: the work and fixes were committed by earlier Steps.
     expect(git.calls).toEqual(["push (force) tml/ship-abc1234"]);
     expect(gitProvider.opened).toHaveLength(1);
-    expect(gitProvider.opened[0]).toEqual({
-      head: "tml/ship-abc1234",
-      base: "main",
-      title: "fix: off-by-one in pager",
-      body: "Fixes the boundary case.\n\n## Review\n\nfixed an off-by-one",
-    });
+    expect(gitProvider.opened[0]?.head).toBe("tml/ship-abc1234");
+    expect(gitProvider.opened[0]?.base).toBe("main");
+    expect(gitProvider.opened[0]?.title).toBe("fix: off-by-one in pager");
+    expect(gitProvider.opened[0]?.body).toContain("<!-- tml:summary:start -->");
+    expect(gitProvider.opened[0]?.body).toContain("## Pipeline summary");
+    expect(gitProvider.opened[0]?.body).toContain("| review | unresolved | 1 | 0 | initial | 1 |");
+    expect(gitProvider.opened[0]?.body).toContain("fixed an off-by-one");
     expect(result.pullRequest.number).toBe(1);
   });
 
-  test("omits the review section when the summary is empty", async () => {
+  test("records empty review and round summaries explicitly", async () => {
     const git = new FakeGit();
     const gitProvider = new FakeGitProvider();
     const { ctx } = fakeCtx({ git, gitProvider, reads: { ...reads, reviewSummary: "" } });
 
     await openPrStep().run(ctx);
 
-    expect(gitProvider.opened[0]?.body).toBe("Fixes the boundary case.");
+    expect(gitProvider.opened[0]?.body).toContain("No local rounds recorded.");
+    expect(gitProvider.opened[0]?.body).toContain("No unresolved findings.");
   });
 
   test("is idempotent: an existing PR is reused after pushing local commits", async () => {
@@ -59,9 +73,10 @@ describe("open-pr step", () => {
 
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
-    expect(result.pullRequest).toEqual(prior);
+    expect(result.pullRequest.body).toContain("<!-- tml:summary:start -->");
     expect(git.calls).toEqual(["push (force) tml/ship-abc1234"]); // update the existing PR's branch
     expect(gitProvider.opened).toEqual([]); // nothing opened
+    expect(gitProvider.bodyUpdates).toHaveLength(1);
   });
 
   test.each(["merged", "closed"] as const)(
@@ -84,7 +99,7 @@ describe("open-pr step", () => {
 
       const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
-      expect(gitProvider.opened).toHaveLength(1); // spent PR — a new one is opened
+      expect(gitProvider.opened).toHaveLength(1); // spent PR, so a new one is opened
       expect(result.pullRequest.number).toBe(1);
       expect(result.pullRequest.state).toBe("open");
     },
