@@ -149,18 +149,7 @@ async function drive(
     if (signal.aborted) return cancelled(queue, step.name);
 
     queue.push({ type: "step:started", step: step.name });
-    const ctx = makeContext(
-      step,
-      store,
-      providers,
-      git,
-      queue,
-      ask,
-      signal,
-      models,
-      journal,
-      roundIndexes,
-    );
+    const ctx = makeContext(step, store, providers, git, queue, ask, signal, models);
 
     let result: Awaited<ReturnType<Step["run"]>>;
     try {
@@ -219,7 +208,7 @@ async function drive(
       }
     }
 
-    const produced = result as Record<string, unknown>;
+    const { artifacts: produced, rounds } = stepResultParts(result);
     const declared = new Set(step.produces.map((a) => a.name));
     for (const key of Object.keys(produced)) {
       if (!declared.has(key)) {
@@ -254,12 +243,48 @@ async function drive(
       });
     }
 
+    try {
+      await appendRounds(journal, roundIndexes, step.name, rounds);
+    } catch (error) {
+      queue.push({ type: "run:failed", step: step.name, error: errorMessage(error) });
+      queue.close();
+      return;
+    }
+
     queue.push({ type: "step:finished", step: step.name });
     i += 1;
   }
 
   queue.push({ type: "run:finished" });
   queue.close();
+}
+
+function stepResultParts(result: unknown): {
+  artifacts: Record<string, unknown>;
+  rounds: readonly RoundRecordInput[];
+} {
+  if (isObject(result) && "rounds" in result && isObject(result.artifacts)) {
+    const rounds = Array.isArray(result.rounds) ? result.rounds : [];
+    return { artifacts: result.artifacts, rounds: rounds as readonly RoundRecordInput[] };
+  }
+  return { artifacts: result as Record<string, unknown>, rounds: [] };
+}
+
+async function appendRounds(
+  journal: RoundJournal | undefined,
+  roundIndexes: Map<string, number>,
+  step: string,
+  rounds: readonly RoundRecordInput[],
+): Promise<void> {
+  for (const round of rounds) {
+    const index = roundIndexes.get(step) ?? 0;
+    roundIndexes.set(step, index + 1);
+    await journal?.append({ ...round, step, index });
+  }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function cancelled(queue: EventQueue<RunEvent>, step?: string): void {
@@ -276,8 +301,6 @@ function makeContext(
   ask: (prompt: string) => Promise<string>,
   signal: AbortSignal,
   models: ModelMap | undefined,
-  journal: RoundJournal | undefined,
-  roundIndexes: Map<string, number>,
 ): Ctx {
   const read = (artifact: Artifact<unknown, string>): unknown => {
     if (!store.has(artifact.name)) {
@@ -343,13 +366,6 @@ function makeContext(
     ask(prompt: string) {
       queue.push({ type: "ask:pending", step: step.name, prompt });
       return ask(prompt);
-    },
-    async recordRound(round: RoundRecordInput) {
-      const index = roundIndexes.get(step.name) ?? 0;
-      roundIndexes.set(step.name, index + 1);
-      const record = { ...round, step: step.name, index };
-      await journal?.append(record);
-      return record;
     },
     log(message: string) {
       queue.push({ type: "step:log", step: step.name, message });

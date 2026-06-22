@@ -91,15 +91,18 @@ export function reviewStep(): Step {
         .flatMap((p) => p.result.findings)
         .filter((f) => f.action === "auto-fix");
       const fixSummary = fixable.length > 0 ? (await agent.run(fixPrompt(fixable))).summary : "";
-      await ctx.recordRound({
-        trigger: "initial",
-        findings: passes.flatMap((p) => p.result.findings),
-        selectedFindingIds: fixable.map((f) => f.id),
-        ...(fixSummary.trim().length > 0 ? { fixSummary: fixSummary.trim() } : {}),
-        commitSha: await ctx.git.headSha(),
-      });
 
-      return { reviewSummary: summarize(passes, fixSummary) };
+      return {
+        artifacts: { reviewSummary: summarize(passes, fixSummary) },
+        rounds: [
+          {
+            trigger: "initial",
+            findings: passes.flatMap((p) => p.result.findings),
+            selectedFindingIds: fixable.map((f) => f.id),
+            ...(fixSummary.trim().length > 0 ? { fixSummary: fixSummary.trim() } : {}),
+          },
+        ],
+      };
     },
   });
 }

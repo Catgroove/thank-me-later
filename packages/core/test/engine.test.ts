@@ -76,10 +76,14 @@ describe("engine - happy path", () => {
     });
     const review = defineStep({
       name: "review",
-      async run(ctx) {
-        await ctx.recordRound({ trigger: "initial", findings: [finding] });
-        await ctx.recordRound({ trigger: "verify", findings: [] });
-        return {};
+      async run() {
+        return {
+          artifacts: {},
+          rounds: [
+            { trigger: "initial", findings: [finding] },
+            { trigger: "verify", findings: [] },
+          ],
+        };
       },
     });
 

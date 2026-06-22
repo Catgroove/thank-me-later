@@ -18,8 +18,6 @@ import {
   type Pending,
   type PullRequest,
   type RebaseResult,
-  type RoundRecord,
-  type RoundRecordInput,
   until,
 } from "@tml/core";
 
@@ -165,20 +163,17 @@ export interface FakeCtxParts {
   reads?: Record<string, unknown>;
   ask?: (prompt: string) => Promise<string>;
   signal?: AbortSignal;
-  stepName?: string;
 }
 
 export interface FakeCtxResult {
   ctx: Ctx;
   logs: string[];
   asks: string[];
-  rounds: RoundRecord[];
 }
 
 export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const logs: string[] = [];
   const asks: string[] = [];
-  const rounds: RoundRecord[] = [];
   const reads = parts.reads ?? {};
   const signal = parts.signal ?? new AbortController().signal;
   const ask = parts.ask ?? ((_prompt: string) => Promise.resolve(""));
@@ -198,15 +193,10 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
       asks.push(prompt);
       return ask(prompt);
     },
-    recordRound(round: RoundRecordInput) {
-      const record = { ...round, step: parts.stepName ?? "fake-step", index: rounds.length };
-      rounds.push(record);
-      return Promise.resolve(record);
-    },
     log(message) {
       logs.push(message);
     },
   };
 
-  return { ctx, logs, asks, rounds };
+  return { ctx, logs, asks };
 }

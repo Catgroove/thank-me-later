@@ -21,7 +21,7 @@ export {
   renderRoundForPr,
   renderRoundsForPr,
 } from "./round.ts";
-export { defineStep, type Step, type StepRun } from "./step.ts";
+export { defineStep, type Step, type StepResult, type StepRun } from "./step.ts";
 export { type Config, type ModelMap, type Pipeline, type Providers } from "./pipeline.ts";
 export {
   type Assembly,

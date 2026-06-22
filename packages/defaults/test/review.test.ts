@@ -10,7 +10,9 @@ function pass(findings: unknown[], extra: Record<string, unknown> = {}): AgentRe
 }
 
 function summaryOf(result: unknown): string {
-  return (result as { reviewSummary: string }).reviewSummary;
+  const output = result as { artifacts?: { reviewSummary?: unknown }; reviewSummary?: unknown };
+  const value = output.artifacts?.reviewSummary ?? output.reviewSummary;
+  return typeof value === "string" ? value : "";
 }
 
 describe("review step", () => {
@@ -23,9 +25,8 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx, asks, rounds } = fakeCtx({
+    const { ctx, asks } = fakeCtx({
       agent,
-      stepName: "review",
       reads: { prBody: "Adds --json output" },
     });
 
@@ -35,7 +36,10 @@ describe("review step", () => {
     expect(agent.opts[1]?.schema).toBe(architectureSchema); // architecture: verdict required
     for (const i of [0, 2, 3, 4]) expect(agent.opts[i]?.schema).toBe(findingsSchema);
     expect(asks).toHaveLength(0); // the gate never calls ctx.ask
-    expect(rounds).toMatchObject([{ step: "review", trigger: "initial", findings: [] }]);
+    const stepResult = result as { artifacts?: { reviewSummary?: unknown }; rounds?: unknown[] };
+    expect(typeof stepResult.artifacts?.reviewSummary).toBe("string");
+    expect(stepResult.rounds).toHaveLength(1);
+    expect(stepResult.rounds?.[0]).toMatchObject({ trigger: "initial", findings: [] });
     expect(summaryOf(result)).toContain("**Risk: low**");
   });
 
@@ -73,7 +77,7 @@ describe("review step", () => {
     expect(summary).toContain("**Risk: high**");
     expect(summary.toLowerCase()).toContain("blocking concern");
     expect(asks).toHaveLength(0);
-    expect(agent.tasks).toHaveLength(5); // ask-user is not auto-fix → no fix pass
+    expect(agent.tasks).toHaveLength(5); // ask-user is not auto-fix, so no fix pass
   });
 
   test("runs the fix pass only when there are auto-fix findings", async () => {

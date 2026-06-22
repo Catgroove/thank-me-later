@@ -1,18 +1,23 @@
 // The Step contract: one addressable unit of work in a Pipeline. A Step declares
-// the artifacts it `consumes` and `produces`, and a `run` that either returns its
-// produced values (keyed by artifact name) *or* a FlowSignal — never both
-// (mirrors `Output | FlowSignal`). Steps stay mostly-pure and unit-testable;
-// side effects go through the Providers on `ctx`.
+// the artifacts it `consumes` and `produces`, and a `run` that returns produced values,
+// a structured StepResult (artifacts plus completed rounds), or a FlowSignal. Steps stay
+// mostly-pure and unit-testable; side effects go through the Providers on `ctx`.
 
 import type { Artifact, Produced } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
+import type { RoundRecordInput } from "./round.ts";
 import type { FlowSignal } from "./signals.ts";
 
 type Artifacts = readonly Artifact<unknown, string>[];
 
+export interface StepResult<P extends Artifacts> {
+  readonly artifacts: Produced<P>;
+  readonly rounds?: readonly RoundRecordInput[];
+}
+
 export type StepRun<C extends Artifacts, P extends Artifacts> = (
   ctx: Ctx<C>,
-) => Promise<Produced<P> | FlowSignal>;
+) => Promise<Produced<P> | StepResult<P> | FlowSignal>;
 
 export interface Step<C extends Artifacts = Artifacts, P extends Artifacts = Artifacts> {
   readonly name: string;

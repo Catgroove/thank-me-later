@@ -36,15 +36,18 @@ export function ciWaitStep(): Step {
       for (const check of checks) {
         ctx.log(`ci: ${check.name} -> ${check.conclusion ?? check.status}`);
       }
-      await ctx.recordRound({
-        trigger: "verify",
-        findings: checks.flatMap((check) => {
-          const finding = findingForCheck(check);
-          return finding ? [finding] : [];
-        }),
-        commitSha: await ctx.git.headSha(),
-      });
-      return {};
+      return {
+        artifacts: {},
+        rounds: [
+          {
+            trigger: "verify",
+            findings: checks.flatMap((check) => {
+              const finding = findingForCheck(check);
+              return finding ? [finding] : [];
+            }),
+          },
+        ],
+      };
     },
   });
 }

@@ -4,31 +4,40 @@ import { formatPrompt } from "../src/prompts.ts";
 import { FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
 describe("checkStep", () => {
-  test("runs the agent with its prompt and does not escalate on success", async () => {
+  test("runs the agent with its prompt and returns a clean round on success", async () => {
     const agent = new FakeHarness();
-    const { ctx, asks, rounds } = fakeCtx({ agent, stepName: "format" });
+    const { ctx, asks } = fakeCtx({ agent });
 
     const result = await checkStep("format", formatPrompt).run(ctx);
 
-    expect(result).toEqual({});
+    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "initial", findings: [] }] });
     expect(agent.tasks).toEqual([formatPrompt]);
     expect(asks).toEqual([]);
-    expect(rounds).toMatchObject([{ step: "format", trigger: "initial", findings: [] }]);
   });
 
-  test("escalates via ctx.ask when the agent result is not ok", async () => {
+  test("returns an ask-user finding when the agent result is not ok", async () => {
     const agent = new FakeHarness();
     agent.result = { ok: false, summary: "lint failures remain" };
-    const { ctx, asks, rounds } = fakeCtx({ agent, stepName: "lint" });
+    const { ctx, asks } = fakeCtx({ agent });
 
-    await checkStep("lint", "lint it").run(ctx);
+    const result = await checkStep("lint", "lint it").run(ctx);
 
-    expect(asks).toHaveLength(1);
-    expect(asks[0]).toContain("lint failures remain");
-    expect(rounds[0]?.findings[0]).toMatchObject({
-      severity: "error",
-      action: "ask-user",
-      title: "lint incomplete",
+    expect(asks).toEqual([]);
+    expect(result).toMatchObject({
+      artifacts: {},
+      rounds: [
+        {
+          trigger: "initial",
+          findings: [
+            {
+              severity: "error",
+              action: "ask-user",
+              title: "lint incomplete",
+              detail: "lint failures remain",
+            },
+          ],
+        },
+      ],
     });
   });
 
