@@ -3,7 +3,7 @@
 // no tml-side detection, so the pipeline works in any language (ARCHITECTURE). Kept pure
 // and snapshot-tested; the Steps compose them into fresh check/fix/review agent rounds.
 
-import type { Finding, RoundTrigger } from "@tml/core";
+import type { CheckRun, Finding, RoundTrigger } from "@tml/core";
 
 export const formatPrompt =
   "Verify repository formatting. Discover the formatter from project config. Prefer a " +
@@ -85,6 +85,42 @@ export function checkFixPrompt(input: CheckFixPromptInput): string {
     prior +
     "\n\nSelected findings:\n" +
     list
+  );
+}
+
+export interface CiFixPromptInput {
+  readonly findings: readonly Pick<
+    Finding,
+    "id" | "severity" | "action" | "title" | "detail" | "location"
+  >[];
+  readonly checks: readonly CheckRun[];
+  readonly failedLogs: string;
+  readonly historyText: string;
+}
+
+export function ciFixPrompt(input: CiFixPromptInput): string {
+  const findings = input.findings
+    .map((f) => `- ${f.id}: ${f.title}${f.location ? ` (${f.location})` : ""}: ${f.detail}`)
+    .join("\n");
+  const checks = input.checks.map((c) => `- ${c.name}: ${c.conclusion ?? c.status}`).join("\n");
+  const logs = input.failedLogs.trim();
+  const history = input.historyText.trim();
+  const prior =
+    history.length > 0 && history !== "No prior rounds."
+      ? "\n\nPrior CI round history:\n" + history
+      : "";
+  return (
+    "The pull request CI checks below failed after the branch was pushed. Diagnose and fix the " +
+    "selected findings in place. Prefer the smallest root-cause fix in the repository over " +
+    "papering over CI. Run the most relevant local verification command when practical. Do not " +
+    "commit or push. Summarise what you changed in one short line." +
+    prior +
+    "\n\nSelected findings:\n" +
+    findings +
+    "\n\nLatest check statuses:\n" +
+    checks +
+    "\n\nFailed check logs:\n" +
+    (logs.length > 0 ? logs : "No failed check logs were available from the Git provider.")
   );
 }
 

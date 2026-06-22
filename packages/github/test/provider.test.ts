@@ -34,6 +34,8 @@ const isPrList = (args: string[]) => args[0] === "pr" && args[1] === "list";
 const isPrCreate = (args: string[]) => args[0] === "pr" && args[1] === "create";
 const isSnapshot = (args: string[]) => args.some((a) => a.includes("headRefName"));
 const isPrEdit = (args: string[]) => args[0] === "pr" && args[1] === "edit";
+const isFailedCheckLinks = (args: string[]) => args.some((a) => a.includes("detailsUrl"));
+const isRunView = (args: string[]) => args[0] === "run" && args[1] === "view";
 
 function gitProviderWith(handler: (args: string[]) => string): {
   gitProvider: ReturnType<typeof createGitHubProvider>;
@@ -159,6 +161,100 @@ describe("public surface", () => {
     expect(typeof gitProvider.updatePullRequestBody).toBe("function");
     expect(typeof gitProvider.getChecks).toBe("function");
     expect(typeof gitProvider.getMergeability).toBe("function");
+    expect(typeof gitProvider.getFailedCheckLogs).toBe("function");
+  });
+});
+
+describe("getFailedCheckLogs", () => {
+  test("fetches failed logs for matching GitHub Actions runs", async () => {
+    const { gitProvider, calls } = gitProviderWith((args) => {
+      if (isFailedCheckLinks(args)) {
+        return JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: "CheckRun",
+                                name: "build",
+                                status: "COMPLETED",
+                                conclusion: "FAILURE",
+                                detailsUrl: "https://github.com/o/r/actions/runs/123/job/9",
+                              },
+                              {
+                                __typename: "CheckRun",
+                                name: "lint",
+                                status: "COMPLETED",
+                                conclusion: "SUCCESS",
+                                detailsUrl: "https://github.com/o/r/actions/runs/124/job/10",
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        });
+      }
+      if (isRunView(args)) return "build log";
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    const logs = await gitProvider.getFailedCheckLogs?.({ prNumber: 42, checkNames: ["build"] });
+
+    expect(logs).toContain("GitHub Actions run 123");
+    expect(logs).toContain("build log");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain("api");
+    expect(calls[0]?.some((arg) => arg.includes("detailsUrl"))).toBe(true);
+    expect(calls[1]).toEqual(["run", "view", "123", "--log-failed"]);
+  });
+
+  test("falls back to check row summaries when no run link is available", async () => {
+    const { gitProvider } = gitProviderWith((args) => {
+      if (isFailedCheckLinks(args)) {
+        return JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: "StatusContext",
+                                context: "external",
+                                state: "FAILURE",
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        });
+      }
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    expect(await gitProvider.getFailedCheckLogs?.({ prNumber: 42 })).toContain("external");
   });
 });
 
@@ -230,6 +326,7 @@ describe("error propagation", () => {
       () => gitProvider.updatePullRequestBody({ prNumber: 1, body: "b" }),
       () => gitProvider.getChecks(1).poll(),
       () => gitProvider.getMergeability?.(1).poll(),
+      () => gitProvider.getFailedCheckLogs?.({ prNumber: 1 }),
     ]) {
       let err: unknown;
       try {

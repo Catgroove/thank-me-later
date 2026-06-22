@@ -14,11 +14,55 @@ import {
   mapPullRequest,
   type SnapshotData,
 } from "./map.ts";
-import { checksArgs, prCreateArgs, prEditBodyArgs, prListArgs, snapshotArgs } from "./queries.ts";
+import {
+  checksArgs,
+  failedCheckLinksArgs,
+  prCreateArgs,
+  prEditBodyArgs,
+  prListArgs,
+  runViewFailedLogArgs,
+  snapshotArgs,
+} from "./queries.ts";
 
 export interface GitHubProviderOptions {
   /** Override the `gh` runner; tests inject a fake returning canned JSON. */
   readonly run?: GhRunner;
+}
+
+type GhFailedCheckNode =
+  | {
+      readonly __typename: "CheckRun";
+      readonly name: string;
+      readonly status: string;
+      readonly conclusion: string | null;
+      readonly detailsUrl?: string;
+    }
+  | {
+      readonly __typename: "StatusContext";
+      readonly context: string;
+      readonly state: string;
+      readonly targetUrl?: string;
+    };
+
+interface FailedCheckLinksData {
+  readonly repository: {
+    readonly pullRequest: { readonly commits: { readonly nodes: readonly GhCommitLinksNode[] } };
+  };
+}
+
+interface GhCommitLinksNode {
+  readonly commit: {
+    readonly statusCheckRollup: {
+      readonly contexts: { readonly nodes: readonly GhFailedCheckNode[] };
+    } | null;
+  };
+}
+
+interface FailedCheckRow {
+  readonly name: string;
+  readonly state?: string;
+  readonly conclusion?: string | null;
+  readonly link?: string;
 }
 
 /** Parse the PR number out of the URL `gh pr create` prints on stdout. */
@@ -28,6 +72,41 @@ function parsePrNumber(out: string): number {
     throw new Error(`could not parse a PR number from gh output: ${out.trim()}`);
   }
   return Number(match[1]);
+}
+
+function parseActionsRunId(link: string | undefined): string | undefined {
+  return link?.match(/\/actions\/runs\/(\d+)/)?.[1];
+}
+
+function isFailedRow(row: FailedCheckRow): boolean {
+  return row.conclusion?.toLowerCase() === "failure" || row.state?.toLowerCase() === "failure";
+}
+
+function failedCheckRow(node: GhFailedCheckNode): FailedCheckRow {
+  if (node.__typename === "CheckRun") {
+    return {
+      name: node.name,
+      state: node.status,
+      conclusion: node.conclusion,
+      link: node.detailsUrl,
+    };
+  }
+  return { name: node.context, state: node.state, link: node.targetUrl };
+}
+
+function failedCheckRows(data: FailedCheckLinksData): FailedCheckRow[] {
+  const rollup = data.repository.pullRequest.commits.nodes[0]?.commit.statusCheckRollup;
+  return (rollup?.contexts.nodes ?? []).map(failedCheckRow);
+}
+
+function renderCheckRows(rows: readonly FailedCheckRow[]): string {
+  if (rows.length === 0) return "No failed check rows were available from gh.";
+  return rows
+    .map(
+      (row) =>
+        `- ${row.name}: ${row.conclusion ?? row.state ?? "unknown"}${row.link ? ` (${row.link})` : ""}`,
+    )
+    .join("\n");
 }
 
 export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = {}): GitProvider {
@@ -78,6 +157,32 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
           return pr.mergeable === "unknown" ? { done: false } : { done: true, value: pr.mergeable };
         },
       };
+    },
+
+    async getFailedCheckLogs(input: { prNumber: number; checkNames?: string[] }): Promise<string> {
+      const res = JSON.parse(
+        await run(failedCheckLinksArgs(input.prNumber)),
+      ) as GhGraphQlResponse<FailedCheckLinksData>;
+      const rows = failedCheckRows(res.data);
+      const names = new Set(input.checkNames ?? []);
+      const failed = rows.filter(
+        (row) => (names.size === 0 || names.has(row.name)) && isFailedRow(row),
+      );
+      const runIds = [
+        ...new Set(
+          failed
+            .map((row) => parseActionsRunId(row.link))
+            .filter((id): id is string => id !== undefined),
+        ),
+      ];
+      if (runIds.length === 0) return renderCheckRows(failed);
+
+      const logs: string[] = [];
+      for (const runId of runIds) {
+        const log = (await run(runViewFailedLogArgs(runId))).trim();
+        if (log.length > 0) logs.push(`## GitHub Actions run ${runId}\n\n${log}`);
+      }
+      return logs.length > 0 ? logs.join("\n\n") : renderCheckRows(failed);
     },
   };
 }

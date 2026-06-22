@@ -6,6 +6,7 @@ import {
   branchNameSchema,
   checkFindingsSchema,
   checkFixPrompt,
+  ciFixPrompt,
   checkPrompt,
   contextPrompt,
   correctnessPrompt,
@@ -80,6 +81,29 @@ describe("default pipeline prompts", () => {
     expect(prompt).toContain("Bad type");
     expect(prompt.toLowerCase()).toContain("discover");
     expect(prompt.toLowerCase()).toContain("do not commit");
+  });
+
+  test("ciFixPrompt includes failed logs and leaves commit and push to tml", () => {
+    const prompt = ciFixPrompt({
+      historyText: "Round 0: initial",
+      failedLogs: "stack trace",
+      checks: [{ name: "build", status: "completed", conclusion: "failure" }],
+      findings: [
+        {
+          id: "ci:1",
+          severity: "error",
+          action: "auto-fix",
+          title: "build did not pass",
+          detail: "CI reported failure.",
+          location: "build",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("ci:1");
+    expect(prompt).toContain("stack trace");
+    expect(prompt).toContain("Prior CI round history");
+    expect(prompt.toLowerCase()).toContain("do not commit or push");
   });
 
   test("each review pass computes the diff itself and stays read-only", () => {
