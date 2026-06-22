@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Config, Engine, RunEvent } from "@tml/core";
+import {
+  makeFinding,
+  type Config,
+  type Engine,
+  type EngineOptions,
+  type RunEvent,
+} from "@tml/core";
 import { createPlainRenderer, type Renderer } from "@tml/view";
 import { assembleShipConfig } from "../src/config.ts";
 import type { Loaded } from "../src/load.ts";
@@ -259,6 +265,42 @@ describe("ship() run lifecycle", () => {
     }
 
     expect(process.listenerCount("SIGTERM")).toBe(before);
+  });
+
+  test("passes a CLI structured approval responder to the engine", async () => {
+    let captured: EngineOptions | undefined;
+
+    const code = await ship({
+      buildConfig: () => dummyConfig,
+      engineFor: (_config, opts) => {
+        captured = opts;
+        return engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]);
+      },
+      renderer: createPlainRenderer(() => {}),
+    });
+
+    expect(code).toBe(0);
+    const approveFindings = captured?.approveFindings;
+    expect(typeof approveFindings).toBe("function");
+    if (approveFindings === undefined) throw new Error("missing approval responder");
+    try {
+      await approveFindings({
+        prompt: "Review findings",
+        findings: [
+          makeFinding("test", {
+            severity: "warning",
+            action: "ask-user",
+            title: "Needs input",
+            detail: "decide locally",
+          }),
+        ],
+      });
+      throw new Error("approval responder unexpectedly resolved");
+    } catch (error) {
+      expect(error instanceof Error ? error.message : String(error)).toContain(
+        "structured approval requires an interactive terminal",
+      );
+    }
   });
 
   test("returns 1 when engine setup throws", async () => {

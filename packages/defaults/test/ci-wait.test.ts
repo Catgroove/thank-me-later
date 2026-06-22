@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { PullRequest } from "@tml/core";
+import { TimeoutError, type CheckRun, type Pending, type PullRequest } from "@tml/core";
 import { ciWaitStep } from "../src/steps/ci-wait.ts";
-import { FakeGitProvider, fakeCtx } from "./fake-ctx.ts";
+import { FakeGit, FakeGitProvider, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
 const pr: PullRequest = {
   number: 3,
@@ -15,6 +15,33 @@ const pr: PullRequest = {
   checks: [],
 };
 
+class SequencedGitProvider extends FakeGitProvider {
+  readonly logRequests: { prNumber: number; checkNames?: string[] }[] = [];
+  failedLogs = "failed log";
+  private index = 0;
+
+  constructor(private readonly sequence: readonly CheckRun[][]) {
+    super();
+  }
+
+  override getChecks(_prNumber: number): Pending<CheckRun[]> {
+    return {
+      poll: () => {
+        const next = this.sequence[this.index] ?? [];
+        if (this.index < this.sequence.length - 1) {
+          this.index += 1;
+        }
+        return Promise.resolve({ done: true as const, value: next });
+      },
+    };
+  }
+
+  getFailedCheckLogs(input: { prNumber: number; checkNames?: string[] }): Promise<string> {
+    this.logRequests.push(input);
+    return Promise.resolve(this.failedLogs);
+  }
+}
+
 describe("ci-wait step", () => {
   test("polls checks to completion and logs each conclusion", async () => {
     const gitProvider = new FakeGitProvider();
@@ -26,25 +53,140 @@ describe("ci-wait step", () => {
 
     const result = await ciWaitStep().run(ctx);
 
-    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "verify", findings: [] }] });
+    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "initial", findings: [] }] });
     expect(logs).toEqual(["ci: build -> success", "ci: lint -> success"]);
   });
 
-  test("report-only: a failing check is logged, not a Run failure", async () => {
-    const gitProvider = new FakeGitProvider();
-    gitProvider.checks = [{ name: "build", status: "completed", conclusion: "failure" }];
-    const { ctx, logs } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+  test("fixes failed checks, pushes the fix commit, and verifies CI again", async () => {
+    const gitProvider = new SequencedGitProvider([
+      [{ name: "build", status: "completed", conclusion: "failure" }],
+      [{ name: "build", status: "completed", conclusion: "success" }],
+    ]);
+    const agent = new FakeHarness();
+    agent.responses.push({ ok: true, summary: "fixed build" });
+    const git = new FakeGit();
+    git.stagedFiles = ["src/fix.ts"];
+    git.commitSha = "abc";
+    const { ctx, logs } = fakeCtx({ agent, git, gitProvider, reads: { pullRequest: pr } });
 
-    // Resolves normally (no throw / cancel) even though CI is red.
     const result = await ciWaitStep().run(ctx);
-    expect(logs).toEqual(["ci: build -> failure"]);
+    const stepResult = result as { rounds?: { trigger?: string; findings?: unknown[] }[] };
+
+    expect(agent.tasks).toHaveLength(1);
+    expect(agent.tasks[0]).toContain("The pull request CI checks below failed");
+    expect(agent.tasks[0]).toContain("failed log");
+    expect(gitProvider.logRequests).toEqual([{ prNumber: 3, checkNames: ["build"] }]);
+    expect(git.calls).toContain("commit chore: apply fixes from CI");
+    expect(git.calls).toContain("push tml/ship-abc1234");
+    expect(logs).toContain("ci: build -> failure");
+    expect(logs).toContain("ci: build -> success");
+    expect(stepResult.rounds?.map((round) => round.trigger)).toEqual([
+      "initial",
+      "auto_fix",
+      "verify",
+    ]);
+    expect(stepResult.rounds?.[0]?.findings).toMatchObject([
+      { severity: "error", action: "auto-fix", title: "build did not pass" },
+    ]);
+    expect(stepResult.rounds?.[2]?.findings).toEqual([]);
+  });
+
+  test("waits for post-fix checks instead of accepting an empty rollup", async () => {
+    const gitProvider = new SequencedGitProvider([
+      [{ name: "build", status: "completed", conclusion: "failure" }],
+      [],
+      [{ name: "build", status: "completed", conclusion: "success" }],
+    ]);
+    const agent = new FakeHarness();
+    agent.responses.push({ ok: true, summary: "fixed build" });
+    const git = new FakeGit();
+    git.stagedFiles = ["src/fix.ts"];
+    const { ctx, logs } = fakeCtx({ agent, git, gitProvider, reads: { pullRequest: pr } });
+
+    const result = await ciWaitStep().run(ctx);
+
+    expect(logs).toContain("ci: build -> success");
+    expect(result).toMatchObject({
+      rounds: [
+        { trigger: "initial", findings: [{ title: "build did not pass" }] },
+        { trigger: "auto_fix" },
+        { trigger: "verify", findings: [] },
+      ],
+    });
+  });
+
+  test("continues fixing when failed check logs cannot be retrieved", async () => {
+    class LogFailGitProvider extends SequencedGitProvider {
+      override getFailedCheckLogs(input: {
+        prNumber: number;
+        checkNames?: string[];
+      }): Promise<string> {
+        this.logRequests.push(input);
+        return Promise.reject(new Error("logs expired"));
+      }
+    }
+    const gitProvider = new LogFailGitProvider([
+      [{ name: "build", status: "completed", conclusion: "failure" }],
+      [{ name: "build", status: "completed", conclusion: "success" }],
+    ]);
+    const agent = new FakeHarness();
+    agent.responses.push({ ok: true, summary: "fixed build" });
+    const git = new FakeGit();
+    git.stagedFiles = ["src/fix.ts"];
+    const { ctx, logs } = fakeCtx({ agent, git, gitProvider, reads: { pullRequest: pr } });
+
+    const result = await ciWaitStep().run(ctx);
+
+    expect(agent.tasks).toHaveLength(1);
+    expect(agent.tasks[0]).toContain("No failed check logs were available");
+    expect(logs).toContain("ci-wait: failed to retrieve failed check logs: logs expired");
+    expect(result).toMatchObject({ rounds: [{}, {}, { trigger: "verify", findings: [] }] });
+  });
+
+  test("reports cancelled checks as needing a user decision instead of auto-fixing", async () => {
+    const gitProvider = new FakeGitProvider();
+    gitProvider.checks = [{ name: "build", status: "completed", conclusion: "cancelled" }];
+    const agent = new FakeHarness();
+    const { ctx, approvals } = fakeCtx({ agent, gitProvider, reads: { pullRequest: pr } });
+
+    const result = await ciWaitStep().run(ctx);
+
+    expect(agent.tasks).toHaveLength(0);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.findings).toMatchObject([
+      { severity: "error", action: "ask-user", title: "build did not pass" },
+    ]);
     expect(result).toMatchObject({
       artifacts: {},
       rounds: [
         {
-          trigger: "verify",
+          trigger: "initial",
           findings: [{ severity: "error", action: "ask-user", title: "build did not pass" }],
         },
+        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
+      ],
+    });
+  });
+
+  test("reports timed out checks through structured approval", async () => {
+    class TimeoutGitProvider extends FakeGitProvider {
+      override getChecks(_prNumber: number): Pending<CheckRun[]> {
+        return { poll: () => Promise.reject(new TimeoutError()) };
+      }
+    }
+    const gitProvider = new TimeoutGitProvider();
+    const { ctx, approvals } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await ciWaitStep().run(ctx);
+
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.findings).toMatchObject([
+      { severity: "warning", action: "ask-user", title: "CI did not settle before the timeout" },
+    ]);
+    expect(result).toMatchObject({
+      rounds: [
+        { trigger: "initial", findings: [{ title: "CI did not settle before the timeout" }] },
+        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
       ],
     });
   });

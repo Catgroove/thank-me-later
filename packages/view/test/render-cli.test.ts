@@ -315,6 +315,7 @@ describe("createCliRenderer", () => {
       { type: "ask:pending", step: "lint", prompt: "Fix lint errors?" },
     ]);
     expect(out).toContain("? lint: Fix lint errors?\n"); // sealed (a permanent line ends with \n)
+    expect(out.slice(out.lastIndexOf("? lint"))).not.toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
   test("seals a structured approval prompt with the finding count", () => {
@@ -346,6 +347,7 @@ describe("createCliRenderer", () => {
       },
     ]);
     expect(out).toContain("? review: Review findings (2 findings)\n");
+    expect(out.slice(out.lastIndexOf("? review"))).not.toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
   test("color: wraps results and outcomes in SGR codes when enabled", () => {

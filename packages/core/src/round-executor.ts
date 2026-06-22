@@ -1,5 +1,5 @@
 // A reusable fresh-round loop for Steps. The caller supplies the check and fix work; this module
-// owns the no-mistakes control flow: check, select auto-fix findings, fix once, commit, verify,
+// owns the round control flow: check, select auto-fix findings, fix once, commit, verify,
 // and repeat until the work is clean or requires a human decision.
 
 import type { Ctx } from "./context.ts";
@@ -72,6 +72,12 @@ export interface RoundLoopOptions {
   check(input: RoundCheckInput): Promise<RoundCheckResult>;
   /** Run one fresh fix round for the selected findings. */
   fix(input: RoundFixInput): Promise<RoundFixResult>;
+  /** Completed rounds to preserve when continuing a loop after an external decision. */
+  initialRounds?: readonly RoundRecordInput[];
+  /** Number of completed fix attempts represented by `initialRounds`. */
+  initialAttempts?: number;
+  /** User-selected findings to fix before the next verification check. */
+  initialFixFindings?: readonly Finding[];
   /** Maximum number of fix rounds. Defaults to 3. */
   maxAutoFixAttempts?: number;
   /** Optional stop policy after each check round. Defaults to clean and no-selected stops. */
@@ -102,13 +108,43 @@ export async function executeRoundLoop(
   ctx: Ctx,
   options: RoundLoopOptions,
 ): Promise<RoundLoopResult> {
-  const rounds: RoundRecordInput[] = [];
+  const rounds: RoundRecordInput[] = [...(options.initialRounds ?? [])];
   const maxAutoFixAttempts = options.maxAutoFixAttempts ?? DEFAULT_MAX_AUTO_FIX_ATTEMPTS;
   if (!Number.isInteger(maxAutoFixAttempts) || maxAutoFixAttempts < 0) {
     throw new Error("round executor: maxAutoFixAttempts must be a non-negative integer");
   }
-  let attempts = 0;
-  let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
+  const initialAttempts = options.initialAttempts ?? 0;
+  if (!Number.isInteger(initialAttempts) || initialAttempts < 0) {
+    throw new Error("round executor: initialAttempts must be a non-negative integer");
+  }
+  let attempts = initialAttempts;
+  let trigger: Extract<RoundTrigger, "initial" | "verify"> =
+    rounds.length === 0 ? "initial" : "verify";
+
+  const initialFixFindings = options.initialFixFindings ?? [];
+  if (initialFixFindings.length > 0) {
+    const fixHistory = [...rounds];
+    const fixInput: RoundFixInput = {
+      attempt: attempts + 1,
+      findings: [...initialFixFindings],
+      history: fixHistory,
+      historyText: renderHistory(fixHistory),
+    };
+    const fix = await options.fix(fixInput);
+    const commitSha = await commitFix(ctx, options, fixInput, fix);
+    const fixSummary = fix.summary.trim();
+
+    rounds.push({
+      trigger: "user_fix",
+      findings: [...initialFixFindings],
+      selectedFindingIds: initialFixFindings.map((f) => f.id),
+      ...(fixSummary.length > 0 ? { fixSummary } : {}),
+      ...(commitSha !== undefined ? { commitSha } : {}),
+    });
+
+    attempts += 1;
+    trigger = "verify";
+  }
 
   while (true) {
     const checkHistory = [...rounds];
