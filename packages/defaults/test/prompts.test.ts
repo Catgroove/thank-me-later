@@ -4,6 +4,9 @@ import {
   architectureSchema,
   branchNamePrompt,
   branchNameSchema,
+  checkFindingsSchema,
+  checkFixPrompt,
+  checkPrompt,
   contextPrompt,
   correctnessPrompt,
   designPrompt,
@@ -34,6 +37,49 @@ describe("default pipeline prompts", () => {
       expect(prompt.toLowerCase()).not.toContain("npm");
       expect(prompt.toLowerCase()).not.toContain("eslint");
     }
+  });
+
+  test("checkPrompt creates structured read-only check and verification prompts", () => {
+    const initial = checkPrompt({
+      name: "lint",
+      goal: lintPrompt,
+      trigger: "initial",
+      historyText: "No prior rounds.",
+    });
+    const verify = checkPrompt({
+      name: "lint",
+      goal: lintPrompt,
+      trigger: "verify",
+      historyText: "Round 0: initial",
+    });
+    expect(initial).toContain("Check step: lint");
+    expect(initial).toContain("structured findings");
+    expect(initial.toLowerCase()).toContain("do not modify");
+    expect(verify).toContain("Prior check round history");
+    expect(verify).toContain("Round 0: initial");
+  });
+
+  test("checkFixPrompt lists selected findings and keeps command discovery agent-driven", () => {
+    const prompt = checkFixPrompt({
+      name: "typecheck",
+      goal: typecheckPrompt,
+      historyText: "Round 0: initial",
+      findings: [
+        {
+          id: "typecheck:1",
+          severity: "error",
+          action: "auto-fix",
+          title: "Bad type",
+          detail: "number assigned to string",
+          location: "src/a.ts:1",
+        },
+      ],
+    });
+    expect(prompt).toContain("Fix step: typecheck");
+    expect(prompt).toContain("typecheck:1");
+    expect(prompt).toContain("Bad type");
+    expect(prompt.toLowerCase()).toContain("discover");
+    expect(prompt.toLowerCase()).toContain("do not commit");
   });
 
   test("each review pass computes the diff itself and stays read-only", () => {
@@ -83,18 +129,20 @@ describe("default pipeline prompts", () => {
     expect(p.toLowerCase()).toContain("do not add code comments");
   });
 
-  test("findingsSchema requires findings and constrains severity + action", () => {
-    expect(findingsSchema.required).toEqual(["findings"]);
-    expect(findingsSchema.properties.findings.items.properties.severity.enum).toEqual([
-      "error",
-      "warning",
-      "info",
-    ]);
-    expect(findingsSchema.properties.findings.items.properties.action.enum).toEqual([
-      "auto-fix",
-      "ask-user",
-      "no-op",
-    ]);
+  test("findings schemas require findings and constrain severity + action", () => {
+    for (const schema of [findingsSchema, checkFindingsSchema]) {
+      expect(schema.required).toEqual(["findings"]);
+      expect(schema.properties.findings.items.properties.severity.enum).toEqual([
+        "error",
+        "warning",
+        "info",
+      ]);
+      expect(schema.properties.findings.items.properties.action.enum).toEqual([
+        "auto-fix",
+        "ask-user",
+        "no-op",
+      ]);
+    }
   });
 
   test("architectureSchema requires a verdict so the block gate cannot silently downgrade", () => {

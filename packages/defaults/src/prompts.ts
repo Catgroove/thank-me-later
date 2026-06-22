@@ -1,28 +1,115 @@
 // The agent task strings for the default pipeline. Checks are agent-driven: each prompt
 // tells the agent *what* to achieve and lets it discover the toolchain via shell access -
 // no tml-side detection, so the pipeline works in any language (ARCHITECTURE). Kept pure
-// and snapshot-tested; the Steps are thin wrappers that pass these to `ctx.agent.run`.
+// and snapshot-tested; the Steps compose them into fresh check/fix/review agent rounds.
 
-import type { Finding } from "./review/synthesize.ts";
+import type { Finding, RoundTrigger } from "@tml/core";
 
 export const formatPrompt =
-  "Format this repository using its own formatter (discover it from the project config). " +
-  "Apply the changes in place. If there is no formatter configured, do nothing.";
+  "Verify repository formatting. Discover the formatter from project config. Prefer a " +
+  "non-mutating check mode when one exists; if the formatter only supports writing changes, " +
+  "report one auto-fix finding instead of modifying files. If no formatter is configured, " +
+  "report no findings.";
 
 export const lintPrompt =
-  "Lint this repository using its own linter (discover it from the project config) and fix " +
-  "every issue you can, applying the changes in place. If a problem needs a human judgement " +
-  "call, leave it and report it. If there is no linter configured, do nothing.";
+  "Verify repository lint. Discover the linter from project config and run it without applying " +
+  "fixes. Report each real issue that remains. If no linter is configured, report no findings.";
 
 export const typecheckPrompt =
-  "Type-check this repository using its own type checker (discover it from the project " +
-  "config) and fix every type error you can, applying the changes in place. If there is no " +
-  "type checker configured, do nothing.";
+  "Verify repository type-checking. Discover the type checker from project config and run it. " +
+  "Report each real type error that remains. If no type checker is configured, report no " +
+  "findings.";
 
 export const testPrompt =
-  "Run this repository's test suite (discover the command from the project config). Fix the " +
-  "failures you can and re-run until the suite passes or only failures needing human " +
-  "judgement remain. If there are no tests, do nothing.";
+  "Verify the repository test suite. Discover the test command from project config and run it. " +
+  "Report each real failing test or test infrastructure problem that remains. If there are no " +
+  "tests, report no findings.";
+
+export interface CheckPromptInput {
+  readonly name: string;
+  readonly goal: string;
+  readonly trigger: Extract<RoundTrigger, "initial" | "verify">;
+  readonly historyText: string;
+}
+
+export function checkPrompt(input: CheckPromptInput): string {
+  const history = input.historyText.trim();
+  const prior =
+    input.trigger === "verify" && history.length > 0 && history !== "No prior rounds."
+      ? "\n\nPrior check round history from this run. Use it explicitly: verify that previous " +
+        "auto-fix findings were actually fixed, do not re-report resolved findings, and report " +
+        "any remaining or newly introduced findings against the current worktree.\n" +
+        history
+      : "";
+  return (
+    `Check step: ${input.name}.\n\n` +
+    input.goal +
+    "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
+    "changes, commit, or run a mutating auto-fix command. If a tool can only prove or repair " +
+    "the problem by changing files, return an auto-fix finding for the later fix round. Return " +
+    "structured findings. Use action auto-fix only for issues a future fix round can safely " +
+    "repair without changing product intent; use ask-user when human judgement is required; " +
+    "use no-op only for informational observations. Report no findings when the check is clean " +
+    "or not configured." +
+    prior
+  );
+}
+
+export interface CheckFixPromptInput {
+  readonly name: string;
+  readonly goal: string;
+  readonly findings: readonly Pick<
+    Finding,
+    "id" | "severity" | "action" | "title" | "detail" | "location"
+  >[];
+  readonly historyText: string;
+}
+
+export function checkFixPrompt(input: CheckFixPromptInput): string {
+  const list = input.findings
+    .map((f) => `- ${f.id}: ${f.title}${f.location ? ` (${f.location})` : ""}: ${f.detail}`)
+    .join("\n");
+  const history = input.historyText.trim();
+  const prior =
+    history.length > 0 && history !== "No prior rounds."
+      ? "\n\nPrior check round history:\n" + history
+      : "";
+  return (
+    `Fix step: ${input.name}.\n\n` +
+    input.goal +
+    "\n\nApply fixes in place for the selected findings below. Discover and use the " +
+    "repository's own toolchain; do not add repo-specific command detection to tml. Start by " +
+    "double-checking that each finding is legitimate, skip any that are not, and prefer the " +
+    "smallest correct root-cause fix. After editing, run the most relevant verification command " +
+    "when practical. Do not commit. Summarise what you changed in one short line." +
+    prior +
+    "\n\nSelected findings:\n" +
+    list
+  );
+}
+
+export const checkFindingsSchema = {
+  type: "object",
+  properties: {
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          severity: { type: "string", enum: ["error", "warning", "info"] },
+          action: { type: "string", enum: ["auto-fix", "ask-user", "no-op"] },
+          title: { type: "string" },
+          detail: { type: "string" },
+          location: { type: "string" },
+        },
+        required: ["severity", "action", "title", "detail"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["findings"],
+  additionalProperties: false,
+} as const;
 
 // --- Review: five read-only passes that mimic a staff engineer, plus one fix pass. -----------
 // Each review pass computes the diff itself, stays read-only, and returns findings against

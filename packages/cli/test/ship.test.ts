@@ -71,7 +71,6 @@ describe("assembleShipConfig", () => {
       "lint",
       "typecheck",
       "test",
-      "commit(format+lint+typecheck+test)",
       "review",
       "open-pr",
       "ci-wait",
@@ -167,7 +166,7 @@ describe("ship() run lifecycle", () => {
   test("restores the terminal and exits 130 on SIGINT, then removes its handlers", async () => {
     // A signal terminates the process before the `finally` teardown runs, so `ship()`
     // installs handlers that close the renderer (show cursor / end sync) first. Drive the
-    // installed handler directly — stubbing `process.exit` so it doesn't kill the runner.
+    // installed handler directly - stubbing `process.exit` so it doesn't kill the runner.
     let started!: () => void;
     const startedAt = new Promise<void>((resolve) => (started = resolve));
     let release!: () => void;

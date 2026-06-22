@@ -1,13 +1,14 @@
-// `tmlDefaults` — the blessed default pipeline as an injected-API Plugin. In order:
-//   branch → describe → commit(the change) → rebase → {format,lint,typecheck,test}+commit
-//          → review (commits its own fixes through the core round executor) → open-pr → ci-wait
-// The work lands as a clean history — your change, then tml's fixes in their own commits. `rebase`
+// `tmlDefaults` - the blessed default pipeline as an injected-API Plugin. In order:
+//   branch → describe → commit(the change) → rebase → format → lint → typecheck → test
+//          → review → open-pr → ci-wait
+// The work lands as a clean history - your change, then tml's fixes in their own commits. Checks
+// and review commit their auto-fixes through the core round executor. `rebase`
 // runs once the change is committed (clean worktree) so the checks, review, and CI all see the
 // freshly fetched base; turn it off with `disable: ["rebase"]` in tml.json.
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
 // (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
 // (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
-// binary, so it imports its own step factories from @tml/core — only third-party local plugins
+// binary, so it imports its own step factories from @tml/core - only third-party local plugins
 // are barred from importing the core.
 
 import type { Plugin } from "@tml/core";
@@ -15,7 +16,7 @@ import { prTitle } from "./artifacts.ts";
 import { type BranchMode, branchStep } from "./steps/branch.ts";
 import { ciWaitStep } from "./steps/ci-wait.ts";
 import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
-import { commitGroup, commitStep } from "./steps/commit.ts";
+import { commitStep } from "./steps/commit.ts";
 import { describeStep } from "./steps/describe.ts";
 import { openPrStep } from "./steps/open-pr.ts";
 import { rebaseStep } from "./steps/rebase.ts";
@@ -29,7 +30,10 @@ export const tmlDefaults: Plugin = (tml) => {
     describeStep(),
     commitStep("commit-change", prTitle), // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
-    ...commitGroup(formatStep(), lintStep(), typecheckStep(), testStep()),
+    formatStep(),
+    lintStep(),
+    typecheckStep(),
+    testStep(),
     reviewStep(),
     openPrStep(),
     ciWaitStep(),

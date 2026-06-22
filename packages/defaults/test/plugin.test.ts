@@ -19,7 +19,7 @@ function assemble(branch?: string): Step[] {
 }
 
 describe("tmlDefaults plugin", () => {
-  test("appends the Steps in pipeline order, with commits interleaved", () => {
+  test("appends the Steps in pipeline order", () => {
     expect(assemble().map((s) => s.name)).toEqual([
       "branch",
       "describe",
@@ -29,7 +29,6 @@ describe("tmlDefaults plugin", () => {
       "lint",
       "typecheck",
       "test",
-      "commit(format+lint+typecheck+test)",
       "review",
       "open-pr",
       "ci-wait",
