@@ -4,17 +4,17 @@
 // top-level `defineConfig`, and a Plugin is a function, not an object.
 //
 // Git is NOT a configured Provider: there is exactly one git, so the engine supplies `ctx.git`
-// natively, bound to the Run's working dir. Only Forge and Harness — which have genuine
+// natively, bound to the Run's working dir. Only GitProvider and Harness — which have genuine
 // alternatives — are configured here.
 
-import type { Forge } from "./providers/forge.ts";
+import type { GitProvider } from "./providers/git-provider.ts";
 import type { Harness } from "./providers/harness.ts";
 import type { Step } from "./step.ts";
 
 export type Pipeline = Step[];
 
 export interface Providers {
-  forge: Forge;
+  gitProvider: GitProvider;
   agent: Harness;
 }
 

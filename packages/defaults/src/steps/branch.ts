@@ -3,7 +3,7 @@
 //
 // If you are already on a feature branch, tml ships under it — unless that branch is *spent*: its
 // PR has already merged or closed, so it's the wrong place for new work (you stayed on it instead
-// of switching back to the default branch). We ask the Forge for the branch's PR state rather than
+// of switching back to the default branch). We ask the Git provider for the branch's PR state rather than
 // inferring it from git, because a squash-merge never makes the feature commits ancestors of the
 // default branch. A spent branch is treated like the default-branch case below, but the new branch
 // is cut off the freshly fetched default branch so the work starts from the merged state.
@@ -48,7 +48,7 @@ export function branchStep(mode: BranchMode = "ai"): Step {
       // Already on a feature branch → ship under it, unless its PR has merged/closed (spent).
       let spent = false;
       if (onFeatureBranch) {
-        const pr = await ctx.forge.findPullRequest(current);
+        const pr = await ctx.gitProvider.findPullRequest(current);
         if (!pr || pr.state === "open") {
           ctx.log(`shipping on ${current}`);
           return { branchName: current };

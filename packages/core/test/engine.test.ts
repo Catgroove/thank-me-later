@@ -6,14 +6,14 @@ import type { Pipeline } from "../src/pipeline.ts";
 import { cancel, goto, retry, skip } from "../src/signals.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
-import { FakeForge, FakeHarness } from "./fakes.ts";
+import { FakeGitProvider, FakeHarness } from "./fakes.ts";
 
 const raw = defineArtifact<string>()("raw");
 const derived = defineArtifact<number>()("derived");
 
 function engineFor(pipeline: Pipeline, ask?: (p: string) => Promise<string>): Engine {
   return createEngine(
-    { pipeline, providers: { forge: new FakeForge(), agent: new FakeHarness() } },
+    { pipeline, providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() } },
     ask ? { ask } : {},
   );
 }
@@ -65,7 +65,7 @@ describe("engine — happy path", () => {
     const waitStep = defineStep({
       name: "ci-wait",
       async run(ctx) {
-        const checks = await ctx.until(ctx.forge.getChecks(1), { every: 1 });
+        const checks = await ctx.until(ctx.gitProvider.getChecks(1), { every: 1 });
         ctx.log(`conclusion=${checks[0]?.conclusion}`);
         return {};
       },
@@ -206,7 +206,7 @@ describe("engine — live emission", () => {
     });
     const engine = createEngine({
       pipeline: [agentic],
-      providers: { forge: new FakeForge(), agent: harness },
+      providers: { gitProvider: new FakeGitProvider(), agent: harness },
     });
 
     const events: RunEvent[] = [];
@@ -234,37 +234,42 @@ describe("engine — pr:opened", () => {
     const open = defineStep({
       name: "open-pr",
       async run(ctx) {
-        await ctx.forge.openPullRequest({ head: "feat/x", base: "main", title: "t", body: "b" });
+        await ctx.gitProvider.openPullRequest({
+          head: "feat/x",
+          base: "main",
+          title: "t",
+          body: "b",
+        });
         return {};
       },
     });
     const events = await collect(engineFor([open]));
-    expect(events).toContainEqual({ type: "pr:opened", url: "https://forge.test/pr/1" });
+    expect(events).toContainEqual({ type: "pr:opened", url: "https://git-provider.test/pr/1" });
   });
 
   test("emits pr:opened when a re-run rediscovers an existing PR via findPullRequest", async () => {
-    const forge = new FakeForge();
-    await forge.openPullRequest({ head: "feat/x", base: "main", title: "t", body: "b" });
+    const gitProvider = new FakeGitProvider();
+    await gitProvider.openPullRequest({ head: "feat/x", base: "main", title: "t", body: "b" });
     const reuse = defineStep({
       name: "open-pr",
       async run(ctx) {
-        await ctx.forge.findPullRequest("feat/x");
+        await ctx.gitProvider.findPullRequest("feat/x");
         return {};
       },
     });
     const engine = createEngine({
       pipeline: [reuse],
-      providers: { forge, agent: new FakeHarness() },
+      providers: { gitProvider, agent: new FakeHarness() },
     });
     const events = await collect(engine);
-    expect(events).toContainEqual({ type: "pr:opened", url: "https://forge.test/pr/1" });
+    expect(events).toContainEqual({ type: "pr:opened", url: "https://git-provider.test/pr/1" });
   });
 
   test("no PR found (findPullRequest → null) emits no pr:opened", async () => {
     const miss = defineStep({
       name: "open-pr",
       async run(ctx) {
-        await ctx.forge.findPullRequest("feat/none");
+        await ctx.gitProvider.findPullRequest("feat/none");
         return {};
       },
     });

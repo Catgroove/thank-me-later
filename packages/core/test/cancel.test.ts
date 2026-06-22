@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createEngine } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
 import { defineStep } from "../src/step.ts";
-import { FakeForge, FakeHarness } from "./fakes.ts";
+import { FakeGitProvider, FakeHarness } from "./fakes.ts";
 
 const types = (events: RunEvent[]) => events.map((e) => e.type);
 
@@ -25,7 +25,7 @@ describe("engine — cancellation", () => {
     const engine = createEngine(
       {
         pipeline: [step, neverSettlingAgentStep("after")],
-        providers: { forge: new FakeForge(), agent: harness },
+        providers: { gitProvider: new FakeGitProvider(), agent: harness },
       },
       { signal: controller.signal },
     );
@@ -48,7 +48,7 @@ describe("engine — cancellation", () => {
     const harness = new FakeHarness({ blockUntilAborted: true });
     const engine = createEngine({
       pipeline: [step],
-      providers: { forge: new FakeForge(), agent: harness },
+      providers: { gitProvider: new FakeGitProvider(), agent: harness },
     });
 
     for await (const event of engine.run()) {

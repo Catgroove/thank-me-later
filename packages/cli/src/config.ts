@@ -1,5 +1,5 @@
 // Assemble the Config `tml ship` runs. Over the merged `tml.json` knobs
-// (`loaded.selection`) we seed the built-in Providers by name (GitHub Forge, pi Harness), run the
+// (`loaded.selection`) we seed the built-in Providers by name (GitHub Git provider, pi Harness), run the
 // bundled `@tml/defaults` plugin first, then any local plugins the config referenced — each over
 // the injected `tml` API — and `build()` resolves the selected Providers into the final Config.
 //
@@ -10,13 +10,13 @@
 
 import { type Config, createAssembly, type Plugin } from "@tml/core";
 import tmlDefaults from "@tml/defaults";
-import { createGitHubForge } from "@tml/github";
+import { createGitHubProvider } from "@tml/github";
 import { createPiHarness } from "@tml/pi";
 import type { Loaded } from "./load.ts";
 
 export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<Config> {
   const assembly = createAssembly(loaded.selection, cwd);
-  assembly.tml.registerForge("github", createGitHubForge);
+  assembly.tml.registerGitProvider("github", createGitHubProvider);
   assembly.tml.registerHarness("pi", createPiHarness);
 
   // Defaults first (it seeds the pipeline), then global+project plugins patch over it. Load and

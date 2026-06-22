@@ -32,7 +32,7 @@ const FILENAME = "tml.json";
 const STARTER = `{
   "$schema": "https://raw.githubusercontent.com/Catgroove/thank-me-later/master/packages/cli/schema/tml.schema.json",
   "harness": "pi",
-  "forge": "github",
+  "gitProvider": "github",
   "branch": "ai"
 }
 `;

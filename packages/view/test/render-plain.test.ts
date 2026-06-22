@@ -107,7 +107,7 @@ describe("createPlainRenderer", () => {
       },
       { type: "step:finished", step: "review" },
       { type: "step:started", step: "open-pr" },
-      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "pr:opened", url: "https://git-provider.test/pr/7" },
       { type: "artifact:written", step: "open-pr", artifact: "pullRequest" }, // object, no rendered
       { type: "step:finished", step: "open-pr" },
       { type: "run:finished" },
@@ -126,7 +126,7 @@ describe("createPlainRenderer", () => {
       `  ── results ${"─".repeat(20)}`,
       "  review  handles empty argv",
       "          tests cover both",
-      "  pr      https://forge.test/pr/7",
+      "  pr      https://git-provider.test/pr/7",
       "■ run finished",
     ]);
   });
@@ -161,13 +161,13 @@ describe("createPlainRenderer", () => {
     const lines = renderLines([
       { type: "run:started", pipeline: ["open-pr", "ci-wait"] },
       { type: "step:started", step: "open-pr" },
-      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "pr:opened", url: "https://git-provider.test/pr/7" },
       { type: "step:finished", step: "open-pr" },
       { type: "step:started", step: "ci-wait" },
       { type: "step:finished", step: "ci-wait" },
       { type: "run:finished" },
     ]);
-    expect(lines).toContain("  pr      https://forge.test/pr/7");
+    expect(lines).toContain("  pr      https://git-provider.test/pr/7");
     expect(lines.at(-1)).toBe("■ run finished");
   });
 
@@ -175,11 +175,13 @@ describe("createPlainRenderer", () => {
     const lines = renderLines([
       { type: "run:started", pipeline: ["open-pr", "ci-wait"] },
       { type: "step:started", step: "open-pr" },
-      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "pr:opened", url: "https://git-provider.test/pr/7" },
       { type: "step:finished", step: "open-pr" },
       { type: "step:started", step: "ci-wait" },
       { type: "run:failed", step: "ci-wait", error: "checks red" },
     ]);
-    expect(lines.at(-1)).toBe("✗ run failed at ci-wait: checks red · https://forge.test/pr/7");
+    expect(lines.at(-1)).toBe(
+      "✗ run failed at ci-wait: checks red · https://git-provider.test/pr/7",
+    );
   });
 });

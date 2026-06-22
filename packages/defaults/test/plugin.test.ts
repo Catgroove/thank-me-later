@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { createAssembly, type Forge, type Harness, type Step, validatePipeline } from "@tml/core";
+import {
+  createAssembly,
+  type GitProvider,
+  type Harness,
+  type Step,
+  validatePipeline,
+} from "@tml/core";
 import { tmlDefaults } from "../src/plugin.ts";
 
 // Run the default Plugin over a real assembly (with stand-in providers seeded, as the host does)
 // and read back the assembled pipeline.
 function assemble(branch?: string): Step[] {
   const a = createAssembly(branch !== undefined ? { branch } : {}, "/repo");
-  a.tml.registerForge("github", () => ({}) as unknown as Forge);
+  a.tml.registerGitProvider("github", () => ({}) as unknown as GitProvider);
   a.tml.registerHarness("pi", () => ({}) as unknown as Harness);
   void tmlDefaults(a.tml);
   return a.build().pipeline;

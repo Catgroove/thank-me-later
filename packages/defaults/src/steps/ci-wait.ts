@@ -1,4 +1,4 @@
-// `ci-wait` — the last Step: poll the Forge's checks for the opened PR until they settle,
+// `ci-wait` — the last Step: poll the Git provider's checks for the opened PR until they settle,
 // then report each conclusion. Report-only in this release: a red check is logged, not a Run
 // failure — reacting to it (re-entry / respond-comments) is deferred work. `getChecks` is a
 // Pending the engine's `until` polls; `ctx.signal` cancels the wait.
@@ -16,7 +16,7 @@ export function ciWaitStep(): Step {
     consumes: [pullRequest],
     async run(ctx) {
       const pr = ctx.read(pullRequest);
-      const checks = await ctx.until(ctx.forge.getChecks(pr.number), {
+      const checks = await ctx.until(ctx.gitProvider.getChecks(pr.number), {
         every: EVERY_MS,
         timeout: TIMEOUT_MS,
       });

@@ -1,9 +1,9 @@
-// createGitHubForge — composes the `gh` runner, the argv/GraphQL builders, and the
-// pure mappers into core's `Forge`. The provider stays thin: every method runs a
+// createGitHubProvider — composes the `gh` runner, the argv/GraphQL builders, and the
+// pure mappers into core's `GitProvider`. The provider stays thin: every method runs a
 // builder through `run`, parses JSON, and hands it to a mapper. The only state is
 // the (injectable) runner.
 
-import type { CheckRun, Forge, OpenPullRequestInput, Pending, PullRequest } from "@tml/core";
+import type { CheckRun, GitProvider, OpenPullRequestInput, Pending, PullRequest } from "@tml/core";
 
 import { defaultRunner, type GhRunner } from "./gh.ts";
 import {
@@ -16,7 +16,7 @@ import {
 } from "./map.ts";
 import { checksArgs, prCreateArgs, prListArgs, snapshotArgs } from "./queries.ts";
 
-export interface GitHubForgeOptions {
+export interface GitHubProviderOptions {
   /** Override the `gh` runner; tests inject a fake returning canned JSON. */
   readonly run?: GhRunner;
 }
@@ -30,7 +30,7 @@ function parsePrNumber(out: string): number {
   return Number(match[1]);
 }
 
-export function createGitHubForge(cwd: string, opts: GitHubForgeOptions = {}): Forge {
+export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = {}): GitProvider {
   const run = opts.run ?? defaultRunner(cwd);
 
   async function getPullRequest(prNumber: number): Promise<PullRequest> {

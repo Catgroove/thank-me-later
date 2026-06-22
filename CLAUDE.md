@@ -18,7 +18,7 @@ PR, and waits on CI. Shorthand **tml** — "spend time now, thank me later."
 packages/
   core/      @tml/core      — engine, step contract, Pending/until, lifecycle model
   defaults/  @tml/defaults  — the blessed default pipeline (just a plugin)
-  github/    @tml/github    — Forge provider
+  github/    @tml/github    — Git provider
   pi/        @tml/pi        — pi host adapter
   view/      @tml/view      — presentation: event fold + CLI/plain renderers
   cli/       tml            — CLI/TUI binary

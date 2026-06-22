@@ -1,9 +1,14 @@
-// In-memory Provider doubles the engine is proven against. Forge and Harness
+// In-memory Provider doubles the engine is proven against. GitProvider and Harness
 // have no real implementation in this release; these stand in for them. The Git
 // Provider is real (see git.test.ts), so it has no fake here.
 
 import { AbortError, type Pending } from "../src/pending.ts";
-import type { CheckRun, Forge, OpenPullRequestInput, PullRequest } from "../src/providers/forge.ts";
+import type {
+  CheckRun,
+  GitProvider,
+  OpenPullRequestInput,
+  PullRequest,
+} from "../src/providers/git-provider.ts";
 import type {
   AgentProgress,
   AgentResult,
@@ -22,19 +27,19 @@ function pendingAfter<T>(polls: number, value: T): Pending<T> {
   };
 }
 
-export interface FakeForgeOptions {
+export interface FakeGitProviderOptions {
   checks?: CheckRun[];
   checksSettleAfter?: number;
 }
 
-export class FakeForge implements Forge {
+export class FakeGitProvider implements GitProvider {
   private readonly prs = new Map<number, PullRequest>();
   private readonly byHead = new Map<string, number>();
   private nextNumber = 1;
   private readonly checks: CheckRun[];
   private readonly checksSettleAfter: number;
 
-  constructor(options: FakeForgeOptions = {}) {
+  constructor(options: FakeGitProviderOptions = {}) {
     this.checks = options.checks ?? [{ name: "ci", status: "completed", conclusion: "success" }];
     this.checksSettleAfter = options.checksSettleAfter ?? 1;
   }
@@ -49,7 +54,7 @@ export class FakeForge implements Forge {
     this.nextNumber += 1;
     const pr: PullRequest = {
       number,
-      url: `https://forge.test/pr/${number}`,
+      url: `https://git-provider.test/pr/${number}`,
       head: input.head,
       base: input.base,
       title: input.title,

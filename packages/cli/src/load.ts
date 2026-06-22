@@ -20,7 +20,7 @@ const FILENAME = "tml.json";
 const ALLOWED_KEYS = new Set([
   "$schema",
   "harness",
-  "forge",
+  "gitProvider",
   "branch",
   "models",
   "disable",
@@ -45,7 +45,7 @@ export interface Loaded {
 
 interface RawConfig {
   harness?: string;
-  forge?: string;
+  gitProvider?: string;
   branch?: string;
   models?: ModelMap;
   disable?: string[];
@@ -117,7 +117,7 @@ function validate(data: unknown, path: string): RawConfig {
   }
   assertString(obj, "$schema", path);
   assertString(obj, "harness", path);
-  assertString(obj, "forge", path);
+  assertString(obj, "gitProvider", path);
   assertString(obj, "branch", path);
   assertModels(obj, path);
   assertStringArray(obj, "disable", path);
@@ -167,13 +167,13 @@ function resolvePlugins(plugins: string[] | undefined, baseDir: string, file: st
 
 function mergeSelection(global: RawConfig | undefined, project: RawConfig | undefined): Selection {
   const harness = project?.harness ?? global?.harness;
-  const forge = project?.forge ?? global?.forge;
+  const gitProvider = project?.gitProvider ?? global?.gitProvider;
   const branch = project?.branch ?? global?.branch;
   const models = mergeModels(global?.models, project?.models);
   const disable = union(global?.disable, project?.disable);
   return {
     ...(harness !== undefined ? { harness } : {}),
-    ...(forge !== undefined ? { forge } : {}),
+    ...(gitProvider !== undefined ? { gitProvider } : {}),
     ...(branch !== undefined ? { branch } : {}),
     ...(models !== undefined ? { models } : {}),
     ...(disable !== undefined ? { disable } : {}),

@@ -7,7 +7,7 @@
 
 import type { Artifact } from "./artifact.ts";
 import type { Pending } from "./pending.ts";
-import type { Forge } from "./providers/forge.ts";
+import type { GitProvider } from "./providers/git-provider.ts";
 import type { Git } from "./providers/git.ts";
 import type { Harness } from "./providers/harness.ts";
 
@@ -18,7 +18,7 @@ export interface Ctx<
   read<A extends C[number]>(artifact: A): A extends Artifact<infer T, string> ? T : never;
 
   readonly git: Git;
-  readonly forge: Forge;
+  readonly gitProvider: GitProvider;
   readonly agent: Harness;
 
   /** Aborts when the Run is cancelled; observed by `until` and the agent. */

@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { createGitHubForge } from "../src/forge.ts";
+import { createGitHubProvider } from "../src/provider.ts";
 
 const LIVE = process.env.TML_GH_LIVE === "1";
 
@@ -22,8 +22,8 @@ describe("live gh smoke (opt-in)", () => {
   test.skipIf(!LIVE)(
     "findPullRequest resolves against the cwd repo without side effects",
     async () => {
-      const forge = createGitHubForge(process.cwd());
-      const pr = await forge.findPullRequest("main");
+      const gitProvider = createGitHubProvider(process.cwd());
+      const pr = await gitProvider.findPullRequest("main");
       if (pr !== null) {
         expect(typeof pr.number).toBe("number");
         expect(pr.url).toContain("/pull/");

@@ -282,7 +282,7 @@ describe("createCliRenderer", () => {
       },
       { type: "step:finished", step: "review" },
       { type: "step:started", step: "open-pr" },
-      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "pr:opened", url: "https://git-provider.test/pr/7" },
       { type: "artifact:written", step: "open-pr", artifact: "pullRequest" }, // object, no rendered
       { type: "step:finished", step: "open-pr" },
       { type: "run:finished" },
@@ -291,7 +291,7 @@ describe("createCliRenderer", () => {
     expect(out).not.toContain("✓ review  handles"); // narrative one is not crammed inline
     expect(out).toContain("── results");
     expect(out).toContain("review  handles empty argv"); // results block, labeled by step
-    expect(out).toContain("pr      https://forge.test/pr/7");
+    expect(out).toContain("pr      https://git-provider.test/pr/7");
     expect(out).toContain("■ run finished");
   });
 
