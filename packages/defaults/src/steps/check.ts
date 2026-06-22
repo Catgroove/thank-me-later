@@ -60,7 +60,6 @@ export function checkStep(name: string, goal: string): Step {
         commitMessage: `chore: apply fixes from ${name}`,
       });
 
-      if ("kind" in result) return result;
       return { artifacts: {}, rounds: result.rounds };
     },
   });

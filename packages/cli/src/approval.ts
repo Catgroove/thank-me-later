@@ -55,8 +55,7 @@ function parseDecision(answer: string, input: ApproveFindingsInput): ApprovalDec
   if (command === "abort" || command === "x" || command === "q") return { action: "abort" };
   if (command !== "fix" && command !== "f") return undefined;
 
-  const ids =
-    rawArgs.length === 0 ? [...(input.selectedFindingIds ?? [])] : resolveIds(rawArgs, input);
+  const ids = resolveIds(rawArgs.length === 0 ? (input.selectedFindingIds ?? []) : rawArgs, input);
   return ids.length > 0 ? { action: "fix", selectedFindingIds: ids } : undefined;
 }
 

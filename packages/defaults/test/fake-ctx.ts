@@ -175,6 +175,7 @@ export interface FakeCtxParts {
   approveFindings?: (input: ApproveFindingsInput) => Promise<ApprovalDecision>;
   rounds?: readonly RoundRecord[];
   signal?: AbortSignal;
+  until?: Ctx["until"];
 }
 
 export interface FakeCtxResult {
@@ -203,7 +204,7 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
     gitProvider: parts.gitProvider ?? new FakeGitProvider(),
     agent: parts.agent ?? new FakeHarness(),
     signal,
-    until: (pending, opts) => until(pending, { every: 1, ...opts, signal }),
+    until: parts.until ?? ((pending, opts) => until(pending, { ...opts, every: 1, signal })),
     ask(prompt) {
       asks.push(prompt);
       return ask(prompt);

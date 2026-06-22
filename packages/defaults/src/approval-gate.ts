@@ -1,11 +1,9 @@
 import {
-  cancel,
   executeRoundLoop,
   renderFindingForPr,
   type ApprovalDecision,
   type Ctx,
   type Finding,
-  type FlowSignal,
   type RoundLoopOptions,
   type RoundLoopResult,
   type RoundLoopStopReason,
@@ -14,16 +12,12 @@ import {
 
 export interface ApprovalRoundLoopOptions extends RoundLoopOptions {
   readonly stepName: string;
-  readonly prompt?: (result: RoundLoopResult) => string;
-  readonly context?: (result: RoundLoopResult) => string | undefined;
 }
-
-export type ApprovalRoundLoopResult = RoundLoopResult | FlowSignal;
 
 export async function executeRoundLoopWithApproval(
   ctx: Ctx,
   options: ApprovalRoundLoopOptions,
-): Promise<ApprovalRoundLoopResult> {
+): Promise<RoundLoopResult> {
   let initialRounds: readonly RoundRecordInput[] | undefined;
   let initialAttempts: number | undefined;
   let initialFixFindings: readonly Finding[] | undefined;
@@ -56,13 +50,13 @@ export async function executeRoundLoopWithApproval(
     if (!requiresApproval(result.stopReason)) return result;
 
     const decision = await ctx.approveFindings({
-      prompt: options.prompt?.(result) ?? defaultPrompt(options.stepName, result.stopReason),
+      prompt: defaultPrompt(options.stepName, result.stopReason),
       findings: result.findings,
-      selectedFindingIds: latestSelectedFindingIds(result.rounds),
-      context: options.context?.(result) ?? renderRoundContext(result.rounds),
+      selectedFindingIds: currentSelectedFindingIds(result.findings, result.rounds),
+      context: renderRoundContext(result.rounds),
     });
 
-    if (decision.action === "abort") return cancel("approval aborted by operator");
+    if (decision.action === "abort") throw new Error("approval aborted by operator");
 
     if (decision.action === "approve" || decision.action === "skip") {
       return {
@@ -78,13 +72,13 @@ export async function executeRoundLoopWithApproval(
 
     initialRounds = result.rounds;
     initialAttempts = result.attempts;
-    initialFixFindings = selected;
+    initialFixFindings = findingsForDecisionFix(selected, decision);
     pendingUserFix = { roundIndex: result.rounds.length, decision };
   }
 }
 
 function requiresApproval(stopReason: RoundLoopStopReason): boolean {
-  return stopReason !== "clean";
+  return stopReason === "needs_user" || stopReason === "auto_fix_limit_hit";
 }
 
 function defaultPrompt(stepName: string, stopReason: RoundLoopStopReason): string {
@@ -93,14 +87,15 @@ function defaultPrompt(stepName: string, stopReason: RoundLoopStopReason): strin
   return `${stepName} has unresolved findings`;
 }
 
-function latestSelectedFindingIds(
+function currentSelectedFindingIds(
+  findings: readonly Finding[],
   rounds: readonly RoundRecordInput[],
 ): readonly string[] | undefined {
-  for (let i = rounds.length - 1; i >= 0; i -= 1) {
-    const selected = rounds[i]?.selectedFindingIds;
-    if (selected !== undefined && selected.length > 0) return selected;
-  }
-  return undefined;
+  const selected = rounds.at(-1)?.selectedFindingIds;
+  if (selected === undefined || selected.length === 0) return undefined;
+  const current = new Set(findings.map((finding) => finding.id));
+  const ids = selected.filter((id) => current.has(id));
+  return ids.length > 0 ? ids : undefined;
 }
 
 function approvalRound(findings: readonly Finding[], decision: ApprovalDecision): RoundRecordInput {
@@ -135,23 +130,46 @@ function selectDecisionFindings(
   return findings.filter((finding) => selected.has(finding.id));
 }
 
+function findingsForDecisionFix(
+  selected: readonly Finding[],
+  decision: ApprovalDecision,
+): readonly Finding[] {
+  const notes = decision.notes ?? {};
+  const annotated = selected.map((finding) => {
+    const note = notes[finding.id]?.trim();
+    if (!note) return finding;
+    return { ...finding, detail: `${finding.detail}\n\nOperator note: ${note}` };
+  });
+  return [...annotated, ...(decision.userFindings ?? [])];
+}
+
 function mergeDecisionIntoUserFixRound(
   index: number,
   rounds: readonly RoundRecordInput[],
   decision: ApprovalDecision,
 ): readonly RoundRecordInput[] {
-  const userFindings = decision.userFindings ?? [];
   const userNotes = cleanNotes(decision.notes);
-  if (userFindings.length === 0 && userNotes === undefined) return rounds;
+  if (userNotes === undefined) return rounds;
 
   return rounds.map((round, i) => {
     if (i !== index) return round;
     return {
       ...round,
-      findings: [...round.findings, ...userFindings],
-      ...(userNotes ? { userNotes } : {}),
+      findings: round.findings.map((finding) => stripDecisionNote(finding, decision.notes)),
+      userNotes,
     };
   });
+}
+
+function stripDecisionNote(
+  finding: Finding,
+  notes: Readonly<Record<string, string>> | undefined,
+): Finding {
+  const note = notes?.[finding.id]?.trim();
+  if (!note) return finding;
+  const suffix = `\n\nOperator note: ${note}`;
+  if (!finding.detail.endsWith(suffix)) return finding;
+  return { ...finding, detail: finding.detail.slice(0, -suffix.length) };
 }
 
 function renderRoundContext(rounds: readonly RoundRecordInput[]): string {

@@ -8,7 +8,9 @@ import {
   defineStep,
   makeFinding,
   type CheckRun,
+  type Ctx,
   type Finding,
+  type Pending,
   type Step,
 } from "@tml/core";
 import { executeRoundLoopWithApproval } from "../approval-gate.ts";
@@ -55,6 +57,36 @@ function failedCheckNames(findings: readonly Finding[]): string[] {
     .filter((name): name is string => name !== undefined && name.trim().length > 0);
 }
 
+function checksAfterFix(ctx: Ctx, prNumber: number): Pending<CheckRun[]> {
+  const pending = ctx.gitProvider.getChecks(prNumber);
+  return {
+    async poll() {
+      const result = await pending.poll();
+      if (!result.done) return result;
+      return result.value.length === 0 ? { done: false } : result;
+    },
+  };
+}
+
+async function failedLogsForFindings(
+  ctx: Ctx,
+  prNumber: number,
+  findings: readonly Finding[],
+): Promise<string> {
+  try {
+    return (
+      (await ctx.gitProvider.getFailedCheckLogs?.({
+        prNumber,
+        checkNames: failedCheckNames(findings),
+      })) ?? ""
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.log(`ci-wait: failed to retrieve failed check logs: ${message}`);
+    return "";
+  }
+}
+
 export function ciWaitStep(): Step {
   return defineStep({
     name: "ci-wait",
@@ -63,13 +95,18 @@ export function ciWaitStep(): Step {
     async run(ctx) {
       const pr = ctx.read(pullRequest);
       let latestChecks: CheckRun[] = [];
+      let pushedFixCommit = false;
 
       const result = await executeRoundLoopWithApproval(ctx, {
         stepName: "ci-wait",
         maxAutoFixAttempts: MAX_CI_AUTO_FIX_ATTEMPTS,
-        async check() {
+        async check(input) {
           try {
-            latestChecks = await ctx.until(ctx.gitProvider.getChecks(pr.number), {
+            const pendingChecks =
+              input.trigger === "verify" && pushedFixCommit
+                ? checksAfterFix(ctx, pr.number)
+                : ctx.gitProvider.getChecks(pr.number);
+            latestChecks = await ctx.until(pendingChecks, {
               every: EVERY_MS,
               timeout: TIMEOUT_MS,
             });
@@ -79,6 +116,7 @@ export function ciWaitStep(): Step {
             }
             throw error;
           }
+          if (latestChecks.length > 0) pushedFixCommit = false;
           for (const check of latestChecks) {
             ctx.log(`ci: ${check.name} -> ${check.conclusion ?? check.status}`);
           }
@@ -90,11 +128,7 @@ export function ciWaitStep(): Step {
           };
         },
         async fix(input) {
-          const failedLogs =
-            (await ctx.gitProvider.getFailedCheckLogs?.({
-              prNumber: pr.number,
-              checkNames: failedCheckNames(input.findings),
-            })) ?? "";
+          const failedLogs = await failedLogsForFindings(ctx, pr.number, input.findings);
           const agentResult = await ctx.agent.run(
             ciFixPrompt({
               findings: input.findings,
@@ -118,11 +152,11 @@ export function ciWaitStep(): Step {
           }
           const commit = await ctx.git.commit(subject);
           await ctx.git.push({ branch: pr.head });
+          pushedFixCommit = true;
           return { commitSha: commit.sha };
         },
       });
 
-      if ("kind" in result) return result;
       return { artifacts: {}, rounds: result.rounds };
     },
   });

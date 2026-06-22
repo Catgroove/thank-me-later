@@ -111,7 +111,34 @@ describe("checkStep", () => {
     });
   });
 
-  test("approval abort returns a cancel flow signal", async () => {
+  test("informational findings do not require approval", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push({
+      ok: true,
+      summary: "info",
+      output: {
+        findings: [
+          {
+            severity: "info",
+            action: "no-op",
+            title: "FYI",
+            detail: "informational only",
+          },
+        ],
+      },
+    });
+    const { ctx, approvals } = fakeCtx({ agent });
+
+    const result = await checkStep("lint", "lint it").run(ctx);
+
+    expect(approvals).toEqual([]);
+    expect(result).toMatchObject({
+      artifacts: {},
+      rounds: [{ trigger: "initial", findings: [{ action: "no-op", title: "FYI" }] }],
+    });
+  });
+
+  test("approval abort throws so the run fails", async () => {
     const agent = new FakeHarness();
     agent.result = { ok: false, summary: "lint failures remain" };
     const { ctx } = fakeCtx({
@@ -119,9 +146,14 @@ describe("checkStep", () => {
       approveFindings: () => Promise.resolve({ action: "abort" }),
     });
 
-    const result = await checkStep("lint", "lint it").run(ctx);
-
-    expect(result).toMatchObject({ kind: "cancel" });
+    try {
+      await checkStep("lint", "lint it").run(ctx);
+      throw new Error("check step unexpectedly resolved");
+    } catch (error) {
+      expect(error instanceof Error ? error.message : String(error)).toContain(
+        "approval aborted by operator",
+      );
+    }
   });
 
   test("approval approve records notes and user-authored findings", async () => {
@@ -257,6 +289,73 @@ describe("checkStep", () => {
         { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
       ],
     });
+  });
+
+  test("approval prompts only suggest current selected findings", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      {
+        ok: true,
+        summary: "auto fix first",
+        output: {
+          findings: [{ severity: "warning", action: "auto-fix", title: "A", detail: "fix A" }],
+        },
+      },
+      { ok: true, summary: "fixed A" },
+      {
+        ok: true,
+        summary: "needs input",
+        output: {
+          findings: [{ severity: "warning", action: "ask-user", title: "B", detail: "decide B" }],
+        },
+      },
+    );
+    const git = new FakeGit();
+    git.stagedFiles = ["src/a.ts"];
+    const suggested: (readonly string[] | undefined)[] = [];
+    const { ctx } = fakeCtx({
+      agent,
+      git,
+      approveFindings: (input) => {
+        suggested.push(input.selectedFindingIds);
+        return Promise.resolve({ action: "approve" });
+      },
+    });
+
+    await checkStep("lint", "lint it").run(ctx);
+
+    expect(suggested).toEqual([undefined]);
+  });
+
+  test("approval fix notes are included in the fix prompt", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      {
+        ok: true,
+        summary: "needs input",
+        output: {
+          findings: [{ severity: "warning", action: "ask-user", title: "B", detail: "decide B" }],
+        },
+      },
+      { ok: true, summary: "fixed B" },
+      { ok: true, summary: "clean", output: { findings: [] } },
+    );
+    const git = new FakeGit();
+    git.stagedFiles = ["src/a.ts"];
+    const { ctx } = fakeCtx({
+      agent,
+      git,
+      approveFindings: (input) =>
+        Promise.resolve({
+          action: "fix",
+          selectedFindingIds: [input.findings[0]?.id ?? ""],
+          notes: { [input.findings[0]?.id ?? ""]: "Use the public API." },
+        }),
+    });
+
+    await checkStep("lint", "lint it").run(ctx);
+
+    expect(agent.tasks[1]).toContain("Operator note: Use the public API.");
   });
 
   test("reverts edits made during check rounds", async () => {

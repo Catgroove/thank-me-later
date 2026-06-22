@@ -149,6 +149,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   let lastView: ViewState | undefined;
   let cursorHidden = false;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let pausedForInput = false;
 
   function visibleLen(line: string): number {
     let n = 0;
@@ -375,6 +376,7 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
   if (intervalMs > 0) {
     timer = setInterval(() => {
       if (
+        pausedForInput ||
         lastView === undefined ||
         lastView.status !== "running" ||
         lastView.activeStep === undefined
@@ -395,6 +397,9 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
       const prSuffix = view.prUrl !== undefined ? ` · ${cyan(view.prUrl)}` : "";
       // Verbose seals the prose tail at every hard boundary; quiet discarded it as it streamed.
       const sealed = (): string[] => (verbose ? commitPendingProse(view) : []);
+      if (event.type !== "ask:pending" && event.type !== "approval:pending") {
+        pausedForInput = false;
+      }
       switch (event.type) {
         case "run:started": {
           const header = bold("▶ ship");
@@ -469,14 +474,17 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           return;
         case "ask:pending":
           // The prompt blocks the Run awaiting input, so it must seal - it can't be transient.
-          paint([...sealed(), `${STEP_INDENT}? ${event.step}: ${event.prompt}`], liveLine(view));
+          // Leave no spinner/live line behind: readline owns the terminal until input resolves.
+          pausedForInput = true;
+          paint([...sealed(), `${STEP_INDENT}? ${event.step}: ${event.prompt}`], "");
+          showCursor();
           return;
         case "approval:pending":
           // Structured approval blocks the Run the same way, but carries findings for a UI.
-          paint(
-            [...sealed(), `${STEP_INDENT}? ${event.step}: ${approvalPrompt(event)}`],
-            liveLine(view),
-          );
+          // Leave no spinner/live line behind: readline owns the terminal until input resolves.
+          pausedForInput = true;
+          paint([...sealed(), `${STEP_INDENT}? ${event.step}: ${approvalPrompt(event)}`], "");
+          showCursor();
           return;
         case "run:finished":
           stopTimer();

@@ -145,7 +145,6 @@ export function reviewStep(): Step {
         commitMessage: "chore: apply fixes from review",
       });
 
-      if ("kind" in result) return result;
       return {
         artifacts: {
           reviewSummary: summarize(latestPasses, fixSummaries(result.rounds), {
