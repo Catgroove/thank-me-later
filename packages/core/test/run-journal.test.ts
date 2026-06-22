@@ -32,7 +32,7 @@ describe("RunJournal", () => {
     await journal.begin({ pipeline: ["produce"] });
     await journal.recordArtifact({ step: "produce", artifact: "raw/value", value: { n: 1 } });
     await journal.recordStepCompleted("produce");
-    await journal.append({
+    await journal.recordRound({
       step: "produce",
       index: 0,
       trigger: "initial",
@@ -59,7 +59,7 @@ describe("RunJournal", () => {
     expect(readFileSync(join(runDir, "events.jsonl"), "utf8")).toContain("run:started");
   });
 
-  test("loads a running journal snapshot for resume", async () => {
+  test("loads a running journal snapshot by explicit run id", async () => {
     const stateHome = tempDir();
     const checkoutPath = join(stateHome, "repo");
     const first = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
@@ -67,7 +67,7 @@ describe("RunJournal", () => {
     await first.recordArtifact({ step: "produce", artifact: "raw", value: "hi" });
     await first.recordStepCompleted("produce");
 
-    const second = createRunJournal({ stateHome, checkoutPath, events: false });
+    const second = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
     const snapshot = await second.begin({ pipeline: ["produce", "consume"] });
 
     expect(snapshot.metadata.runId).toBe("run-1");
@@ -82,7 +82,7 @@ describe("RunJournal", () => {
 
     await journal.begin({ pipeline: ["produce"] });
     await journal.recordArtifact({ step: "produce", artifact: "raw", value: "hi" });
-    await journal.append({
+    await journal.recordRound({
       step: "produce",
       index: 0,
       trigger: "initial",

@@ -42,7 +42,7 @@ export interface RunJournal {
   /** Mark a Step complete after all of its artifacts have been persisted. */
   recordStepCompleted(step: string): Promise<void>;
   /** Append one completed Step round for the local Run record. */
-  append(round: RoundRecord): Promise<void>;
+  recordRound(round: RoundRecord): Promise<void>;
   /** Append one Run event when event persistence is enabled. */
   recordEvent(event: RunEvent): Promise<void>;
   /** Close the local Run record with its terminal status. */
@@ -177,7 +177,7 @@ class FileRunJournal implements RunJournal {
     }
   }
 
-  async append(round: RoundRecord): Promise<void> {
+  async recordRound(round: RoundRecord): Promise<void> {
     await appendJsonLine(join(this.requireRunDir(), "rounds.jsonl"), round);
     this.touch(new Date().toISOString());
     await this.writeMetadata();
@@ -201,14 +201,10 @@ class FileRunJournal implements RunJournal {
     runId: string;
     metadata: RunMetadata | undefined;
   }> {
-    if (this.requestedRunId !== undefined) {
-      const metadata = await readMetadataIfExists(join(this.root, "runs", this.requestedRunId));
-      if (metadata !== undefined) assertCompatible(metadata, pipeline, this.requestedRunId);
-      return { runId: this.requestedRunId, metadata };
-    }
-
-    const active = await latestRunningCompatibleRun(this.root, pipeline);
-    return active ?? { runId: newRunId(), metadata: undefined };
+    if (this.requestedRunId === undefined) return { runId: newRunId(), metadata: undefined };
+    const metadata = await readMetadataIfExists(join(this.root, "runs", this.requestedRunId));
+    if (metadata !== undefined) assertCompatible(metadata, pipeline, this.requestedRunId);
+    return { runId: this.requestedRunId, metadata };
   }
 
   private async readArtifacts(): Promise<Map<string, unknown>> {
@@ -244,24 +240,6 @@ class FileRunJournal implements RunJournal {
   private async writeMetadata(): Promise<void> {
     await writeJsonAtomic(join(this.requireRunDir(), "run.json"), this.requireMetadata());
   }
-}
-
-async function latestRunningCompatibleRun(
-  root: string,
-  pipeline: string[],
-): Promise<{ runId: string; metadata: RunMetadata } | undefined> {
-  const runsDir = join(root, "runs");
-  if (!existsSync(runsDir)) return undefined;
-  const candidates: { runId: string; metadata: RunMetadata }[] = [];
-  for (const runId of await readdir(runsDir)) {
-    if (!isValidRunId(runId)) continue;
-    const metadata = await readMetadataIfExists(join(runsDir, runId));
-    if (metadata?.status === "running" && samePipeline(metadata.pipeline, pipeline)) {
-      candidates.push({ runId, metadata });
-    }
-  }
-  candidates.sort((a, b) => b.metadata.updatedAt.localeCompare(a.metadata.updatedAt));
-  return candidates[0];
 }
 
 async function readMetadataIfExists(runDir: string): Promise<RunMetadata | undefined> {

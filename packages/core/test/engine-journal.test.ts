@@ -31,7 +31,7 @@ const raw = defineArtifact<string>()("raw");
 const derived = defineArtifact<number>()("derived");
 
 describe("engine RunJournal integration", () => {
-  test("replays completed steps from the journal and continues with restored artifacts", async () => {
+  test("records state without replaying completed steps before resume policy exists", async () => {
     const stateHome = tempDir();
     const checkoutPath = join(stateHome, "repo");
     const journal = createRunJournal({ stateHome, checkoutPath, runId: "resume", events: false });
@@ -67,9 +67,9 @@ describe("engine RunJournal integration", () => {
       journal,
     );
 
-    expect(produceRuns).toBe(0);
-    expect(events).not.toContainEqual({ type: "step:started", step: "produce" });
-    expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=hi" });
+    expect(produceRuns).toBe(1);
+    expect(events).toContainEqual({ type: "step:started", step: "produce" });
+    expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=rerun" });
     expect(events.at(-1)).toEqual({ type: "run:finished" });
   });
 
