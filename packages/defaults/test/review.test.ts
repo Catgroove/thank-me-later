@@ -10,7 +10,9 @@ function pass(findings: unknown[], extra: Record<string, unknown> = {}): AgentRe
 }
 
 function summaryOf(result: unknown): string {
-  return (result as { reviewSummary: string }).reviewSummary;
+  const output = result as { artifacts?: { reviewSummary?: unknown }; reviewSummary?: unknown };
+  const value = output.artifacts?.reviewSummary ?? output.reviewSummary;
+  return typeof value === "string" ? value : "";
 }
 
 describe("review step", () => {
@@ -23,14 +25,21 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx, asks } = fakeCtx({ agent, reads: { prBody: "Adds --json output" } });
+    const { ctx, asks } = fakeCtx({
+      agent,
+      reads: { prBody: "Adds --json output" },
+    });
 
     const result = await reviewStep().run(ctx);
 
-    expect(agent.tasks).toHaveLength(5); // no fix pass — no auto-fix findings
+    expect(agent.tasks).toHaveLength(5); // no fix pass - no auto-fix findings
     expect(agent.opts[1]?.schema).toBe(architectureSchema); // architecture: verdict required
     for (const i of [0, 2, 3, 4]) expect(agent.opts[i]?.schema).toBe(findingsSchema);
     expect(asks).toHaveLength(0); // the gate never calls ctx.ask
+    const stepResult = result as { artifacts?: { reviewSummary?: unknown }; rounds?: unknown[] };
+    expect(typeof stepResult.artifacts?.reviewSummary).toBe("string");
+    expect(stepResult.rounds).toHaveLength(1);
+    expect(stepResult.rounds?.[0]).toMatchObject({ trigger: "initial", findings: [] });
     expect(summaryOf(result)).toContain("**Risk: low**");
   });
 
@@ -68,7 +77,7 @@ describe("review step", () => {
     expect(summary).toContain("**Risk: high**");
     expect(summary.toLowerCase()).toContain("blocking concern");
     expect(asks).toHaveLength(0);
-    expect(agent.tasks).toHaveLength(5); // ask-user is not auto-fix → no fix pass
+    expect(agent.tasks).toHaveLength(5); // ask-user is not auto-fix, so no fix pass
   });
 
   test("runs the fix pass only when there are auto-fix findings", async () => {
@@ -112,7 +121,7 @@ describe("review step", () => {
   });
 
   test("reverts and warns when a read-only pass modifies the worktree", async () => {
-    // The worktree is clean when review starts but dirty once the passes have run — i.e. a
+    // The worktree is clean when review starts but dirty once the passes have run - i.e. a
     // supposedly read-only pass edited a file despite the prompt.
     class DirtyingGit extends FakeGit {
       private statusCalls = 0;

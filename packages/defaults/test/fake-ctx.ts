@@ -1,6 +1,6 @@
 // Test doubles for unit-testing a single `step.run(ctx)` in isolation. Core's FakeGitProvider /
 // FakeHarness live in its test dir (not on its public surface), so the defaults package
-// keeps its own minimal, call-recording fakes mirroring those shapes — plus a FakeGit
+// keeps its own minimal, call-recording fakes mirroring those shapes - plus a FakeGit
 // (core's Git is real, so it ships no fake). `fakeCtx` assembles them into a `Ctx`.
 
 import {
@@ -141,7 +141,7 @@ export class FakeGitProvider implements GitProvider {
 
 export class FakeHarness implements Harness {
   readonly tasks: string[] = [];
-  /** The `opts` of each `run` call, parallel to `tasks` — lets tests assert a `schema` was set. */
+  /** The `opts` of each `run` call, parallel to `tasks` - lets tests assert a `schema` was set. */
   readonly opts: (AgentRunOpts | undefined)[] = [];
   /** Default reply, used when no per-call response is scripted. */
   result: AgentResult = { ok: true, summary: "done" };

@@ -1,10 +1,10 @@
-// `review` — a pre-push review of the branch's diff that mimics how a staff engineer reads a
+// `review` - a pre-push review of the branch's diff that mimics how a staff engineer reads a
 // change: five focused read-only passes (context → architecture → correctness → design+NFR →
 // micro), then one fix pass that applies the safe fixes the passes surfaced. Read-only is the
 // passes' contract; the prompts ask for it and a before/after worktree check reverts any edits a
 // pass makes anyway, so only the fix pass can change files. Synthesis and the
 // overall risk are computed in code (see `../review/synthesize.ts`), not by the agent. The
-// architecture pass can `block`, which is recorded as a high-risk banner — it does not halt the
+// architecture pass can `block`, which is recorded as a high-risk banner - it does not halt the
 // run. The resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR
 // body.
 
@@ -43,7 +43,7 @@ function touched(status: GitStatus): string {
 }
 
 /** Read-only is prompt-enforced, not sandboxed: the passes call the same edit-capable Harness.
- *  This guard makes read-only a real invariant — if a pass modified the worktree despite the
+ *  This guard makes read-only a real invariant - if a pass modified the worktree despite the
  *  prompt, those edits are reverted so they can't be misattributed to the fix pass and committed
  *  by the trailing commit(review). The pipeline commits all prior work before review runs, so the
  *  worktree is clean here and reverting to HEAD discards exactly the rogue edits. */
@@ -92,7 +92,17 @@ export function reviewStep(): Step {
         .filter((f) => f.action === "auto-fix");
       const fixSummary = fixable.length > 0 ? (await agent.run(fixPrompt(fixable))).summary : "";
 
-      return { reviewSummary: summarize(passes, fixSummary) };
+      return {
+        artifacts: { reviewSummary: summarize(passes, fixSummary) },
+        rounds: [
+          {
+            trigger: "initial",
+            findings: passes.flatMap((p) => p.result.findings),
+            selectedFindingIds: fixable.map((f) => f.id),
+            ...(fixSummary.trim().length > 0 ? { fixSummary: fixSummary.trim() } : {}),
+          },
+        ],
+      };
     },
   });
 }

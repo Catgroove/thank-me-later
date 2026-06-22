@@ -1,24 +1,26 @@
 // The headless engine. `createEngine` validates the assembled Pipeline up front
 // and returns a Run whose `run()` is the single event stream. The engine is the
 // Conductor: it owns the loop, threads declared artifacts between Steps, drives
-// flow signals, and supplies `ctx` — including `ctx.git` natively, bound to the
+// flow signals, and supplies `ctx` - including `ctx.git` natively, bound to the
 // Run's working dir.
 //
 // Events are emitted *live* over an internal queue: a background
-// driver runs the pipeline and `push`es events as they happen — including
-// `agent:progress` mid-Step — while the generator yields them concurrently. A
+// driver runs the pipeline and `push`es events as they happen - including
+// `agent:progress` mid-Step - while the generator yields them concurrently. A
 // Run is cancellable via an `AbortSignal`; an aborted Run ends with
 // `run:cancelled`, distinct from the `cancel()` flow signal a Step returns.
 
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
 import type { RunEvent } from "./events.ts";
+import { createFileRoundJournal, type RoundJournal } from "./journal.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import { until } from "./pending.ts";
 import { type EventQueue, createEventQueue } from "./queue.ts";
+import type { RoundRecordInput } from "./round.ts";
 import { isFlowSignal } from "./signals.ts";
 import type { Step } from "./step.ts";
 import { validatePipeline } from "./validate.ts";
@@ -41,6 +43,8 @@ export interface EngineOptions {
   ask?: (prompt: string) => Promise<string>;
   /** External abort: cancels the Run, ending it with `run:cancelled`. */
   signal?: AbortSignal;
+  /** Append-only RoundRecord journal. Defaults to the out-of-tree file journal; `false` disables. */
+  journal?: RoundJournal | false;
 }
 
 export interface Engine {
@@ -90,7 +94,10 @@ async function drive(
   signal: AbortSignal,
 ): Promise<void> {
   const { pipeline, providers, models } = config;
-  const git = opts.git ?? createGit(opts.cwd ?? process.cwd());
+  const cwd = opts.cwd ?? process.cwd();
+  const git = opts.git ?? createGit(cwd);
+  const journal =
+    opts.journal === false ? undefined : (opts.journal ?? createFileRoundJournal(cwd));
   const ask =
     opts.ask ??
     (() =>
@@ -103,11 +110,12 @@ async function drive(
   const store = new Map<string, unknown>();
   const stepByName = new Map<string, number>(pipeline.map((s, i): [string, number] => [s.name, i]));
   const retries = new Map<string, number>();
+  const roundIndexes = new Map<string, number>();
 
   queue.push({ type: "run:started", pipeline: pipeline.map((s) => s.name) });
 
   // Validate configured model ids against the live Harness *before* the first Step,
-  // but only when the Harness can list its models — otherwise we can't, so we don't.
+  // but only when the Harness can list its models - otherwise we can't, so we don't.
   // Name-key validity was already checked synchronously at assembly (validate.ts).
   if (models !== undefined && providers.agent.listModels !== undefined) {
     let available: Set<string>;
@@ -120,7 +128,7 @@ async function drive(
       return;
     }
     if (signal.aborted) return cancelled(queue);
-    // An empty list is not a usable allowlist (the Harness can't, or won't, enumerate) — skip
+    // An empty list is not a usable allowlist (the Harness can't, or won't, enumerate) - skip
     // rather than reject every id. Only a non-empty list validates configured ids.
     for (const [key, id] of available.size === 0 ? [] : Object.entries(models)) {
       if (id === undefined || available.has(id)) continue;
@@ -200,7 +208,7 @@ async function drive(
       }
     }
 
-    const produced = result as Record<string, unknown>;
+    const { artifacts: produced, rounds } = stepResultParts(result);
     const declared = new Set(step.produces.map((a) => a.name));
     for (const key of Object.keys(produced)) {
       if (!declared.has(key)) {
@@ -226,7 +234,7 @@ async function drive(
       const value = produced[artifact.name];
       store.set(artifact.name, value);
       // Relay the value's string form for presentation when it has one; non-string artifacts
-      // (e.g. a PullRequest object — surfaced via `pr:opened`) carry no `rendered`.
+      // (e.g. a PullRequest object - surfaced via `pr:opened`) carry no `rendered`.
       queue.push({
         type: "artifact:written",
         step: step.name,
@@ -235,12 +243,48 @@ async function drive(
       });
     }
 
+    try {
+      await appendRounds(journal, roundIndexes, step.name, rounds);
+    } catch (error) {
+      queue.push({ type: "run:failed", step: step.name, error: errorMessage(error) });
+      queue.close();
+      return;
+    }
+
     queue.push({ type: "step:finished", step: step.name });
     i += 1;
   }
 
   queue.push({ type: "run:finished" });
   queue.close();
+}
+
+function stepResultParts(result: unknown): {
+  artifacts: Record<string, unknown>;
+  rounds: readonly RoundRecordInput[];
+} {
+  if (isObject(result) && "rounds" in result && isObject(result.artifacts)) {
+    const rounds = Array.isArray(result.rounds) ? result.rounds : [];
+    return { artifacts: result.artifacts, rounds: rounds as readonly RoundRecordInput[] };
+  }
+  return { artifacts: result as Record<string, unknown>, rounds: [] };
+}
+
+async function appendRounds(
+  journal: RoundJournal | undefined,
+  roundIndexes: Map<string, number>,
+  step: string,
+  rounds: readonly RoundRecordInput[],
+): Promise<void> {
+  for (const round of rounds) {
+    const index = roundIndexes.get(step) ?? 0;
+    roundIndexes.set(step, index + 1);
+    await journal?.append({ ...round, step, index });
+  }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function cancelled(queue: EventQueue<RunEvent>, step?: string): void {
@@ -268,7 +312,7 @@ function makeContext(
   };
 
   // Wrap the configured Harness so progress flows into the one event stream and the
-  // Run's signal is threaded automatically — Steps call `ctx.agent.run(task)` plain.
+  // Run's signal is threaded automatically - Steps call `ctx.agent.run(task)` plain.
   const configured = providers.agent;
   const agent: Harness = {
     run(task: string, runOpts?: AgentRunOpts) {
@@ -290,7 +334,7 @@ function makeContext(
       : {}),
   };
 
-  // Wrap the Git provider so the Run's pull request — freshly opened, or rediscovered on a re-run —
+  // Wrap the Git provider so the Run's pull request - freshly opened, or rediscovered on a re-run -
   // funnels a `pr:opened` event into the one event stream, the same way `agent` funnels progress.
   // The Step stays oblivious; consumers can surface the PR link at the end of the Run. The two
   // read-only methods are delegated verbatim (explicit delegation, not spread, so a class-based

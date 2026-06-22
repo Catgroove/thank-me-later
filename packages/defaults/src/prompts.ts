@@ -1,5 +1,5 @@
 // The agent task strings for the default pipeline. Checks are agent-driven: each prompt
-// tells the agent *what* to achieve and lets it discover the toolchain via shell access —
+// tells the agent *what* to achieve and lets it discover the toolchain via shell access -
 // no tml-side detection, so the pipeline works in any language (ARCHITECTURE). Kept pure
 // and snapshot-tested; the Steps are thin wrappers that pass these to `ctx.agent.run`.
 
@@ -34,19 +34,19 @@ export const testPrompt =
 const reviewGround =
   "Review the changes on this branch against the repository's default branch (compute the diff " +
   "yourself with git, including staged, unstaged, and untracked changes). This is a read-only " +
-  "pass: do not modify any files, and do not run the test suite — a dedicated test step already " +
-  "ran. Return findings as structured output; each finding has a severity (critical | warning | " +
-  "nit), an action (auto-fix for a safe non-functional change; ask-user when it needs the " +
+  "pass: do not modify any files, and do not run the test suite - a dedicated test step already " +
+  "ran. Return findings as structured output; each finding has a severity (error | warning | " +
+  "info), an action (auto-fix for a safe non-functional change; ask-user when it needs the " +
   "author's intent or alters behaviour; no-op when purely informational), a short title, an " +
   'evidence-based detail (quantify where you can), and an optional location "path:line". ' +
-  "Report only real problems — a difference from your personal preference is not a finding.";
+  "Report only real problems - a difference from your personal preference is not a finding.";
 
 function priorContext(understanding: string): string {
   const note = understanding.trim();
   return note.length > 0 ? `\n\nWhat this change is for (from the context pass):\n${note}` : "";
 }
 
-/** Pass 0 — comprehension: restate the intent and judge whether the description is adequate. */
+/** Pass 0 - comprehension: restate the intent and judge whether the description is adequate. */
 export function contextPrompt(prBody: string): string {
   const body = prBody.trim().length > 0 ? prBody.trim() : "(no description provided)";
   return (
@@ -55,16 +55,16 @@ export function contextPrompt(prBody: string): string {
     reviewGround +
     "\n\nFirst, restate in your own words what this change does and why, and put that in the " +
     "`understanding` field. Then judge whether the intent is clear and the proposed description " +
-    "adequate — raise a finding when the description is missing, vague, or contradicts the diff." +
+    "adequate - raise a finding when the description is missing, vague, or contradicts the diff." +
     "\n\nProposed pull-request description:\n" +
     body
   );
 }
 
-/** Pass 1 — architecture, approach & scope: the "drop everything and reject" gate. */
+/** Pass 1 - architecture, approach & scope: the "drop everything and reject" gate. */
 export function architecturePrompt(understanding: string): string {
   return (
-    "Phase: architecture, approach & scope — the 'drop everything and reject' pass. " +
+    "Phase: architecture, approach & scope - the 'drop everything and reject' pass. " +
     reviewGround +
     priorContext(understanding) +
     "\n\nDoes this change need to exist, and does it solve a real problem? Does the approach " +
@@ -75,7 +75,7 @@ export function architecturePrompt(understanding: string): string {
   );
 }
 
-/** Pass 2 — correctness & testing: tests first, then implementation and blast radius. */
+/** Pass 2 - correctness & testing: tests first, then implementation and blast radius. */
 export function correctnessPrompt(understanding: string): string {
   return (
     "Phase: correctness & testing. " +
@@ -84,12 +84,12 @@ export function correctnessPrompt(understanding: string): string {
     "\n\nReview the tests first: do they assert correct behaviour, or merely mirror the " +
     "implementation? Are edge cases and unhappy paths covered? Then the implementation: does it " +
     "do what it claims; what is the blast radius (inspect call sites, shared helpers, and the " +
-    "invariants the changed code touches — not just the changed lines); are there regressions or " +
+    "invariants the changed code touches - not just the changed lines); are there regressions or " +
     "side effects elsewhere?"
   );
 }
 
-/** Pass 3 — design, extensibility & non-functional concerns. */
+/** Pass 3 - design, extensibility & non-functional concerns. */
 export function designPrompt(understanding: string): string {
   return (
     "Phase: design, extensibility & non-functional concerns. " +
@@ -104,7 +104,7 @@ export function designPrompt(understanding: string): string {
   );
 }
 
-/** Pass 4 — maintainability & micro-detail, including a guardrailed over-engineering sweep. */
+/** Pass 4 - maintainability & micro-detail, including a guardrailed over-engineering sweep. */
 export function microPrompt(understanding: string): string {
   return (
     "Phase: maintainability & micro-detail. " +
@@ -112,14 +112,16 @@ export function microPrompt(understanding: string): string {
     priorContext(understanding) +
     "\n\nNaming (are things named for what they are?), readability (is anything needlessly " +
     "clever?), and comments (do they explain why, not what?). Also hunt over-engineering: flag " +
-    "code that need not exist (YAGNI), dead or speculative code, and propose a delete-list — but " +
+    "code that need not exist (YAGNI), dead or speculative code, and propose a delete-list - but " +
     "never propose removing trust-boundary validation, data-loss handling, security, or " +
     "accessibility. Most findings here are nits."
   );
 }
 
-/** The fix pass — the only one that edits files; applies the auto-fix findings in place. */
-export function fixPrompt(findings: readonly Finding[]): string {
+/** The fix pass - the only one that edits files; applies the auto-fix findings in place. */
+type FixPromptFinding = Pick<Finding, "severity" | "action" | "title" | "detail" | "location">;
+
+export function fixPrompt(findings: readonly FixPromptFinding[]): string {
   const list = findings
     .map((f) => `- ${f.title}${f.location ? ` (${f.location})` : ""}: ${f.detail}`)
     .join("\n");
@@ -142,7 +144,7 @@ export const findingsSchema = {
       items: {
         type: "object",
         properties: {
-          severity: { type: "string", enum: ["critical", "warning", "nit"] },
+          severity: { type: "string", enum: ["error", "warning", "info"] },
           action: { type: "string", enum: ["auto-fix", "ask-user", "no-op"] },
           title: { type: "string" },
           detail: { type: "string" },

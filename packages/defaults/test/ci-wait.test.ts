@@ -27,8 +27,8 @@ describe("ci-wait step", () => {
 
     const result = await ciWaitStep().run(ctx);
 
-    expect(result).toEqual({});
-    expect(logs).toEqual(["ci: build → success", "ci: lint → success"]);
+    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "verify", findings: [] }] });
+    expect(logs).toEqual(["ci: build -> success", "ci: lint -> success"]);
   });
 
   test("report-only: a failing check is logged, not a Run failure", async () => {
@@ -38,7 +38,15 @@ describe("ci-wait step", () => {
 
     // Resolves normally (no throw / cancel) even though CI is red.
     const result = await ciWaitStep().run(ctx);
-    expect(result).toEqual({});
-    expect(logs).toEqual(["ci: build → failure"]);
+    expect(logs).toEqual(["ci: build -> failure"]);
+    expect(result).toMatchObject({
+      artifacts: {},
+      rounds: [
+        {
+          trigger: "verify",
+          findings: [{ severity: "error", action: "ask-user", title: "build did not pass" }],
+        },
+      ],
+    });
   });
 });

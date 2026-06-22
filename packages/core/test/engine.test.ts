@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { defineArtifact } from "../src/artifact.ts";
 import { createEngine, type Engine, NotImplementedError } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
+import type { RoundJournal } from "../src/journal.ts";
+import { makeFinding, type RoundRecord } from "../src/round.ts";
 import type { Pipeline } from "../src/pipeline.ts";
 import { cancel, goto, retry, skip } from "../src/signals.ts";
 import { defineStep } from "../src/step.ts";
@@ -26,7 +28,7 @@ async function collect(engine: Engine): Promise<RunEvent[]> {
 
 const types = (events: RunEvent[]) => events.map((e) => e.type);
 
-describe("engine — happy path", () => {
+describe("engine - happy path", () => {
   test("runs steps in order, threads artifacts, and emits an ordered event stream", async () => {
     const produce = defineStep({
       name: "produce",
@@ -61,6 +63,48 @@ describe("engine — happy path", () => {
     expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=hi" });
   });
 
+  test("persists completed rounds with engine-assigned step indexes", async () => {
+    const records: RoundRecord[] = [];
+    const journal: RoundJournal = {
+      append: (record) => Promise.resolve(void records.push(record)),
+    };
+    const finding = makeFinding("review", {
+      severity: "warning",
+      action: "ask-user",
+      title: "Confirm",
+      detail: "Needs a decision.",
+    });
+    const review = defineStep({
+      name: "review",
+      async run() {
+        return {
+          artifacts: {},
+          rounds: [
+            { trigger: "initial", findings: [finding] },
+            { trigger: "verify", findings: [] },
+          ],
+        };
+      },
+    });
+
+    const events = await collect(
+      createEngine(
+        {
+          pipeline: [review],
+          providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
+        },
+        { journal },
+      ),
+    );
+
+    expect(types(events).at(-1)).toBe("run:finished");
+    expect(records.map((r) => [r.step, r.index, r.trigger])).toEqual([
+      ["review", 0, "initial"],
+      ["review", 1, "verify"],
+    ]);
+    expect(records[0]?.findings).toEqual([finding]);
+  });
+
   test("a Step drives a Pending Provider result to resolution via ctx.until", async () => {
     const waitStep = defineStep({
       name: "ci-wait",
@@ -81,7 +125,7 @@ describe("engine — happy path", () => {
   });
 });
 
-describe("engine — flow signals, ask, and failure", () => {
+describe("engine - flow signals, ask, and failure", () => {
   test("skip emits step:skipped and continues", async () => {
     const skipped = defineStep({ name: "skipped", run: () => Promise.resolve(skip()) });
     const events = await collect(engineFor([skipped]));
@@ -104,7 +148,7 @@ describe("engine — flow signals, ask, and failure", () => {
       "run:started",
       "step:started", // a
       "step:finished", // a (goto)
-      "step:started", // c — b was jumped over
+      "step:started", // c - b was jumped over
       "step:finished",
       "run:finished",
     ]);
@@ -181,11 +225,11 @@ describe("engine — flow signals, ask, and failure", () => {
   });
 });
 
-describe("engine — live emission", () => {
+describe("engine - live emission", () => {
   test("agent:progress reaches the consumer before the Step finishes", async () => {
     // The Step blocks on `gate` until the test sees an `agent:progress` event.
     // Under buffer-then-flush the consumer would never see progress (the Step is
-    // still running), the gate would never open, and this test would time out —
+    // still running), the gate would never open, and this test would time out -
     // so completing at all proves events are emitted live, mid-Step.
     let openGate: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
@@ -229,7 +273,7 @@ describe("engine — live emission", () => {
   });
 });
 
-describe("engine — pr:opened", () => {
+describe("engine - pr:opened", () => {
   test("emits pr:opened with the URL when a Step opens a PR", async () => {
     const open = defineStep({
       name: "open-pr",
