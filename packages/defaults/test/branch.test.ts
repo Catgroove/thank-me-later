@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@tml/core";
 import { branchNameFor, branchStep } from "../src/steps/branch.ts";
-import { FakeForge, FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
+import { FakeGitProvider, FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
 /** A minimal PR snapshot in the given state, for driving `findPullRequest`. */
 function prInState(state: PullRequest["state"]): PullRequest {
   return {
     number: 7,
-    url: "https://forge.test/pr/7",
+    url: "https://git-provider.test/pr/7",
     head: "feat/old",
     base: "main",
     title: "old work",
@@ -41,9 +41,9 @@ describe("branch step", () => {
     const git = new FakeGit();
     git.currentBranchName = "feat/old";
     git.defaultBranchName = "main";
-    const forge = new FakeForge();
-    forge.existing = prInState("open");
-    const { ctx } = fakeCtx({ git, forge });
+    const gitProvider = new FakeGitProvider();
+    gitProvider.existing = prInState("open");
+    const { ctx } = fakeCtx({ git, gitProvider });
 
     const result = await branchStep("ai").run(ctx);
 
@@ -57,11 +57,11 @@ describe("branch step", () => {
       const git = new FakeGit();
       git.currentBranchName = "feat/old";
       git.defaultBranchName = "main";
-      const forge = new FakeForge();
-      forge.existing = prInState(state);
+      const gitProvider = new FakeGitProvider();
+      gitProvider.existing = prInState(state);
       const agent = new FakeHarness();
       agent.result = { ok: true, summary: "named it", output: { branch: "feat/ai-named" } };
-      const { ctx } = fakeCtx({ git, forge, agent });
+      const { ctx } = fakeCtx({ git, gitProvider, agent });
 
       const result = await branchStep("ai").run(ctx);
 
@@ -76,9 +76,9 @@ describe("branch step", () => {
     git.defaultBranchName = "main";
     git.headShaValue = "deadbee";
     git.headShaByRef.set("origin/main", "basebee");
-    const forge = new FakeForge();
-    forge.existing = prInState("merged");
-    const { ctx } = fakeCtx({ git, forge });
+    const gitProvider = new FakeGitProvider();
+    gitProvider.existing = prInState("merged");
+    const { ctx } = fakeCtx({ git, gitProvider });
 
     const result = await branchStep("auto").run(ctx);
 
@@ -90,9 +90,9 @@ describe("branch step", () => {
     const git = new FakeGit();
     git.currentBranchName = "feat/old";
     git.defaultBranchName = "main";
-    const forge = new FakeForge();
-    forge.existing = prInState("merged");
-    const { ctx } = fakeCtx({ git, forge });
+    const gitProvider = new FakeGitProvider();
+    gitProvider.existing = prInState("merged");
+    const { ctx } = fakeCtx({ git, gitProvider });
 
     const error = await branchStep("require")
       .run(ctx)

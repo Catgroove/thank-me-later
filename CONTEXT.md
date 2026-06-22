@@ -22,7 +22,7 @@ _Avoid_: Task, stage, job, action
 **Run**:
 A single end-to-end execution of a Pipeline. Runs are one-shot, idempotent, and
 re-entrant: a Run can be quit and resumed, and side-effecting steps detect work the
-Forge already reflects and skip it. The Forge is the source of truth for everything
+Git provider already reflects and skip it. The Git provider is the source of truth for everything
 that has left the local machine (PR, comments, CI status); the Checkpoint journal
 covers the local, pre-PR portion.
 _Avoid_: Session, job, build
@@ -41,7 +41,7 @@ _Avoid_: State file, cache, checkpoint db, session
 What initiates a Run. The one canonical, in-the-box Trigger is an explicit ship action —
 `tml ship`, or a harness skill / slash-command a person or agent invokes when work is
 done. Triggers are an extensible surface: git-push interception, an agent-stop hook, a
-Forge webhook, or a cron are all additional Triggers a Plugin or Adapter may register,
+Git provider webhook, or a cron are all additional Triggers a Plugin or Adapter may register,
 each funnelling into the same idempotent engine. tml ships none of the implicit Triggers
 by default.
 _Avoid_: Hook, entry point, event
@@ -49,8 +49,8 @@ _Avoid_: Hook, entry point, event
 **Re-entry**:
 A fresh, short-lived Run that picks up asynchronous work after the initial ship —
 typically responding to PR comments or reacting to CI completion. Fired by a poll, a
-Forge webhook, a harness hook, or by hand; each re-entry recomputes what remains from
-the Forge. A long-lived `--watch` is merely a loop of re-entries; a multi-PR daemon is
+Git provider webhook, a harness hook, or by hand; each re-entry recomputes what remains from
+the Git provider. A long-lived `--watch` is merely a loop of re-entries; a multi-PR daemon is
 a non-goal.
 _Avoid_: Resume, retrigger, wake
 
@@ -60,34 +60,34 @@ next; steps may delegate work to an agent but do not seize control.
 
 **Provider**:
 A pluggable external capability a Step calls into, selected by name in `tml.json` from a
-registry the binary ships (`"harness": "pi"`, `"forge": "github"`); Plugins can register
+registry the binary ships (`"harness": "pi"`, `"gitProvider": "github"`); Plugins can register
 more. The two
-kinds — Harness (run an agent task) and Forge (the external code-host; GitHub first) — are
+kinds — Harness (run an agent task) and Git provider (the external code-host; GitHub first) — are
 *distinct, typed domain interfaces*, deliberately NOT collapsed into one generic interface
 (that would forfeit the type safety behind [[0003-declared-artifacts]]). What they share
 is not their domain shape but that each is a configured, typed domain interface. They
-differ on the temporal axis: the Forge *polls* — its eventually-consistent reads (CI
+differ on the temporal axis: the Git provider *polls* — its eventually-consistent reads (CI
 settling, a PR becoming mergeable) return a Pending driven by `until` — whereas the
 Harness *streams* — `agent.run` pushes progress and resolves a result, never a Pending
-([[0009-harness-streams-forge-polls]]). Git is *not* a Provider — there is only one git, so the
+([[0009-harness-streams-git-provider-polls]]). Git is *not* a Provider — there is only one git, so the
 engine exposes it natively as `ctx.git` rather than as a configured, swappable interface
 ([[0007-git-is-native-not-a-provider]]).
 _Avoid_: Backend, driver, adapter, integration
 
 **Pending**:
 The result type for an eventually-consistent, *pollable* Provider operation — CI settling,
-a PR becoming mergeable. These are Forge reads: external state with a cheap "is it there
+a PR becoming mergeable. These are Git provider reads: external state with a cheap "is it there
 yet?" check. The engine owns a single `until(pending, {every, timeout})` primitive that
 polls any Pending to resolution, so the pollable / synchronous distinction lives in the
 *result type*, not in a per-Provider poll loop. Synchronous operations just return a
 Promise. A Harness agent task is *not* a Pending — it streams and resolves a result, not a
-thing you poll ([[0009-harness-streams-forge-polls]]).
+thing you poll ([[0009-harness-streams-git-provider-polls]]).
 _Avoid_: Future, deferred, task, poller
 
 **Harness**:
 The Provider that runs an AI coding agent. tml calls `agent.run(task)`, which streams the
 agent's activity via `onProgress` and resolves a `Promise` with the result — it does not
-return a pollable Pending ([[0009-harness-streams-forge-polls]]). Each `run` executes one
+return a pollable Pending ([[0009-harness-streams-git-provider-polls]]). Each `run` executes one
 isolated agent task and must not continue prior conversational state unless a future explicit
 option requests continuation. The harness is Claude Code, opencode, codex, pi, etc.,
 abstracted behind one interface. Each gets its own small package that shells out to that
@@ -100,7 +100,7 @@ also be *hosted inside* a harness as a plugin. The Provider abstraction is the H
 "agent," naming the call-site object rather than the abstraction.
 _Avoid_: Model, LLM, assistant, agent (when naming the abstraction — the interface is Harness)
 
-**Forge**:
+**Git provider**:
 The Provider for the external code host where PRs, reviews, and CI live. GitHub is the
 first and only initial implementation.
 _Avoid_: Remote, host, SCM provider, platform
@@ -170,7 +170,7 @@ _Avoid_: Feature branch (too generic), ship-<sha> (only the `auto` mode's name s
 **Spent branch**:
 A feature branch whose PR has already merged or closed — so it's the wrong place for new work
 (you stayed on it instead of switching back to the default branch). The `branch` Step detects this
-by asking the Forge for the branch's PR state (a squash-merge never makes the feature commits
+by asking the Git provider for the branch's PR state (a squash-merge never makes the feature commits
 ancestors of the default branch, so git alone can't tell), then cuts a fresh Ship branch off the
 freshly fetched default branch.
 _Avoid_: Stale branch, dead branch, merged branch (only one of the spent states)
@@ -200,7 +200,7 @@ _Avoid_: Control code, directive, command, branch (the mechanism is goto)
 **Ask**:
 The escalation primitive a Step uses to request a human (or agent) decision. It resolves
 against whatever channel the run context offers: an inline prompt in the TUI when a
-human is watching; a Forge comment that *suspends* the Run when headless. A reply —
+human is watching; a Git provider comment that *suspends* the Run when headless. A reply —
 from a person or an agent — becomes a Re-entry that resumes the Run at the suspended
 Step. An unanswered Ask is simply a suspended Run, not a failure.
 _Avoid_: Prompt, confirm, question

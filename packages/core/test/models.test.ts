@@ -10,7 +10,7 @@ import type { RunEvent } from "../src/events.ts";
 import type { ModelMap, Pipeline } from "../src/pipeline.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
-import { FakeForge, FakeHarness } from "./fakes.ts";
+import { FakeGitProvider, FakeHarness } from "./fakes.ts";
 
 /** A Step that makes one plain agent call (no in-code model). */
 const agentStep = (name: string) =>
@@ -26,7 +26,7 @@ async function runWith(
 ): Promise<RunEvent[]> {
   const engine = createEngine({
     pipeline,
-    providers: { forge: new FakeForge(), agent: harness },
+    providers: { gitProvider: new FakeGitProvider(), agent: harness },
     ...(models !== undefined ? { models } : {}),
   });
   const events: RunEvent[] = [];
@@ -78,7 +78,7 @@ describe("model selection — the resolution cascade", () => {
 describe("model selection — assembly-time validation", () => {
   const cfg = (pipeline: Pipeline, models: ModelMap) => ({
     pipeline,
-    providers: { forge: new FakeForge(), agent: new FakeHarness() },
+    providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
     models,
   });
 
@@ -144,7 +144,7 @@ describe("model selection — run-start value validation (gated on listModels)",
     };
     const engine = createEngine({
       pipeline: [agentStep("review")],
-      providers: { forge: new FakeForge(), agent: harness },
+      providers: { gitProvider: new FakeGitProvider(), agent: harness },
       models: { review: "anything-goes" },
     });
     const events: RunEvent[] = [];

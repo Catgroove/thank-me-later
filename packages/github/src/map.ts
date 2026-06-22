@@ -1,4 +1,4 @@
-// Pure mapping layer: GitHub `gh` JSON → core Forge entities. No `gh`, no `cwd`,
+// Pure mapping layer: GitHub `gh` JSON → core GitProvider entities. No `gh`, no `cwd`,
 // no I/O — every function takes already-parsed JSON and returns a core entity, so
 // the enum tables here are the unit of correctness (see test/map.test.ts).
 //

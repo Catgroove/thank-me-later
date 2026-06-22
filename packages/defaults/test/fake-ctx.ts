@@ -1,4 +1,4 @@
-// Test doubles for unit-testing a single `step.run(ctx)` in isolation. Core's FakeForge /
+// Test doubles for unit-testing a single `step.run(ctx)` in isolation. Core's FakeGitProvider /
 // FakeHarness live in its test dir (not on its public surface), so the defaults package
 // keeps its own minimal, call-recording fakes mirroring those shapes — plus a FakeGit
 // (core's Git is real, so it ships no fake). `fakeCtx` assembles them into a `Ctx`.
@@ -10,7 +10,7 @@ import {
   type CheckRun,
   type CommitResult,
   type Ctx,
-  type Forge,
+  type GitProvider,
   type Git,
   type GitStatus,
   type Harness,
@@ -105,7 +105,7 @@ function settled<T>(value: T): Pending<T> {
   return { poll: () => Promise.resolve({ done: true as const, value }) };
 }
 
-export class FakeForge implements Forge {
+export class FakeGitProvider implements GitProvider {
   readonly opened: OpenPullRequestInput[] = [];
   /** When set, `findPullRequest` returns this (the idempotent-skip path). */
   existing: PullRequest | null = null;
@@ -120,7 +120,7 @@ export class FakeForge implements Forge {
     const number = this.nextNumber++;
     return Promise.resolve({
       number,
-      url: `https://forge.test/pr/${number}`,
+      url: `https://git-provider.test/pr/${number}`,
       head: input.head,
       base: input.base,
       title: input.title,
@@ -132,7 +132,7 @@ export class FakeForge implements Forge {
     });
   }
   getPullRequest(prNumber: number): Promise<PullRequest> {
-    return Promise.reject(new Error(`fake forge stores no PR #${prNumber}`));
+    return Promise.reject(new Error(`fake Git provider stores no PR #${prNumber}`));
   }
   getChecks(_prNumber: number): Pending<CheckRun[]> {
     return settled(this.checks);
@@ -157,7 +157,7 @@ export class FakeHarness implements Harness {
 
 export interface FakeCtxParts {
   git?: Git;
-  forge?: Forge;
+  gitProvider?: GitProvider;
   agent?: Harness;
   /** Artifact-name → value, for `ctx.read`. */
   reads?: Record<string, unknown>;
@@ -185,7 +185,7 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
       return reads[name] as never;
     },
     git: parts.git ?? new FakeGit(),
-    forge: parts.forge ?? new FakeForge(),
+    gitProvider: parts.gitProvider ?? new FakeGitProvider(),
     agent: parts.agent ?? new FakeHarness(),
     signal,
     until: (pending, opts) => until(pending, { every: 1, ...opts, signal }),

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   AssemblyError,
   createAssembly,
-  type Forge,
-  type ForgeFactory,
+  type GitProvider,
+  type GitProviderFactory,
   type Harness,
   type HarnessFactory,
   type Step,
@@ -11,7 +11,7 @@ import {
 
 // Minimal Provider stand-ins — assembly only cares about *which* factory ran and with what cwd,
 // never about Provider behavior, so a tagged object cast to the interface is enough.
-const fakeForge = (tag: string): Forge => ({ tag }) as unknown as Forge;
+const fakeGitProvider = (tag: string): GitProvider => ({ tag }) as unknown as GitProvider;
 const fakeHarness = (tag: string): Harness => ({ tag }) as unknown as Harness;
 const tagOf = (provider: unknown): string => (provider as { tag: string }).tag;
 
@@ -25,7 +25,7 @@ const step = (name: string): Step => ({
 /** An assembly with the built-in providers seeded, as the host does before running plugins. */
 function seeded(selection: Parameters<typeof createAssembly>[0], cwd = "/repo") {
   const a = createAssembly(selection, cwd);
-  a.tml.registerForge("github", (c) => fakeForge(`github@${c}`));
+  a.tml.registerGitProvider("github", (c) => fakeGitProvider(`github@${c}`));
   a.tml.registerHarness("pi", (c) => fakeHarness(`pi@${c}`));
   return a;
 }
@@ -36,7 +36,7 @@ describe("createAssembly", () => {
     a.tml.pipeline.append(step("a"), step("b"), step("c"));
     const config = a.build();
     expect(config.pipeline.map((s) => s.name)).toEqual(["a", "b", "c"]);
-    expect(tagOf(config.providers.forge)).toBe("github@/repo");
+    expect(tagOf(config.providers.gitProvider)).toBe("github@/repo");
     expect(tagOf(config.providers.agent)).toBe("pi@/repo");
     expect(config.models).toBeUndefined();
   });
@@ -73,11 +73,11 @@ describe("createAssembly", () => {
   });
 
   test("an explicit provider name selects its factory; an unknown name throws", () => {
-    const a = createAssembly({ forge: "gitlab", harness: "claude" }, "/repo");
-    a.tml.registerForge("gitlab", () => fakeForge("gitlab"));
+    const a = createAssembly({ gitProvider: "gitlab", harness: "claude" }, "/repo");
+    a.tml.registerGitProvider("gitlab", () => fakeGitProvider("gitlab"));
     a.tml.registerHarness("claude", () => fakeHarness("claude"));
     a.tml.pipeline.append(step("a"));
-    expect(tagOf(a.build().providers.forge)).toBe("gitlab");
+    expect(tagOf(a.build().providers.gitProvider)).toBe("gitlab");
     expect(tagOf(a.build().providers.agent)).toBe("claude");
 
     const missing = seeded({ harness: "nope" });
@@ -94,20 +94,20 @@ describe("createAssembly", () => {
 
   test("factories receive the assembly cwd", () => {
     const seen: string[] = [];
-    const forge: ForgeFactory = (c) => {
-      seen.push(`forge:${c}`);
-      return fakeForge(c);
+    const gitProvider: GitProviderFactory = (c) => {
+      seen.push(`gitProvider:${c}`);
+      return fakeGitProvider(c);
     };
     const harness: HarnessFactory = (c) => {
       seen.push(`harness:${c}`);
       return fakeHarness(c);
     };
     const a = createAssembly({}, "/work/dir");
-    a.tml.registerForge("github", forge);
+    a.tml.registerGitProvider("github", gitProvider);
     a.tml.registerHarness("pi", harness);
     a.tml.pipeline.append(step("a"));
     a.build();
-    expect(seen).toEqual(["forge:/work/dir", "harness:/work/dir"]);
+    expect(seen).toEqual(["gitProvider:/work/dir", "harness:/work/dir"]);
   });
 
   test("build() is idempotent — disable does not mutate the shared pipeline", () => {

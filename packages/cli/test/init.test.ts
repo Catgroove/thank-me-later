@@ -18,7 +18,7 @@ afterEach(() => {
 const EXPECTED = `{
   "$schema": "https://raw.githubusercontent.com/Catgroove/thank-me-later/master/packages/cli/schema/tml.schema.json",
   "harness": "pi",
-  "forge": "github",
+  "gitProvider": "github",
   "branch": "ai"
 }
 `;
@@ -33,7 +33,11 @@ describe("init", () => {
     const written = readFileSync(join(dir, "tml.json"), "utf8");
     expect(written).toBe(EXPECTED);
     // The scaffold parses and carries the documented defaults.
-    expect(JSON.parse(written)).toMatchObject({ harness: "pi", forge: "github", branch: "ai" });
+    expect(JSON.parse(written)).toMatchObject({
+      harness: "pi",
+      gitProvider: "github",
+      branch: "ai",
+    });
     expect(lines.join("\n")).toContain("wrote");
   });
 

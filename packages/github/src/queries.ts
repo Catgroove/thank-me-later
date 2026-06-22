@@ -1,4 +1,4 @@
-// `gh` argv builders + the GraphQL queries the Forge provider runs. Pure: each
+// `gh` argv builders + the GraphQL queries the Git provider runs. Pure: each
 // builder returns the argv array passed to a `GhRunner`. `gh` expands the
 // `{owner}`/`{repo}` placeholders in `-F` values from the repo in `cwd`, so the
 // queries take them as variables without a separate repo-resolution call.

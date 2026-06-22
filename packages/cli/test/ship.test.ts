@@ -53,7 +53,7 @@ describe("tml CLI", () => {
 });
 
 describe("assembleShipConfig", () => {
-  test("zero-config: the default pipeline with the GitHub Forge + pi Harness", async () => {
+  test("zero-config: the default pipeline with the GitHub Git provider + pi Harness", async () => {
     const config = await assembleShipConfig("/repo", NO_CONFIG);
 
     expect(config.pipeline.map((s) => s.name)).toEqual([
@@ -71,7 +71,7 @@ describe("assembleShipConfig", () => {
       "open-pr",
       "ci-wait",
     ]);
-    expect(typeof config.providers.forge.openPullRequest).toBe("function");
+    expect(typeof config.providers.gitProvider.openPullRequest).toBe("function");
     expect(typeof config.providers.agent.run).toBe("function");
     expect(config.models).toBeUndefined();
   });

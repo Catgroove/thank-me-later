@@ -4,7 +4,7 @@
 // The work lands as a clean history — your change, then tml's fixes in their own commits. `rebase`
 // runs once the change is committed (clean worktree) so the checks, review, and CI all see the
 // freshly fetched base; turn it off with `disable: ["rebase"]` in tml.json.
-// It registers no Providers (the host wires Forge + Harness by name) and names no models
+// It registers no Providers (the host wires Git provider + Harness by name) and names no models
 // (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
 // (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
 // binary, so it imports its own step factories from @tml/core — only third-party local plugins

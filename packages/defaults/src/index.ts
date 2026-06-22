@@ -5,7 +5,7 @@
 // assembled by the `tmlDefaults` Plugin (an injected-API `(tml) => …`). Steps and artifact
 // tokens are also exported so plugin authors can reuse or replace individual pieces. The plugin
 // names no models (portable by referencing nothing) and supplies no Providers — the host wires
-// Forge + Harness by name.
+// Git provider + Harness by name.
 
 export { branchName, prBody, prTitle, pullRequest, reviewSummary } from "./artifacts.ts";
 export { default, tmlDefaults } from "./plugin.ts";

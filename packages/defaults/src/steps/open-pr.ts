@@ -29,13 +29,13 @@ export function openPrStep(): Step {
       await ctx.git.push({ branch: head, force: true }); // push the feature branch we ship under
 
       // Reuse only an open PR. A merged/closed PR for this head is spent — open a fresh one.
-      const existing = await ctx.forge.findPullRequest(head);
+      const existing = await ctx.gitProvider.findPullRequest(head);
       if (existing && existing.state === "open") return { pullRequest: existing };
 
       const base = await ctx.git.defaultBranch();
       const title = ctx.read(prTitle);
       const body = withReview(ctx.read(prBody), ctx.read(reviewSummary));
-      const pr = await ctx.forge.openPullRequest({ head, base, title, body });
+      const pr = await ctx.gitProvider.openPullRequest({ head, base, title, body });
       return { pullRequest: pr };
     },
   });

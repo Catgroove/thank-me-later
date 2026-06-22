@@ -1,6 +1,6 @@
-// Forge — the external code-host Provider (GitHub first). The canonical
+// GitProvider - the external code-host Provider (GitHub first). The canonical
 // dev-lifecycle entities (PullRequest, CheckRun, ReviewThread, mergeable) live
-// here in core as first-class types; a host adapter maps a specific Forge onto
+// here in core as first-class types; a host adapter maps a specific Git provider onto
 // them. Reads are hybrid: getPullRequest returns a full snapshot for
 // reconstruction, getChecks is the cheap, pollable call the ci-wait loop drives.
 
@@ -42,11 +42,11 @@ export interface OpenPullRequestInput {
   readonly body: string;
 }
 
-export interface Forge {
+export interface GitProvider {
   /** Idempotency hook: is there already a PR for this head branch? */
   findPullRequest(head: string): Promise<PullRequest | null>;
   openPullRequest(input: OpenPullRequestInput): Promise<PullRequest>;
-  /** Full snapshot, for reconstructing Run state from the Forge. */
+  /** Full snapshot, for reconstructing Run state from the Git provider. */
   getPullRequest(prNumber: number): Promise<PullRequest>;
   /** Cheap and pollable — the ci-wait loop calls this through `until`. */
   getChecks(prNumber: number): Pending<CheckRun[]>;

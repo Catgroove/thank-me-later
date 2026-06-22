@@ -14,9 +14,9 @@
       "type": "string",
       "description": "Harness Provider that runs agent tasks, by registered name. Default: \"pi\"."
     },
-    "forge": {
+    "gitProvider": {
       "type": "string",
-      "description": "Forge Provider for the code host (PRs, CI), by registered name. Default: \"github\"."
+      "description": "Git provider for the code host (PRs, CI), by registered name. Default: \"github\"."
     },
     "branch": {
       "enum": ["ai", "auto", "require"],

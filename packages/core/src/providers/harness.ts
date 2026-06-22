@@ -2,7 +2,7 @@
 // `agent.run(task)` and the agent does the work; the harness is Claude Code,
 // opencode, codex, pi, etc., behind one interface. An agent *streams*, so `run`
 // returns a `Promise<AgentResult>` that resolves when the turn ends — it is not a
-// pollable `Pending` (the Harness streams, only the Forge polls). Each
+// pollable `Pending` (the Harness streams, only the GitProvider polls). Each
 // `run` call is one isolated agent task: it must not continue prior
 // conversational state unless a future option explicitly asks for that. A Step
 // runs on the Harness's own default model unless it pins a raw, harness-specific id.

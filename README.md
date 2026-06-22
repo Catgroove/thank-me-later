@@ -82,9 +82,9 @@ bun test           # Bun's test runner
 
 | Package | Description |
 | --- | --- |
-| `@tml/core` | Engine: step contract, artifacts, providers (Git/Forge/Harness), event stream |
+| `@tml/core` | Engine: step contract, artifacts, providers (Git/Git provider/Harness), event stream |
 | `@tml/defaults` | The blessed default pipeline plugin — branch modes, checks, review, commits, PR, CI |
-| `@tml/github` | GitHub Forge provider (via `gh`) |
+| `@tml/github` | GitHub Git provider (via `gh`) |
 | `@tml/pi` | pi Harness adapter |
 | `@tml/view` | Presentation: folds the event stream into view state + CLI/plain renderers |
 | `tml` | CLI binary (`tml ship`, `tml init`) |

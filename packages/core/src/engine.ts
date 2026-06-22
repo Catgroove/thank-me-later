@@ -13,7 +13,7 @@
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
 import type { RunEvent } from "./events.ts";
-import type { Forge } from "./providers/forge.ts";
+import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
@@ -96,7 +96,7 @@ async function drive(
     (() =>
       Promise.reject(
         new NotImplementedError(
-          "headless ask (suspend-to-Forge) is not implemented in this release",
+          "headless ask (suspend to Git provider) is not implemented in this release",
         ),
       ));
 
@@ -290,13 +290,13 @@ function makeContext(
       : {}),
   };
 
-  // Wrap the Forge so the Run's pull request — freshly opened, or rediscovered on a re-run —
+  // Wrap the Git provider so the Run's pull request — freshly opened, or rediscovered on a re-run —
   // funnels a `pr:opened` event into the one event stream, the same way `agent` funnels progress.
   // The Step stays oblivious; consumers can surface the PR link at the end of the Run. The two
   // read-only methods are delegated verbatim (explicit delegation, not spread, so a class-based
   // Provider keeps its prototype methods).
-  const base = providers.forge;
-  const forge: Forge = {
+  const base = providers.gitProvider;
+  const gitProvider: GitProvider = {
     async openPullRequest(input) {
       const pr = await base.openPullRequest(input);
       queue.push({ type: "pr:opened", url: pr.url });
@@ -314,7 +314,7 @@ function makeContext(
   return {
     read: read as Ctx["read"],
     git,
-    forge,
+    gitProvider,
     agent,
     signal,
     until: (pending, untilOpts) =>

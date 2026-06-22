@@ -11,7 +11,7 @@ export { type Config, type ModelMap, type Pipeline, type Providers } from "./pip
 export {
   type Assembly,
   createAssembly,
-  type ForgeFactory,
+  type GitProviderFactory,
   type HarnessFactory,
   type PipelineBuilder,
   type Plugin,
@@ -28,12 +28,12 @@ export {
 } from "./providers/git.ts";
 export type {
   CheckRun,
-  Forge,
+  GitProvider,
   Mergeable,
   OpenPullRequestInput,
   PullRequest,
   ReviewThread,
-} from "./providers/forge.ts";
+} from "./providers/git-provider.ts";
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions, NotImplementedError } from "./engine.ts";

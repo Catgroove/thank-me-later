@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { until } from "../src/pending.ts";
-import { FakeForge, FakeHarness } from "./fakes.ts";
+import { FakeGitProvider, FakeHarness } from "./fakes.ts";
 
-describe("FakeForge", () => {
+describe("FakeGitProvider", () => {
   test("findPullRequest is null until one is opened, then returns it (idempotency hook)", async () => {
-    const forge = new FakeForge();
-    expect(await forge.findPullRequest("feature/x")).toBeNull();
+    const gitProvider = new FakeGitProvider();
+    expect(await gitProvider.findPullRequest("feature/x")).toBeNull();
 
-    const pr = await forge.openPullRequest({
+    const pr = await gitProvider.openPullRequest({
       head: "feature/x",
       base: "main",
       title: "t",
@@ -15,13 +15,13 @@ describe("FakeForge", () => {
     });
     expect(pr.number).toBe(1);
 
-    const found = await forge.findPullRequest("feature/x");
+    const found = await gitProvider.findPullRequest("feature/x");
     expect(found?.number).toBe(1);
   });
 
   test("getChecks settles through until after the configured number of polls", async () => {
-    const forge = new FakeForge({ checksSettleAfter: 3 });
-    const checks = await until(forge.getChecks(), { every: 1 });
+    const gitProvider = new FakeGitProvider({ checksSettleAfter: 3 });
+    const checks = await until(gitProvider.getChecks(), { every: 1 });
     expect(checks[0]?.conclusion).toBe("success");
   });
 });

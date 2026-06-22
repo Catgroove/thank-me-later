@@ -5,20 +5,20 @@
 // produce the same `Config` the engine consumes.
 //
 // This is what lets a Plugin extend tml WITHOUT importing `@tml/core`: `defineStep`,
-// `defineArtifact`, the pipeline patch ops, and `register{Forge,Harness}` are all reachable off
+// `defineArtifact`, the pipeline patch ops, and `register{GitProvider,Harness}` are all reachable off
 // the injected `tml`. The declarative knobs (`tml.json`) arrive as `Selection`; JSON may only
 // toggle/select (provider names, `branch`, `models`, `disable`) — reshaping the pipeline
 // (insert/replace/reorder) is a Plugin's job.
 
 import { defineArtifact } from "./artifact.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
-import type { Forge } from "./providers/forge.ts";
+import type { GitProvider } from "./providers/git-provider.ts";
 import type { Harness } from "./providers/harness.ts";
 import { type Step, defineStep } from "./step.ts";
 import { AssemblyError } from "./validate.ts";
 
-/** Builds a Forge bound to the Run's working dir. Registered by name; selected from `tml.json`. */
-export type ForgeFactory = (cwd: string) => Forge;
+/** Builds a GitProvider bound to the Run's working dir. Registered by name; selected from `tml.json`. */
+export type GitProviderFactory = (cwd: string) => GitProvider;
 /** Builds a Harness bound to the Run's working dir. Registered by name; selected from `tml.json`. */
 export type HarnessFactory = (cwd: string) => Harness;
 
@@ -29,7 +29,7 @@ export type HarnessFactory = (cwd: string) => Harness;
  */
 export interface Selection {
   readonly harness?: string;
-  readonly forge?: string;
+  readonly gitProvider?: string;
   readonly branch?: string;
   readonly models?: ModelMap;
   readonly disable?: readonly string[];
@@ -56,7 +56,7 @@ export interface Tml {
   readonly defineStep: typeof defineStep;
   readonly defineArtifact: typeof defineArtifact;
   readonly pipeline: PipelineBuilder;
-  registerForge(name: string, factory: ForgeFactory): void;
+  registerGitProvider(name: string, factory: GitProviderFactory): void;
   registerHarness(name: string, factory: HarnessFactory): void;
 }
 
@@ -69,12 +69,12 @@ export interface Assembly {
   build(): Config;
 }
 
-const DEFAULT_FORGE = "github";
+const DEFAULT_GIT_PROVIDER = "github";
 const DEFAULT_HARNESS = "pi";
 
 export function createAssembly(selection: Selection, cwd: string): Assembly {
   const steps: Step[] = [];
-  const forges = new Map<string, ForgeFactory>();
+  const gitProviders = new Map<string, GitProviderFactory>();
   const harnesses = new Map<string, HarnessFactory>();
 
   const indexOf = (stepName: string): number => {
@@ -110,8 +110,8 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
     defineStep,
     defineArtifact,
     pipeline,
-    registerForge(name, factory) {
-      forges.set(name, factory);
+    registerGitProvider(name, factory) {
+      gitProviders.set(name, factory);
     },
     registerHarness(name, factory) {
       harnesses.set(name, factory);
@@ -135,11 +135,11 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
         out.splice(i, 1);
       }
 
-      const forgeName = selection.forge ?? DEFAULT_FORGE;
-      const forge = forges.get(forgeName);
-      if (forge === undefined) {
+      const gitProviderName = selection.gitProvider ?? DEFAULT_GIT_PROVIDER;
+      const gitProvider = gitProviders.get(gitProviderName);
+      if (gitProvider === undefined) {
         throw new AssemblyError(
-          `forge "${forgeName}" is not registered (have: ${listKeys(forges)}).`,
+          `gitProvider "${gitProviderName}" is not registered (have: ${listKeys(gitProviders)}).`,
         );
       }
       const harnessName = selection.harness ?? DEFAULT_HARNESS;
@@ -150,7 +150,7 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
         );
       }
 
-      const providers: Providers = { forge: forge(cwd), agent: harness(cwd) };
+      const providers: Providers = { gitProvider: gitProvider(cwd), agent: harness(cwd) };
       const models = withoutDisabledModels(selection.models, selection.disable);
       return {
         pipeline: out,

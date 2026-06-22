@@ -176,10 +176,10 @@ describe("present", () => {
     const view = fold([
       { type: "run:started", pipeline: ["open-pr"] },
       { type: "step:started", step: "open-pr" },
-      { type: "pr:opened", url: "https://forge.test/pr/7" },
+      { type: "pr:opened", url: "https://git-provider.test/pr/7" },
       { type: "step:finished", step: "open-pr" },
       { type: "run:finished" },
     ]);
-    expect(view.prUrl).toBe("https://forge.test/pr/7");
+    expect(view.prUrl).toBe("https://git-provider.test/pr/7");
   });
 });
