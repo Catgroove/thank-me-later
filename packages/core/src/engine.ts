@@ -98,7 +98,8 @@ async function drive(
   const { pipeline, providers, models } = config;
   const cwd = opts.cwd ?? process.cwd();
   const git = opts.git ?? createGit(cwd);
-  const journal = opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
+  const journal =
+    opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
   const runJournal = runJournalFrom(journal);
   const snapshot = await runJournal?.begin({ pipeline: pipeline.map((s) => s.name) });
   const completed = snapshot?.completedSteps ?? new Set<string>();

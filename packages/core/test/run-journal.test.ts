@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkoutKeyForPath, createRunJournal } from "../src/run-journal.ts";
@@ -17,6 +17,10 @@ afterEach(() => {
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function mode(path: string): number {
+  return statSync(path).mode & 0o777;
 }
 
 describe("RunJournal", () => {
@@ -69,5 +73,52 @@ describe("RunJournal", () => {
     expect(snapshot.metadata.runId).toBe("run-1");
     expect([...snapshot.completedSteps]).toEqual(["produce"]);
     expect(snapshot.artifacts.get("raw")).toBe("hi");
+  });
+
+  test("creates journal directories and files with private permissions", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const journal = createRunJournal({ stateHome, checkoutPath, runId: "private" });
+
+    await journal.begin({ pipeline: ["produce"] });
+    await journal.recordArtifact({ step: "produce", artifact: "raw", value: "hi" });
+    await journal.append({
+      step: "produce",
+      index: 0,
+      trigger: "initial",
+      findings: [],
+    });
+    await journal.recordEvent({ type: "run:started", pipeline: ["produce"] });
+
+    const checkoutStateDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath));
+    const runDir = join(checkoutStateDir, "runs", "private");
+    expect(mode(join(stateHome, "tml"))).toBe(0o700);
+    expect(mode(checkoutStateDir)).toBe(0o700);
+    expect(mode(join(checkoutStateDir, "runs"))).toBe(0o700);
+    expect(mode(runDir)).toBe(0o700);
+    expect(mode(join(runDir, "artifacts"))).toBe(0o700);
+    expect(mode(join(runDir, "run.json"))).toBe(0o600);
+    expect(mode(join(runDir, "artifacts", "raw.json"))).toBe(0o600);
+    expect(mode(join(runDir, "rounds.jsonl"))).toBe(0o600);
+    expect(mode(join(runDir, "events.jsonl"))).toBe(0o600);
+  });
+
+  test("rejects run ids that are not safe path segments", () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+
+    expect(() => createRunJournal({ stateHome, checkoutPath, runId: "../escape" })).toThrow(
+      /runId/,
+    );
+    expect(() => createRunJournal({ stateHome, checkoutPath, runId: ".." })).toThrow(/runId/);
+    expect(() => createRunJournal({ stateHome, checkoutPath, runId: "nested/run" })).toThrow(
+      /runId/,
+    );
+    expect(() => createRunJournal({ stateHome, checkoutPath, runId: "run\\nested" })).toThrow(
+      /runId/,
+    );
+    expect(() => createRunJournal({ stateHome, checkoutPath, runId: "run..nested" })).toThrow(
+      /runId/,
+    );
   });
 });

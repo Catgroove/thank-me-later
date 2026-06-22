@@ -23,7 +23,7 @@ _Avoid_: Task, stage, job, action
 A single end-to-end execution of a Pipeline. Runs are one-shot, idempotent, and
 re-entrant: a Run can be quit and resumed, and side-effecting steps detect work the
 Git provider already reflects and skip it. The Git provider is the source of truth for everything
-that has left the local machine (PR, comments, CI status); the Checkpoint journal
+that has left the local machine (PR, comments, CI status); the Run Journal
 covers the local, pre-PR portion.
 _Avoid_: Session, job, build
 
