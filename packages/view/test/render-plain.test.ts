@@ -92,6 +92,30 @@ describe("createPlainRenderer", () => {
     expect(renderLines(events, { verbose: true })).toContain("    · ci: build → success");
   });
 
+  test("approval prompts show the structured finding count", () => {
+    const lines = renderLines([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      {
+        type: "approval:pending",
+        step: "review",
+        input: {
+          prompt: "Review findings",
+          findings: [
+            {
+              id: "review:1",
+              severity: "warning",
+              action: "auto-fix",
+              title: "Fix me",
+              detail: "Needs a fix.",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(lines).toContain("  ? review: Review findings (1 finding)");
+  });
+
   test("shows a short artifact inline, routes a narrative one to the results block", () => {
     const lines = renderLines([
       { type: "run:started", pipeline: ["branch", "review", "open-pr"] },

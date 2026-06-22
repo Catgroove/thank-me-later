@@ -3,8 +3,9 @@
 // declared — and the engine has already guaranteed at assembly time that a
 // producer exists. Providers are the three distinct, typed domain interfaces;
 // `until` is the engine-owned temporal primitive; `ask` escalates a
-// decision (free-text in this release).
+// free-text decision; `approveFindings` escalates a structured finding gate.
 
+import type { ApprovalDecision, ApproveFindingsInput } from "./approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Pending } from "./pending.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
@@ -32,6 +33,9 @@ export interface Ctx<
 
   /** Escalate a decision to a human or agent; resolves to their free-text reply. */
   ask(prompt: string): Promise<string>;
+
+  /** Escalate a finding-based gate; resolves to a structured approval decision. */
+  approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision>;
 
   /** Emit a progress line into the Run's event stream. */
   log(message: string): void;

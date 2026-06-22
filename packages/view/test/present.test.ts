@@ -172,6 +172,19 @@ describe("present", () => {
     expect(after).toEqual(base);
   });
 
+  test("approval:pending carries no display state (renderers seal it from the event)", () => {
+    const base = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+    ]);
+    const after = present(base, {
+      type: "approval:pending",
+      step: "review",
+      input: { prompt: "Review findings", findings: [] },
+    });
+    expect(after).toEqual(base);
+  });
+
   test("pr:opened records the PR URL for the run-end line", () => {
     const view = fold([
       { type: "run:started", pipeline: ["open-pr"] },

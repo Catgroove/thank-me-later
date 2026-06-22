@@ -217,6 +217,63 @@ describe("engine - flow signals, ask, and failure", () => {
     expect(new NotImplementedError("x")).toBeInstanceOf(Error);
   });
 
+  test("ctx.approveFindings emits approval:pending and resolves via the injected responder", async () => {
+    const finding = makeFinding("approval", {
+      severity: "warning",
+      action: "auto-fix",
+      title: "Fix me",
+      detail: "Needs a fix.",
+    });
+    const approval = defineStep({
+      name: "approval",
+      async run(ctx) {
+        const decision = await ctx.approveFindings({
+          prompt: "Review findings",
+          findings: [finding],
+          selectedFindingIds: [finding.id],
+          context: "round history",
+        });
+        ctx.log(`decision=${decision.action}`);
+        return {};
+      },
+    });
+    const events = await collect(
+      createEngine(
+        {
+          pipeline: [approval],
+          providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
+        },
+        {
+          approveFindings: () =>
+            Promise.resolve({ action: "fix", selectedFindingIds: [finding.id] }),
+        },
+      ),
+    );
+    expect(events).toContainEqual({
+      type: "approval:pending",
+      step: "approval",
+      input: {
+        prompt: "Review findings",
+        findings: [finding],
+        selectedFindingIds: [finding.id],
+        context: "round history",
+      },
+    });
+    expect(events).toContainEqual({ type: "step:log", step: "approval", message: "decision=fix" });
+  });
+
+  test("the default headless structured approval is NotImplemented", async () => {
+    const approvals = defineStep({
+      name: "approvals",
+      run: (ctx) =>
+        ctx.approveFindings({ prompt: "Review findings", findings: [] }).then(() => ({})),
+    });
+    const events = await collect(engineFor([approvals]));
+    const last = events.at(-1);
+    expect(last?.type).toBe("run:failed");
+    expect(last && "error" in last ? last.error : "").toContain("structured approval");
+  });
+
   test("a thrown Step error surfaces as run:failed", async () => {
     const boom = defineStep({
       name: "boom",

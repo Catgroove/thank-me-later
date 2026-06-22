@@ -10,6 +10,7 @@
 // Run is cancellable via an `AbortSignal`; an aborted Run ends with
 // `run:cancelled`, distinct from the `cancel()` flow signal a Step returns.
 
+import type { ApprovalDecision, ApproveFindingsInput } from "./approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
 import type { RunEvent } from "./events.ts";
@@ -41,6 +42,8 @@ export interface EngineOptions {
   git?: Git;
   /** Inline responder for `ctx.ask`. Defaults to the unimplemented headless path. */
   ask?: (prompt: string) => Promise<string>;
+  /** Inline responder for `ctx.approveFindings`. Defaults to the unimplemented headless path. */
+  approveFindings?: (input: ApproveFindingsInput) => Promise<ApprovalDecision>;
   /** External abort: cancels the Run, ending it with `run:cancelled`. */
   signal?: AbortSignal;
   /** Local execution journal. Defaults to the out-of-tree file Run Journal; `false` disables. */
@@ -106,6 +109,14 @@ async function drive(
           "headless ask (suspend to Git provider) is not implemented in this release",
         ),
       ));
+  const approveFindings =
+    opts.approveFindings ??
+    (() =>
+      Promise.reject(
+        new NotImplementedError(
+          "headless structured approval (suspend to Git provider) is not implemented in this release",
+        ),
+      ));
 
   const store = new Map<string, unknown>(snapshot?.artifacts);
   const stepByName = new Map<string, number>(pipeline.map((s, i): [string, number] => [s.name, i]));
@@ -158,7 +169,18 @@ async function drive(
     }
 
     await emit(queue, journal, { type: "step:started", step: step.name });
-    const ctx = makeContext(step, store, providers, git, queue, ask, signal, models, journal);
+    const ctx = makeContext(
+      step,
+      store,
+      providers,
+      git,
+      queue,
+      ask,
+      approveFindings,
+      signal,
+      models,
+      journal,
+    );
 
     let result: Awaited<ReturnType<Step["run"]>>;
     try {
@@ -357,6 +379,7 @@ function makeContext(
   git: Git,
   queue: EventQueue<RunEvent>,
   ask: (prompt: string) => Promise<string>,
+  approveFindings: (input: ApproveFindingsInput) => Promise<ApprovalDecision>,
   signal: AbortSignal,
   models: ModelMap | undefined,
   journal: RunJournal | undefined,
@@ -435,6 +458,12 @@ function makeContext(
       queue.push(event);
       void journal?.recordEvent(event).catch(() => undefined);
       return ask(prompt);
+    },
+    approveFindings(input: ApproveFindingsInput) {
+      const event: RunEvent = { type: "approval:pending", step: step.name, input };
+      queue.push(event);
+      void journal?.recordEvent(event).catch(() => undefined);
+      return approveFindings(input);
     },
     log(message: string) {
       const event: RunEvent = { type: "step:log", step: step.name, message };

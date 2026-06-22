@@ -2,6 +2,15 @@
 // Only what is re-exported here is public; everything else (the flow-signal brand
 // and guard, the run-loop internals) stays private to the package.
 
+export {
+  type ApprovalAction,
+  type ApprovalDecision,
+  type ApproveDecision,
+  type ApproveFindingsInput,
+  type AbortDecision,
+  type FixDecision,
+  type SkipDecision,
+} from "./approval.ts";
 export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
 export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
@@ -69,6 +78,7 @@ export {
   createRunJournal,
   type CreateRunJournalOptions,
   type RunJournal,
+  type RunJournalResumeMode,
   type RunJournalSnapshot,
   type RunMetadata,
   type RunStatus,

@@ -129,6 +129,7 @@ export function present(view: ViewState, event: RunEvent): ViewState {
       };
     }
     case "ask:pending":
+    case "approval:pending":
       // The prompt blocks the Run awaiting input; renderers seal it straight from the event.
       return view;
   }

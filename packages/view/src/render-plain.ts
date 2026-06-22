@@ -18,6 +18,12 @@ function isNarrative(rendered: string): boolean {
   return rendered.includes("\n") || rendered.length > INLINE_MAX;
 }
 
+function approvalPrompt(event: Extract<RunEvent, { type: "approval:pending" }>): string {
+  const count = event.input.findings.length;
+  const suffix = count === 1 ? "1 finding" : `${count} findings`;
+  return `${event.input.prompt} (${suffix})`;
+}
+
 /** Build a plain renderer that emits one line per `writeLine` call (the sink adds newlines). */
 export function createPlainRenderer(
   writeLine: (line: string) => void,
@@ -93,6 +99,10 @@ export function createPlainRenderer(
         case "ask:pending":
           flushText(view);
           writeLine(`  ? ${event.step}: ${event.prompt}`);
+          return;
+        case "approval:pending":
+          flushText(view);
+          writeLine(`  ? ${event.step}: ${approvalPrompt(event)}`);
           return;
         case "step:finished": {
           flushText(view);

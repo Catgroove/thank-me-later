@@ -95,6 +95,12 @@ function isNarrative(rendered: string): boolean {
   return rendered.includes("\n") || rendered.length > INLINE_MAX;
 }
 
+function approvalPrompt(event: Extract<RunEvent, { type: "approval:pending" }>): string {
+  const count = event.input.findings.length;
+  const suffix = count === 1 ? "1 finding" : `${count} findings`;
+  return `${event.input.prompt} (${suffix})`;
+}
+
 const ESC = "\x1b";
 
 // Length of the SGR escape sequence (`ESC [ … m`) starting at `i`, or 0 if none does. Used to
@@ -462,8 +468,15 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
           );
           return;
         case "ask:pending":
-          // The prompt blocks the Run awaiting input, so it must seal — it can't be transient.
+          // The prompt blocks the Run awaiting input, so it must seal - it can't be transient.
           paint([...sealed(), `${STEP_INDENT}? ${event.step}: ${event.prompt}`], liveLine(view));
+          return;
+        case "approval:pending":
+          // Structured approval blocks the Run the same way, but carries findings for a UI.
+          paint(
+            [...sealed(), `${STEP_INDENT}? ${event.step}: ${approvalPrompt(event)}`],
+            liveLine(view),
+          );
           return;
         case "run:finished":
           stopTimer();

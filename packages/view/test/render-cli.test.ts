@@ -317,6 +317,37 @@ describe("createCliRenderer", () => {
     expect(out).toContain("? lint: Fix lint errors?\n"); // sealed (a permanent line ends with \n)
   });
 
+  test("seals a structured approval prompt with the finding count", () => {
+    const out = renderRaw([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      {
+        type: "approval:pending",
+        step: "review",
+        input: {
+          prompt: "Review findings",
+          findings: [
+            {
+              id: "review:1",
+              severity: "warning",
+              action: "auto-fix",
+              title: "Fix me",
+              detail: "Needs a fix.",
+            },
+            {
+              id: "review:2",
+              severity: "error",
+              action: "ask-user",
+              title: "Confirm",
+              detail: "Needs a decision.",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(out).toContain("? review: Review findings (2 findings)\n");
+  });
+
   test("color: wraps results and outcomes in SGR codes when enabled", () => {
     const out = renderRaw(
       [

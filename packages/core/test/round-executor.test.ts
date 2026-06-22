@@ -95,6 +95,9 @@ function fakeCtx(parts: { git?: Git } = {}): { ctx: Ctx; asks: string[] } {
         asks.push(prompt);
         return Promise.resolve("");
       },
+      approveFindings() {
+        return Promise.resolve({ action: "approve" });
+      },
       log() {},
     },
   };

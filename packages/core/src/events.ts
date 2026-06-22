@@ -6,6 +6,7 @@
 // `run:cancelled` is an external Abort (distinct from the `cancel()` flow signal).
 // The `type` is the discriminant, so there is no redundant `ok` flag.
 
+import type { ApproveFindingsInput } from "./approval.ts";
 import type { AgentProgress } from "./providers/harness.ts";
 
 export type RunEvent =
@@ -23,6 +24,7 @@ export type RunEvent =
   | { type: "step:skipped"; step: string }
   | { type: "step:finished"; step: string }
   | { type: "ask:pending"; step: string; prompt: string }
+  | { type: "approval:pending"; step: string; input: ApproveFindingsInput }
   | { type: "run:finished" }
   | { type: "run:cancelled"; step?: string }
   | { type: "run:failed"; step?: string; error: string };

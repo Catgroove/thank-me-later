@@ -6,6 +6,8 @@
 import {
   type AgentResult,
   type AgentRunOpts,
+  type ApprovalDecision,
+  type ApproveFindingsInput,
   type Artifact,
   type CheckRun,
   type CommitResult,
@@ -162,6 +164,7 @@ export interface FakeCtxParts {
   /** Artifact-name → value, for `ctx.read`. */
   reads?: Record<string, unknown>;
   ask?: (prompt: string) => Promise<string>;
+  approveFindings?: (input: ApproveFindingsInput) => Promise<ApprovalDecision>;
   signal?: AbortSignal;
 }
 
@@ -177,6 +180,7 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const reads = parts.reads ?? {};
   const signal = parts.signal ?? new AbortController().signal;
   const ask = parts.ask ?? ((_prompt: string) => Promise.resolve(""));
+  const approveFindings = parts.approveFindings ?? (() => Promise.resolve({ action: "approve" }));
 
   const ctx: Ctx = {
     read(artifact) {
@@ -192,6 +196,9 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
     ask(prompt) {
       asks.push(prompt);
       return ask(prompt);
+    },
+    approveFindings(input) {
+      return approveFindings(input);
     },
     log(message) {
       logs.push(message);
