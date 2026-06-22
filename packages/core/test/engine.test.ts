@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { defineArtifact } from "../src/artifact.ts";
 import { createEngine, type Engine, NotImplementedError } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
-import type { RoundJournal } from "../src/journal.ts";
 import { makeFinding, type RoundRecord } from "../src/round.ts";
 import type { Pipeline } from "../src/pipeline.ts";
+import type { RunJournal } from "../src/run-journal.ts";
 import { cancel, goto, retry, skip } from "../src/signals.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
@@ -65,8 +65,27 @@ describe("engine - happy path", () => {
 
   test("persists completed rounds with engine-assigned step indexes", async () => {
     const records: RoundRecord[] = [];
-    const journal: RoundJournal = {
-      append: (record) => Promise.resolve(void records.push(record)),
+    const journal: RunJournal = {
+      begin: () =>
+        Promise.resolve({
+          metadata: {
+            runId: "test",
+            checkoutKey: "checkout",
+            checkoutPath: "/repo",
+            pipeline: ["review"],
+            status: "running",
+            startedAt: "2026-06-22T00:00:00.000Z",
+            updatedAt: "2026-06-22T00:00:00.000Z",
+            completedSteps: [],
+          },
+          artifacts: new Map(),
+          completedSteps: new Set(),
+        }),
+      recordArtifact: () => Promise.resolve(),
+      recordStepCompleted: () => Promise.resolve(),
+      recordRound: (record) => Promise.resolve(void records.push(record)),
+      recordEvent: () => Promise.resolve(),
+      finish: () => Promise.resolve(),
     };
     const finding = makeFinding("review", {
       severity: "warning",

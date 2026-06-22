@@ -6,7 +6,6 @@ export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
 export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
 export type { Ctx } from "./context.ts";
-export { type RoundJournal, createFileRoundJournal, roundJournalPath } from "./journal.ts";
 export {
   type Finding,
   type FindingAction,
@@ -52,4 +51,13 @@ export type {
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions, NotImplementedError } from "./engine.ts";
+export {
+  checkoutKeyForPath,
+  createRunJournal,
+  type CreateRunJournalOptions,
+  type RunJournal,
+  type RunJournalSnapshot,
+  type RunMetadata,
+  type RunStatus,
+} from "./run-journal.ts";
 export { AssemblyError, validatePipeline } from "./validate.ts";

@@ -1,6 +1,13 @@
 #!/usr/bin/env bun
 
-import { type Config, createEngine, type Engine, type EngineOptions } from "@tml/core";
+import {
+  type Config,
+  createEngine,
+  type Engine,
+  type EngineOptions,
+  createRunJournal,
+  type RunJournal,
+} from "@tml/core";
 import {
   createCliRenderer,
   createPlainRenderer,
@@ -18,6 +25,8 @@ export interface ShipDeps {
   /** Build the Config for `cwd`. Async in production (it imports local plugins). */
   buildConfig?: (cwd: string) => Config | Promise<Config>;
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
+  /** Override or disable the local Run Journal. Production creates one per checkout. */
+  journal?: RunJournal | false;
   /** Seal the full per-step trail instead of the quiet, results-forward default (`--verbose`). */
   verbose?: boolean;
   /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
@@ -61,7 +70,12 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // tml ship runs in place: the pipeline branches, commits, and pushes in the user's own checkout
   // so the Providers and `ctx.git` all bind to `cwd`.
   try {
-    const engine = engineFor(await buildConfig(cwd), { cwd });
+    const journal =
+      deps.journal === false
+        ? undefined
+        : (deps.journal ??
+          (deps.engineFor === undefined ? createRunJournal({ checkoutPath: cwd }) : undefined));
+    const engine = engineFor(await buildConfig(cwd), { cwd, ...(journal ? { journal } : {}) });
     let view = initialView;
     let failed = false;
     let cancelled = false;

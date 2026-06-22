@@ -23,19 +23,22 @@ _Avoid_: Task, stage, job, action
 A single end-to-end execution of a Pipeline. Runs are one-shot, idempotent, and
 re-entrant: a Run can be quit and resumed, and side-effecting steps detect work the
 Git provider already reflects and skip it. The Git provider is the source of truth for everything
-that has left the local machine (PR, comments, CI status); the Checkpoint journal
+that has left the local machine (PR, comments, CI status); the Run Journal
 covers the local, pre-PR portion.
 _Avoid_: Session, job, build
 
-**Checkpoint journal**:
-The record of a Run's accumulated Artifacts and completed Steps, written at each step
-boundary to a per-machine state directory *outside the working tree*
+**Run Journal**:
+The file-backed record of what this machine executed during a Run, written to a
+per-machine state directory *outside the working tree*
 (`~/.local/state/tml/<checkout-key>/`, keyed by the checkout's absolute path so two
-clones of one repo never collide) — never committed, never littering the repo. On
-resume, completed Steps are replayed from the journal (Artifacts restored, execution
-skipped) and the Run continues at the first incomplete Step — so an expensive agent step
-is never paid for twice. Requires Artifacts to be serializable.
-_Avoid_: State file, cache, checkpoint db, session
+clones of one repo never collide) - never committed, never littering the repo. It stores
+run metadata (`run.json`), completed Steps, serialized Artifact values (`artifacts/`),
+RoundRecords (`rounds.jsonl`), and optional Events (`events.jsonl`). This is the durable
+foundation future resume uses to decide which local work can be replayed or skipped safely.
+The Run Journal answers "what did this machine execute?" The Git provider answers "what
+is true about the PR, comments, checks, and mergeability now?" Requires Artifacts to be
+serializable.
+_Avoid_: State file, cache, checkpoint db, session, source of truth for PR state
 
 **Trigger**:
 What initiates a Run. The one canonical, in-the-box Trigger is an explicit ship action —
