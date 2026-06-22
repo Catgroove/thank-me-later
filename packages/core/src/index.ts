@@ -20,6 +20,16 @@ export {
   renderRoundForPr,
   renderRoundsForPr,
 } from "./round.ts";
+export {
+  executeRoundLoop,
+  type RoundCheckInput,
+  type RoundCheckResult,
+  type RoundFixInput,
+  type RoundFixResult,
+  type RoundLoopOptions,
+  type RoundLoopResult,
+  type RoundLoopStopReason,
+} from "./round-executor.ts";
 export { defineStep, type Step, type StepResult, type StepRun } from "./step.ts";
 export { type Config, type ModelMap, type Pipeline, type Providers } from "./pipeline.ts";
 export {
