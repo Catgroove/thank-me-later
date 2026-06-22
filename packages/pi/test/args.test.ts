@@ -12,6 +12,10 @@ describe("runArgs", () => {
     ]);
   });
 
+  test("requests an isolated task instead of continuing a pi session", () => {
+    expect(runArgs("format the repo")).toContain("--no-session");
+  });
+
   test("inserts --model before the prompt when a model is pinned", () => {
     expect(runArgs("review", "anthropic/sonnet:high")).toEqual([
       "-p",

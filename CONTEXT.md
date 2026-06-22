@@ -87,10 +87,12 @@ _Avoid_: Future, deferred, task, poller
 **Harness**:
 The Provider that runs an AI coding agent. tml calls `agent.run(task)`, which streams the
 agent's activity via `onProgress` and resolves a `Promise` with the result — it does not
-return a pollable Pending ([[0009-harness-streams-forge-polls]]). The harness is Claude
-Code, opencode, codex, pi, etc., abstracted behind one interface. Each gets its own small
-package that shells out to that tool's headless mode (pi: `pi --mode json`); ACP is a
-future *additional* backend, not the boundary. A Step runs on the Harness's own default model unless it pins a raw,
+return a pollable Pending ([[0009-harness-streams-forge-polls]]). Each `run` executes one
+isolated agent task and must not continue prior conversational state unless a future explicit
+option requests continuation. The harness is Claude Code, opencode, codex, pi, etc.,
+abstracted behind one interface. Each gets its own small package that shells out to that
+tool's headless mode (pi: `pi --mode json --no-session`); ACP is a future *additional*
+backend, not the boundary. A Step runs on the Harness's own default model unless it pins a raw,
 harness-specific model (verified at startup when the Harness can list its models); the
 default pipeline names no models, so it stays portable by referencing nothing. tml can
 also be *hosted inside* a harness as a plugin. The Provider abstraction is the Harness;
@@ -126,8 +128,9 @@ _Avoid_: Extension, addon, module
 A per-host integration package that lets tml run inside a harness (Claude Code,
 opencode, …). It registers a trigger (skill / slash command / hook), consumes tml's
 event stream to render progress in whatever UI the host allows, and may supply a
-Harness Provider that routes agent tasks through the host's live session. Adapters are
-as rich as each host permits; the core engine is identical regardless of adapter.
+Harness Provider that launches isolated agent tasks through the host without inheriting the
+host conversation. Adapters are as rich as each host permits; the core engine is identical
+regardless of adapter.
 _Avoid_: Plugin (reserve for pipeline extensions), integration, binding
 
 **Event stream**:
