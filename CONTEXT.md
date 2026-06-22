@@ -3,8 +3,8 @@
 An extensible "ship it" CLI/TUI tool. After an agent finishes a unit of work, tml
 conducts a code-defined pipeline that branches, reviews, lints, formats, opens a PR,
 waits on CI, and responds to PR comments. Built on the philosophy "everything is a
-plugin" (inspired by pi) over an opinionated set of sane defaults (inspired by
-no-mistakes). Shorthand "tml" plays on "spend time now, thank me later."
+plugin" (inspired by pi) over an opinionated set of sane defaults. Shorthand
+"tml" plays on "spend time now, thank me later."
 
 ## Language
 
