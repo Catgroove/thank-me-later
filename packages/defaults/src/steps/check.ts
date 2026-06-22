@@ -11,20 +11,19 @@ export function checkStep(name: string, prompt: string): Step {
     name,
     async run(ctx) {
       const result = await ctx.agent.run(prompt);
-      const findings = result.ok
-        ? []
-        : [
-            makeFinding(name, {
-              severity: "error",
-              action: "ask-user",
-              title: `${name} incomplete`,
-              detail: result.summary,
-            }),
-          ];
+      const finding = result.ok
+        ? undefined
+        : makeFinding(name, {
+            severity: "error",
+            action: "ask-user",
+            title: `${name} incomplete`,
+            detail: result.summary,
+          });
+      const findings = finding ? [finding] : [];
       const userNotes: Record<string, string> = {};
-      if (!result.ok) {
+      if (finding) {
         const answer = await ctx.ask(`${name} could not be completed: ${result.summary}`);
-        userNotes[findings[0]?.id ?? `${name}:unknown`] = answer;
+        userNotes[finding.id] = answer;
       }
       await ctx.recordRound({
         trigger: "initial",
