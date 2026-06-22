@@ -16,6 +16,7 @@ import {
   prListEmpty,
   prListHit,
   snapshotConflictedResponse,
+  snapshotMergedResponse,
   snapshotOpenResponse,
 } from "./fixtures.ts";
 
@@ -31,7 +32,8 @@ function fakeRunner(handler: (args: string[]) => string): { run: GhRunner; calls
 
 const isPrList = (args: string[]) => args[0] === "pr" && args[1] === "list";
 const isPrCreate = (args: string[]) => args[0] === "pr" && args[1] === "create";
-const isSnapshot = (args: string[]) => args.some((a) => a.includes("reviewThreads"));
+const isSnapshot = (args: string[]) => args.some((a) => a.includes("headRefName"));
+const isPrEdit = (args: string[]) => args[0] === "pr" && args[1] === "edit";
 
 function gitProviderWith(handler: (args: string[]) => string): {
   gitProvider: ReturnType<typeof createGitHubProvider>;
@@ -131,6 +133,19 @@ describe("getPullRequest", () => {
   });
 });
 
+describe("updatePullRequestBody", () => {
+  test("updates a PR body through gh pr edit", async () => {
+    const { gitProvider, calls } = gitProviderWith((args) => {
+      if (isPrEdit(args)) return "";
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    await gitProvider.updatePullRequestBody({ prNumber: 42, body: "new body" });
+
+    expect(calls).toEqual([["pr", "edit", "42", "--body", "new body"]]);
+  });
+});
+
 describe("public surface", () => {
   test("exports only createGitHubProvider at runtime (GhRunner is type-only)", () => {
     expect(Object.keys(pkg)).toEqual(["createGitHubProvider"]);
@@ -141,7 +156,27 @@ describe("public surface", () => {
     expect(typeof gitProvider.findPullRequest).toBe("function");
     expect(typeof gitProvider.openPullRequest).toBe("function");
     expect(typeof gitProvider.getPullRequest).toBe("function");
+    expect(typeof gitProvider.updatePullRequestBody).toBe("function");
     expect(typeof gitProvider.getChecks).toBe("function");
+    expect(typeof gitProvider.getMergeability).toBe("function");
+  });
+});
+
+describe("getMergeability polling", () => {
+  test("is not done while GitHub reports unknown, then returns the mergeable state", async () => {
+    const run = (() => {
+      let i = 0;
+      return () => {
+        i += 1;
+        return Promise.resolve(
+          JSON.stringify(i === 1 ? snapshotMergedResponse : snapshotOpenResponse),
+        );
+      };
+    })();
+    const pending = createGitHubProvider("/repo", { run }).getMergeability?.(42);
+
+    expect(await pending?.poll()).toEqual({ done: false });
+    expect(await pending?.poll()).toEqual({ done: true, value: "mergeable" });
   });
 });
 
@@ -192,7 +227,9 @@ describe("error propagation", () => {
       () => gitProvider.findPullRequest("x"),
       () => gitProvider.getPullRequest(1),
       () => gitProvider.openPullRequest({ head: "x", base: "main", title: "t", body: "b" }),
+      () => gitProvider.updatePullRequestBody({ prNumber: 1, body: "b" }),
       () => gitProvider.getChecks(1).poll(),
+      () => gitProvider.getMergeability?.(1).poll(),
     ]) {
       let err: unknown;
       try {

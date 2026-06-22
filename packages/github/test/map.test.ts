@@ -7,7 +7,6 @@ import {
   mapConclusion,
   mapMergeable,
   mapPullRequest,
-  mapReviewThread,
   mapState,
 } from "../src/map.ts";
 import {
@@ -19,8 +18,6 @@ import {
   prOpen,
   statusContextPending,
   statusContextSuccess,
-  threadResolved,
-  threadUnresolved,
 } from "./fixtures.ts";
 
 describe("mapState", () => {
@@ -112,33 +109,8 @@ describe("mapChecks", () => {
   });
 });
 
-describe("mapReviewThread", () => {
-  test("unresolved thread with a path and multiple comments", () => {
-    expect(mapReviewThread(threadUnresolved)).toEqual({
-      id: "RT_unresolved",
-      path: "src/app.ts",
-      body: "nit: rename this",
-      resolved: false,
-      comments: [
-        { author: "reviewer", body: "nit: rename this" },
-        { author: "author", body: "done" },
-      ],
-    });
-  });
-  test("resolved thread: null path omitted, null author becomes empty string", () => {
-    const mapped = mapReviewThread(threadResolved);
-    expect(mapped).toEqual({
-      id: "RT_resolved",
-      body: "general comment",
-      resolved: true,
-      comments: [{ author: "", body: "general comment" }],
-    });
-    expect("path" in mapped).toBe(false);
-  });
-});
-
 describe("mapPullRequest", () => {
-  test("open PR with checks and threads", () => {
+  test("open PR with checks", () => {
     expect(mapPullRequest(prOpen)).toEqual({
       number: 42,
       url: "https://github.com/acme/widget/pull/42",
@@ -152,7 +124,6 @@ describe("mapPullRequest", () => {
         { name: "build", status: "completed", conclusion: "success" },
         { name: "ci/legacy", status: "completed", conclusion: "success" },
       ],
-      threads: [mapReviewThread(threadUnresolved), mapReviewThread(threadResolved)],
     });
   });
   test("conflicted PR", () => {
@@ -160,7 +131,6 @@ describe("mapPullRequest", () => {
     expect(pr.mergeable).toBe("conflicted");
     expect(pr.state).toBe("open");
     expect(pr.checks).toEqual([{ name: "test", status: "completed", conclusion: "failure" }]);
-    expect(pr.threads).toEqual([]);
   });
   test("merged PR with no rollup", () => {
     const pr = mapPullRequest(prMerged);

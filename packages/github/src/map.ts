@@ -5,7 +5,7 @@
 // This file owns the *input contract*: the raw shapes of `gh api graphql` /
 // `gh pr list` output that the provider feeds in.
 
-import type { CheckRun, Mergeable, PullRequest, ReviewThread } from "@tml/core";
+import type { CheckRun, Mergeable, PullRequest } from "@tml/core";
 
 // --- Raw `gh` response shapes (pre-mapping) -------------------------------------
 
@@ -29,18 +29,6 @@ export interface GhStatusContextNode {
 
 export type GhCheckNode = GhCheckRunNode | GhStatusContextNode;
 
-export interface GhReviewThreadNode {
-  readonly id: string;
-  readonly isResolved: boolean;
-  readonly path: string | null;
-  readonly comments: {
-    readonly nodes: readonly {
-      readonly author: { readonly login: string } | null;
-      readonly body: string;
-    }[];
-  };
-}
-
 /** The last commit on the PR carries the status-check rollup. */
 export interface GhCommitNode {
   readonly commit: {
@@ -62,7 +50,6 @@ export interface GhPullRequestNode {
   /** MERGEABLE | CONFLICTING | UNKNOWN */
   readonly mergeable: string;
   readonly commits: { readonly nodes: readonly GhCommitNode[] };
-  readonly reviewThreads: { readonly nodes: readonly GhReviewThreadNode[] };
 }
 
 /** `gh api graphql` wraps the selection under `data`. */
@@ -192,15 +179,6 @@ export function mapChecks(commits: { readonly nodes: readonly GhCommitNode[] }):
   return (rollup?.contexts.nodes ?? []).map(mapCheckNode);
 }
 
-export function mapReviewThread(node: GhReviewThreadNode): ReviewThread {
-  const comments = node.comments.nodes.map((c) => ({
-    author: c.author?.login ?? "",
-    body: c.body,
-  }));
-  const base = { id: node.id, body: comments[0]?.body ?? "", resolved: node.isResolved, comments };
-  return node.path === null ? base : { ...base, path: node.path };
-}
-
 export function mapPullRequest(node: GhPullRequestNode): PullRequest {
   return {
     number: node.number,
@@ -212,6 +190,5 @@ export function mapPullRequest(node: GhPullRequestNode): PullRequest {
     state: mapState(node.state),
     mergeable: mapMergeable(node.mergeable),
     checks: mapChecks(node.commits),
-    threads: node.reviewThreads.nodes.map(mapReviewThread),
   };
 }

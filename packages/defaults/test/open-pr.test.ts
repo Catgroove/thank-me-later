@@ -53,7 +53,6 @@ describe("open-pr step", () => {
       state: "open",
       mergeable: "mergeable",
       checks: [],
-      threads: [],
     };
     gitProvider.existing = prior;
     const { ctx } = fakeCtx({ git, gitProvider, reads });
@@ -80,7 +79,6 @@ describe("open-pr step", () => {
         state,
         mergeable: "unknown",
         checks: [],
-        threads: [],
       };
       const { ctx } = fakeCtx({ git, gitProvider, reads });
 

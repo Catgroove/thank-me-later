@@ -4,6 +4,7 @@ import {
   CHECKS_QUERY,
   checksArgs,
   prCreateArgs,
+  prEditBodyArgs,
   prListArgs,
   snapshotArgs,
   SNAPSHOT_QUERY,
@@ -35,6 +36,16 @@ describe("argv builders", () => {
       "t",
       "--body",
       "b",
+    ]);
+  });
+
+  test("prEditBodyArgs maps PR body updates to gh flags", () => {
+    expect(prEditBodyArgs({ prNumber: 42, body: "body" })).toEqual([
+      "pr",
+      "edit",
+      "42",
+      "--body",
+      "body",
     ]);
   });
 
@@ -75,8 +86,8 @@ describe("queries", () => {
     expect(CHECKS_QUERY).toContain("statusCheckRollup");
   });
 
-  test("only the snapshot query selects review threads (the checks poll stays light)", () => {
-    expect(SNAPSHOT_QUERY).toContain("reviewThreads");
+  test("base queries do not select review-thread conversation state", () => {
+    expect(SNAPSHOT_QUERY).not.toContain("reviewThreads");
     expect(CHECKS_QUERY).not.toContain("reviewThreads");
   });
 });

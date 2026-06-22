@@ -424,6 +424,8 @@ function makeContext(
   // read-only methods are delegated verbatim (explicit delegation, not spread, so a class-based
   // Provider keeps its prototype methods).
   const base = providers.gitProvider;
+  const getMergeability = base.getMergeability?.bind(base);
+  const getFailedCheckLogs = base.getFailedCheckLogs?.bind(base);
   const gitProvider: GitProvider = {
     async openPullRequest(input) {
       const pr = await base.openPullRequest(input);
@@ -442,7 +444,10 @@ function makeContext(
       return pr;
     },
     getPullRequest: (prNumber) => base.getPullRequest(prNumber),
+    updatePullRequestBody: (input) => base.updatePullRequestBody(input),
     getChecks: (prNumber) => base.getChecks(prNumber),
+    ...(getMergeability ? { getMergeability } : {}),
+    ...(getFailedCheckLogs ? { getFailedCheckLogs } : {}),
   };
 
   return {

@@ -13,7 +13,6 @@ import type {
   GhGraphQlResponse,
   GhPrListRow,
   GhPullRequestNode,
-  GhReviewThreadNode,
   SnapshotData,
 } from "../src/map.ts";
 
@@ -69,29 +68,6 @@ export const statusContextPending: GhCheckNode = {
   state: "PENDING",
 };
 
-// --- Review threads -------------------------------------------------------------
-
-export const threadUnresolved: GhReviewThreadNode = {
-  id: "RT_unresolved",
-  isResolved: false,
-  path: "src/app.ts",
-  comments: {
-    nodes: [
-      { author: { login: "reviewer" }, body: "nit: rename this" },
-      { author: { login: "author" }, body: "done" },
-    ],
-  },
-};
-
-export const threadResolved: GhReviewThreadNode = {
-  id: "RT_resolved",
-  isResolved: true,
-  path: null,
-  comments: {
-    nodes: [{ author: null, body: "general comment" }],
-  },
-};
-
 // --- Full PR snapshots ----------------------------------------------------------
 
 function snapshot(node: GhPullRequestNode): GhGraphQlResponse<SnapshotData> {
@@ -116,7 +92,6 @@ export const prOpen: GhPullRequestNode = {
       },
     ],
   },
-  reviewThreads: { nodes: [threadUnresolved, threadResolved] },
 };
 
 export const prConflicted: GhPullRequestNode = {
@@ -129,7 +104,6 @@ export const prConflicted: GhPullRequestNode = {
   state: "OPEN",
   mergeable: "CONFLICTING",
   commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [checkFailure] } } } }] },
-  reviewThreads: { nodes: [] },
 };
 
 export const prMerged: GhPullRequestNode = {
@@ -142,7 +116,6 @@ export const prMerged: GhPullRequestNode = {
   state: "MERGED",
   mergeable: "UNKNOWN",
   commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
-  reviewThreads: { nodes: [] },
 };
 
 export const snapshotOpenResponse = snapshot(prOpen);

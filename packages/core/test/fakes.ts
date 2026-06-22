@@ -62,7 +62,6 @@ export class FakeGitProvider implements GitProvider {
       state: "open",
       mergeable: "mergeable",
       checks: this.checks,
-      threads: [],
     };
     this.prs.set(number, pr);
     this.byHead.set(input.head, number);
@@ -74,7 +73,14 @@ export class FakeGitProvider implements GitProvider {
     return pr === undefined ? Promise.reject(new Error(`no PR #${prNumber}`)) : Promise.resolve(pr);
   }
 
-  getChecks(): Pending<CheckRun[]> {
+  updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void> {
+    const pr = this.prs.get(input.prNumber);
+    if (pr === undefined) return Promise.reject(new Error(`no PR #${input.prNumber}`));
+    this.prs.set(input.prNumber, { ...pr, body: input.body });
+    return Promise.resolve();
+  }
+
+  getChecks(_prNumber = 1): Pending<CheckRun[]> {
     return pendingAfter(this.checksSettleAfter, this.checks);
   }
 }

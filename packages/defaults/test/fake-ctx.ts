@@ -109,6 +109,7 @@ function settled<T>(value: T): Pending<T> {
 
 export class FakeGitProvider implements GitProvider {
   readonly opened: OpenPullRequestInput[] = [];
+  readonly bodyUpdates: { prNumber: number; body: string }[] = [];
   /** When set, `findPullRequest` returns this (the idempotent-skip path). */
   existing: PullRequest | null = null;
   checks: CheckRun[] = [{ name: "ci", status: "completed", conclusion: "success" }];
@@ -130,11 +131,17 @@ export class FakeGitProvider implements GitProvider {
       state: "open",
       mergeable: "mergeable",
       checks: this.checks,
-      threads: [],
     });
   }
   getPullRequest(prNumber: number): Promise<PullRequest> {
     return Promise.reject(new Error(`fake Git provider stores no PR #${prNumber}`));
+  }
+  updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void> {
+    this.bodyUpdates.push(input);
+    if (this.existing?.number === input.prNumber) {
+      this.existing = { ...this.existing, body: input.body };
+    }
+    return Promise.resolve();
   }
   getChecks(_prNumber: number): Pending<CheckRun[]> {
     return settled(this.checks);

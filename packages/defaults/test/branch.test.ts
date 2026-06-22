@@ -15,7 +15,6 @@ function prInState(state: PullRequest["state"]): PullRequest {
     state,
     mergeable: "mergeable",
     checks: [],
-    threads: [],
   };
 }
 

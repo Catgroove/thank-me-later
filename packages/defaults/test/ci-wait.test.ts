@@ -13,7 +13,6 @@ const pr: PullRequest = {
   state: "open",
   mergeable: "mergeable",
   checks: [],
-  threads: [],
 };
 
 describe("ci-wait step", () => {

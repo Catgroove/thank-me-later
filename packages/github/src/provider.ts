@@ -14,7 +14,7 @@ import {
   mapPullRequest,
   type SnapshotData,
 } from "./map.ts";
-import { checksArgs, prCreateArgs, prListArgs, snapshotArgs } from "./queries.ts";
+import { checksArgs, prCreateArgs, prEditBodyArgs, prListArgs, snapshotArgs } from "./queries.ts";
 
 export interface GitHubProviderOptions {
   /** Override the `gh` runner; tests inject a fake returning canned JSON. */
@@ -54,6 +54,10 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
 
     getPullRequest,
 
+    async updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void> {
+      await run(prEditBodyArgs(input));
+    },
+
     // Cheap, pollable: settles once no run is queued/in_progress (an empty set
     // settles immediately). The consuming step decides pass/fail.
     getChecks(prNumber: number): Pending<CheckRun[]> {
@@ -63,6 +67,15 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
           const checks = mapChecks(res.data.repository.pullRequest.commits);
           const pending = checks.some((c) => c.status === "queued" || c.status === "in_progress");
           return pending ? { done: false } : { done: true, value: checks };
+        },
+      };
+    },
+
+    getMergeability(prNumber: number) {
+      return {
+        async poll() {
+          const pr = await getPullRequest(prNumber);
+          return pr.mergeable === "unknown" ? { done: false } : { done: true, value: pr.mergeable };
         },
       };
     },

@@ -68,7 +68,6 @@ export type {
   Mergeable,
   OpenPullRequestInput,
   PullRequest,
-  ReviewThread,
 } from "./providers/git-provider.ts";
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent } from "./events.ts";

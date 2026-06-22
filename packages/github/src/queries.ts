@@ -22,7 +22,7 @@ const ROLLUP_SELECTION = `commits(last: 1) {
   }
 }`;
 
-/** Full snapshot: PR fields + mergeable + checks + resolvable review threads. */
+/** Full base snapshot: PR fields + mergeable + checks. */
 export const SNAPSHOT_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -35,14 +35,6 @@ export const SNAPSHOT_QUERY = `query($owner: String!, $repo: String!, $number: I
       state
       mergeable
       ${ROLLUP_SELECTION}
-      reviewThreads(first: 100) {
-        nodes {
-          id
-          isResolved
-          path
-          comments(first: 100) { nodes { author { login } body } }
-        }
-      }
     }
   }
 }`;
@@ -89,6 +81,10 @@ export function prCreateArgs(input: OpenPullRequestInput): string[] {
     "--body",
     input.body,
   ];
+}
+
+export function prEditBodyArgs(input: { prNumber: number; body: string }): string[] {
+  return ["pr", "edit", String(input.prNumber), "--body", input.body];
 }
 
 export function snapshotArgs(prNumber: number): string[] {

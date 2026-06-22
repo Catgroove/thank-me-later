@@ -223,15 +223,9 @@ out-of-tree journal so review, checks, and CI can be summarized from one record 
 _Avoid_: Pass log, report, transcript
 
 **Review thread**:
-The unit of work for the reentrant review loop: a line-anchored (`path:line`), resolvable
-conversation on the PR, modelled in core as `ReviewThread` (`resolved` boolean +
-`comments[]`). It is deliberately *only* the resolvable, anchored kind — not top-level PR
-conversation comments and not the PR description, neither of which has a `resolved` state, so
-"drive to resolution" is undefined for them. The loop reconciles **every unresolved thread
-regardless of author** (tml's own escalated findings, a human's, another bot's like
-coderabbit); author is irrelevant to *whether* a thread is worked and relevant only to *who
-may resolve* it. tml's own `ask-user` findings are posted *as* review threads anchored to the
-finding's `location`. A thread is driven to one of three outcomes per Run: fixed (commit +
-resolve), answered-with-justification, or left open for a human.
-_Avoid_: Comment (too broad — that includes the non-resolvable surfaces), note, finding (a
-finding is review output; a thread is its posted, resolvable form on the PR)
+A line-anchored (`path:line`), resolvable conversation on an already-open PR. Review threads are
+post-PR provider facts, not part of the base local review/check pipeline and not part of the base
+`PullRequest` model. The default review step emits Findings and Round records; it does not post its
+own Findings as review threads. A later post-PR reconciliation step may introduce a `ReviewThread`
+model and provider methods for reading, replying to, and resolving actual PR conversation.
+_Avoid_: Finding (review output), PR body summary, top-level PR comment
