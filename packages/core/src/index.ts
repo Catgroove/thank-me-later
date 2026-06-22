@@ -52,4 +52,13 @@ export type {
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions, NotImplementedError } from "./engine.ts";
+export {
+  checkoutKeyForPath,
+  createRunJournal,
+  type CreateRunJournalOptions,
+  type RunJournal,
+  type RunJournalSnapshot,
+  type RunMetadata,
+  type RunStatus,
+} from "./run-journal.ts";
 export { AssemblyError, validatePipeline } from "./validate.ts";

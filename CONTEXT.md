@@ -27,15 +27,19 @@ that has left the local machine (PR, comments, CI status); the Checkpoint journa
 covers the local, pre-PR portion.
 _Avoid_: Session, job, build
 
-**Checkpoint journal**:
-The record of a Run's accumulated Artifacts and completed Steps, written at each step
-boundary to a per-machine state directory *outside the working tree*
+**Run Journal**:
+The file-backed record of what this machine executed during a Run, written to a
+per-machine state directory *outside the working tree*
 (`~/.local/state/tml/<checkout-key>/`, keyed by the checkout's absolute path so two
-clones of one repo never collide) — never committed, never littering the repo. On
-resume, completed Steps are replayed from the journal (Artifacts restored, execution
-skipped) and the Run continues at the first incomplete Step — so an expensive agent step
-is never paid for twice. Requires Artifacts to be serializable.
-_Avoid_: State file, cache, checkpoint db, session
+clones of one repo never collide) - never committed, never littering the repo. It stores
+run metadata (`run.json`), completed Steps, serialized Artifact values (`artifacts/`),
+Harness round records (`rounds.jsonl`), and optional Events (`events.jsonl`). On resume,
+completed Steps are replayed from the journal (Artifacts restored, execution skipped)
+and the Run continues at the first incomplete Step, so an expensive agent step is never
+paid for twice. The Run Journal answers "what did this machine execute?" The Git
+provider answers "what is true about the PR, comments, checks, and mergeability now?"
+Requires Artifacts to be serializable.
+_Avoid_: State file, cache, checkpoint db, session, source of truth for PR state
 
 **Trigger**:
 What initiates a Run. The one canonical, in-the-box Trigger is an explicit ship action —

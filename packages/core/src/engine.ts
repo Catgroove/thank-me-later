@@ -13,7 +13,7 @@
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
 import type { RunEvent } from "./events.ts";
-import { createFileRoundJournal, type RoundJournal } from "./journal.ts";
+import type { RoundJournal } from "./journal.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
@@ -21,6 +21,7 @@ import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import { until } from "./pending.ts";
 import { type EventQueue, createEventQueue } from "./queue.ts";
 import type { RoundRecordInput } from "./round.ts";
+import { createRunJournal, type RunJournal } from "./run-journal.ts";
 import { isFlowSignal } from "./signals.ts";
 import type { Step } from "./step.ts";
 import { validatePipeline } from "./validate.ts";
@@ -34,6 +35,8 @@ export class NotImplementedError extends Error {
   }
 }
 
+type EngineJournal = RunJournal | RoundJournal;
+
 export interface EngineOptions {
   /** Working dir for the native Git capability. Defaults to process.cwd(). */
   cwd?: string;
@@ -43,8 +46,8 @@ export interface EngineOptions {
   ask?: (prompt: string) => Promise<string>;
   /** External abort: cancels the Run, ending it with `run:cancelled`. */
   signal?: AbortSignal;
-  /** Append-only RoundRecord journal. Defaults to the out-of-tree file journal; `false` disables. */
-  journal?: RoundJournal | false;
+  /** Local execution journal. Defaults to the out-of-tree file Run Journal; `false` disables. */
+  journal?: EngineJournal | false;
 }
 
 export interface Engine {
@@ -73,15 +76,14 @@ async function* runPipeline(config: Config, opts: EngineOptions): AsyncGenerator
 
   // Run the pipeline in the background, pushing events live. A truly unexpected
   // throw (the driver catches Step errors itself) still terminates the stream.
-  const driver = drive(config, opts, queue, controller.signal).catch((error) => {
-    queue.push({ type: "run:failed", error: errorMessage(error) });
-    queue.close();
-  });
+  const driver = drive(config, opts, queue, controller.signal).catch((error) =>
+    failed(queue, runJournalFrom(opts.journal), error),
+  );
 
   try {
     for await (const event of queue) yield event;
   } finally {
-    controller.abort(); // consumer abandoned us → cancel any in-flight Provider work
+    controller.abort(); // consumer abandoned us: cancel any in-flight Provider work
     external?.removeEventListener("abort", onExternalAbort);
     await driver; // let the background work settle before we return
   }
@@ -96,8 +98,10 @@ async function drive(
   const { pipeline, providers, models } = config;
   const cwd = opts.cwd ?? process.cwd();
   const git = opts.git ?? createGit(cwd);
-  const journal =
-    opts.journal === false ? undefined : (opts.journal ?? createFileRoundJournal(cwd));
+  const journal = opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
+  const runJournal = runJournalFrom(journal);
+  const snapshot = await runJournal?.begin({ pipeline: pipeline.map((s) => s.name) });
+  const completed = snapshot?.completedSteps ?? new Set<string>();
   const ask =
     opts.ask ??
     (() =>
@@ -107,12 +111,12 @@ async function drive(
         ),
       ));
 
-  const store = new Map<string, unknown>();
+  const store = new Map<string, unknown>(snapshot?.artifacts);
   const stepByName = new Map<string, number>(pipeline.map((s, i): [string, number] => [s.name, i]));
   const retries = new Map<string, number>();
   const roundIndexes = new Map<string, number>();
 
-  queue.push({ type: "run:started", pipeline: pipeline.map((s) => s.name) });
+  await emit(queue, runJournal, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
 
   // Validate configured model ids against the live Harness *before* the first Step,
   // but only when the Harness can list its models - otherwise we can't, so we don't.
@@ -122,23 +126,20 @@ async function drive(
     try {
       available = new Set(await providers.agent.listModels());
     } catch (error) {
-      if (signal.aborted) return cancelled(queue);
-      queue.push({ type: "run:failed", error: errorMessage(error) });
-      queue.close();
-      return;
+      if (signal.aborted) return cancelled(queue, runJournal);
+      return failed(queue, runJournal, error);
     }
-    if (signal.aborted) return cancelled(queue);
+    if (signal.aborted) return cancelled(queue, runJournal);
     // An empty list is not a usable allowlist (the Harness can't, or won't, enumerate) - skip
     // rather than reject every id. Only a non-empty list validates configured ids.
     for (const [key, id] of available.size === 0 ? [] : Object.entries(models)) {
       if (id === undefined || available.has(id)) continue;
       const where = key === "default" ? "models.default" : `models["${key}"]`;
-      queue.push({
-        type: "run:failed",
-        error: `${where} is "${id}", which the Harness does not list as an available model.`,
-      });
-      queue.close();
-      return;
+      return failed(
+        queue,
+        runJournal,
+        `${where} is "${id}", which the Harness does not list as an available model.`,
+      );
     }
   }
 
@@ -146,10 +147,14 @@ async function drive(
   while (i < pipeline.length) {
     const step = pipeline[i];
     if (step === undefined) break;
-    if (signal.aborted) return cancelled(queue, step.name);
+    if (completed.has(step.name)) {
+      i += 1;
+      continue;
+    }
+    if (signal.aborted) return cancelled(queue, runJournal, step.name);
 
-    queue.push({ type: "step:started", step: step.name });
-    const ctx = makeContext(step, store, providers, git, queue, ask, signal, models);
+    await emit(queue, runJournal, { type: "step:started", step: step.name });
+    const ctx = makeContext(step, store, providers, git, queue, ask, signal, models, runJournal);
 
     let result: Awaited<ReturnType<Step["run"]>>;
     try {
@@ -157,50 +162,49 @@ async function drive(
     } catch (error) {
       // An abort surfaces here as a thrown AbortError (from until / the agent);
       // report it as a cancellation, not a failure.
-      if (signal.aborted) return cancelled(queue, step.name);
-      queue.push({ type: "run:failed", step: step.name, error: errorMessage(error) });
-      queue.close();
-      return;
+      if (signal.aborted) return cancelled(queue, runJournal, step.name);
+      return failed(queue, runJournal, error, step.name);
     }
-    if (signal.aborted) return cancelled(queue, step.name);
+    if (signal.aborted) return cancelled(queue, runJournal, step.name);
 
     if (isFlowSignal(result)) {
       switch (result.kind) {
         case "skip": {
-          queue.push({ type: "step:skipped", step: step.name });
+          await runJournal?.recordStepCompleted(step.name);
+          await emit(queue, runJournal, { type: "step:skipped", step: step.name });
           i += 1;
           continue;
         }
         case "cancel": {
-          queue.push({ type: "run:finished" });
+          await runJournal?.finish("finished");
+          await emit(queue, runJournal, { type: "run:finished" });
           queue.close();
           return;
         }
         case "goto": {
           const target = stepByName.get(result.step);
           if (target === undefined) {
-            queue.push({
-              type: "run:failed",
-              step: step.name,
-              error: `goto target "${result.step}" is not a Step in the Pipeline`,
-            });
-            queue.close();
-            return;
+            return failed(
+              queue,
+              runJournal,
+              `goto target "${result.step}" is not a Step in the Pipeline`,
+              step.name,
+            );
           }
-          queue.push({ type: "step:finished", step: step.name });
+          await runJournal?.recordStepCompleted(step.name);
+          await emit(queue, runJournal, { type: "step:finished", step: step.name });
           i = target;
           continue;
         }
         case "retry": {
           const n = (retries.get(step.name) ?? 0) + 1;
           if (n > MAX_RETRIES) {
-            queue.push({
-              type: "run:failed",
-              step: step.name,
-              error: `Step "${step.name}" exceeded ${MAX_RETRIES} retries`,
-            });
-            queue.close();
-            return;
+            return failed(
+              queue,
+              runJournal,
+              `Step "${step.name}" exceeded ${MAX_RETRIES} retries`,
+              step.name,
+            );
           }
           retries.set(step.name, n);
           continue;
@@ -212,30 +216,33 @@ async function drive(
     const declared = new Set(step.produces.map((a) => a.name));
     for (const key of Object.keys(produced)) {
       if (!declared.has(key)) {
-        queue.push({
-          type: "run:failed",
-          step: step.name,
-          error: `Step "${step.name}" returned undeclared artifact "${key}".`,
-        });
-        queue.close();
-        return;
+        return failed(
+          queue,
+          runJournal,
+          `Step "${step.name}" returned undeclared artifact "${key}".`,
+          step.name,
+        );
       }
     }
     for (const artifact of step.produces) {
       if (!(artifact.name in produced)) {
-        queue.push({
-          type: "run:failed",
-          step: step.name,
-          error: `Step "${step.name}" did not produce declared artifact "${artifact.name}".`,
-        });
-        queue.close();
-        return;
+        return failed(
+          queue,
+          runJournal,
+          `Step "${step.name}" did not produce declared artifact "${artifact.name}".`,
+          step.name,
+        );
       }
       const value = produced[artifact.name];
+      try {
+        await runJournal?.recordArtifact({ step: step.name, artifact: artifact.name, value });
+      } catch (error) {
+        return failed(queue, runJournal, error, step.name);
+      }
       store.set(artifact.name, value);
       // Relay the value's string form for presentation when it has one; non-string artifacts
       // (e.g. a PullRequest object - surfaced via `pr:opened`) carry no `rendered`.
-      queue.push({
+      await emit(queue, runJournal, {
         type: "artifact:written",
         step: step.name,
         artifact: artifact.name,
@@ -246,16 +253,16 @@ async function drive(
     try {
       await appendRounds(journal, roundIndexes, step.name, rounds);
     } catch (error) {
-      queue.push({ type: "run:failed", step: step.name, error: errorMessage(error) });
-      queue.close();
-      return;
+      return failed(queue, runJournal, error, step.name);
     }
 
-    queue.push({ type: "step:finished", step: step.name });
+    await runJournal?.recordStepCompleted(step.name);
+    await emit(queue, runJournal, { type: "step:finished", step: step.name });
     i += 1;
   }
 
-  queue.push({ type: "run:finished" });
+  await runJournal?.finish("finished");
+  await emit(queue, runJournal, { type: "run:finished" });
   queue.close();
 }
 
@@ -271,7 +278,7 @@ function stepResultParts(result: unknown): {
 }
 
 async function appendRounds(
-  journal: RoundJournal | undefined,
+  journal: EngineJournal | undefined,
   roundIndexes: Map<string, number>,
   step: string,
   rounds: readonly RoundRecordInput[],
@@ -287,9 +294,47 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function cancelled(queue: EventQueue<RunEvent>, step?: string): void {
-  queue.push(step === undefined ? { type: "run:cancelled" } : { type: "run:cancelled", step });
+async function emit(
+  queue: EventQueue<RunEvent>,
+  journal: RunJournal | undefined,
+  event: RunEvent,
+): Promise<void> {
+  await journal?.recordEvent(event).catch(() => undefined);
+  queue.push(event);
+}
+
+async function failed(
+  queue: EventQueue<RunEvent>,
+  journal: RunJournal | undefined,
+  error: unknown,
+  step?: string,
+): Promise<void> {
+  await journal?.finish("failed").catch(() => undefined);
+  const event: RunEvent =
+    step === undefined
+      ? { type: "run:failed", error: errorMessage(error) }
+      : { type: "run:failed", step, error: errorMessage(error) };
+  await journal?.recordEvent(event).catch(() => undefined);
+  queue.push(event);
   queue.close();
+}
+
+async function cancelled(
+  queue: EventQueue<RunEvent>,
+  journal: RunJournal | undefined,
+  step?: string,
+): Promise<void> {
+  await journal?.finish("cancelled").catch(() => undefined);
+  const event: RunEvent =
+    step === undefined ? { type: "run:cancelled" } : { type: "run:cancelled", step };
+  await journal?.recordEvent(event).catch(() => undefined);
+  queue.push(event);
+  queue.close();
+}
+
+function runJournalFrom(journal: EngineJournal | false | undefined): RunJournal | undefined {
+  if (journal === undefined || journal === false || !("begin" in journal)) return undefined;
+  return journal;
 }
 
 function makeContext(
@@ -301,6 +346,7 @@ function makeContext(
   ask: (prompt: string) => Promise<string>,
   signal: AbortSignal,
   models: ModelMap | undefined,
+  journal: RunJournal | undefined,
 ): Ctx {
   const read = (artifact: Artifact<unknown, string>): unknown => {
     if (!store.has(artifact.name)) {
@@ -324,7 +370,9 @@ function makeContext(
         ...(model !== undefined ? { model } : {}),
         onProgress: (progress) => {
           runOpts?.onProgress?.(progress);
-          queue.push({ type: "agent:progress", step: step.name, progress });
+          const event: RunEvent = { type: "agent:progress", step: step.name, progress };
+          queue.push(event);
+          void journal?.recordEvent(event).catch(() => undefined);
         },
         signal: runOpts?.signal ?? signal,
       });
@@ -343,12 +391,18 @@ function makeContext(
   const gitProvider: GitProvider = {
     async openPullRequest(input) {
       const pr = await base.openPullRequest(input);
-      queue.push({ type: "pr:opened", url: pr.url });
+      const event: RunEvent = { type: "pr:opened", url: pr.url };
+      queue.push(event);
+      void journal?.recordEvent(event).catch(() => undefined);
       return pr;
     },
     async findPullRequest(head) {
       const pr = await base.findPullRequest(head);
-      if (pr) queue.push({ type: "pr:opened", url: pr.url });
+      if (pr) {
+        const event: RunEvent = { type: "pr:opened", url: pr.url };
+        queue.push(event);
+        void journal?.recordEvent(event).catch(() => undefined);
+      }
       return pr;
     },
     getPullRequest: (prNumber) => base.getPullRequest(prNumber),
@@ -364,11 +418,15 @@ function makeContext(
     until: (pending, untilOpts) =>
       until(pending, { ...untilOpts, signal: untilOpts?.signal ?? signal }),
     ask(prompt: string) {
-      queue.push({ type: "ask:pending", step: step.name, prompt });
+      const event: RunEvent = { type: "ask:pending", step: step.name, prompt };
+      queue.push(event);
+      void journal?.recordEvent(event).catch(() => undefined);
       return ask(prompt);
     },
     log(message: string) {
-      queue.push({ type: "step:log", step: step.name, message });
+      const event: RunEvent = { type: "step:log", step: step.name, message };
+      queue.push(event);
+      void journal?.recordEvent(event).catch(() => undefined);
     },
   };
 }
