@@ -1,4 +1,5 @@
 ---
+"@tml/core": patch
 "@tml/defaults": patch
 "@tml/github": patch
 ---

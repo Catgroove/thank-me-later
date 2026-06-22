@@ -5,13 +5,13 @@
 
 import {
   defineStep,
-  executeRoundLoop,
   makeFinding,
   type Finding,
   type Git,
   type GitStatus,
   type Step,
 } from "@tml/core";
+import { executeRoundLoopWithApproval } from "../approval-gate.ts";
 import {
   checkFindingsSchema,
   checkFixPrompt,
@@ -29,7 +29,8 @@ export function checkStep(name: string, goal: string): Step {
   return defineStep({
     name,
     async run(ctx) {
-      const result = await executeRoundLoop(ctx, {
+      const result = await executeRoundLoopWithApproval(ctx, {
+        stepName: name,
         async check(input) {
           const before = await ctx.git.status();
           const agentResult = await ctx.agent.run(checkPrompt({ name, goal, ...input }), {
@@ -59,6 +60,7 @@ export function checkStep(name: string, goal: string): Step {
         commitMessage: `chore: apply fixes from ${name}`,
       });
 
+      if ("kind" in result) return result;
       return { artifacts: {}, rounds: result.rounds };
     },
   });

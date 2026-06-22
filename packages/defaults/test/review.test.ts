@@ -70,13 +70,15 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx, asks } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx, asks, approvals } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     const summary = summaryOf(await reviewStep().run(ctx));
 
     expect(summary).toContain("**Risk: high**");
     expect(summary.toLowerCase()).toContain("blocking concern");
     expect(asks).toHaveLength(0);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.findings).toMatchObject([{ action: "ask-user", title: "Too large" }]);
     expect(agent.tasks).toHaveLength(5); // ask-user is not auto-fix, so no fix pass
   });
 
@@ -123,10 +125,11 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx, approvals } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     const summary = summaryOf(await reviewStep().run(ctx));
 
+    expect(approvals).toHaveLength(1);
     expect(agent.tasks).toHaveLength(5); // no fix pass ran
     expect(summary).toContain("Confirm contract");
   });

@@ -199,6 +199,56 @@ describe("executeRoundLoop", () => {
     ]);
   });
 
+  test("can continue with a user-selected fix before fresh verification", async () => {
+    const selected = finding("ask-user", "Needs decision");
+    const priorRounds: RoundRecordInput[] = [
+      { trigger: "initial", findings: [selected], selectedFindingIds: [selected.id] },
+    ];
+    const fixes: RoundFixInput[] = [];
+    const checks: RoundCheckInput[] = [];
+    const git = new FakeGit();
+    git.stagedFiles = ["src/a.ts"];
+    git.commitSha = "abc";
+    const { ctx } = fakeCtx({ git });
+
+    const result = await executeRoundLoop(ctx, {
+      initialRounds: priorRounds,
+      initialAttempts: 1,
+      initialFixFindings: [selected],
+      check(input) {
+        checks.push(input);
+        return Promise.resolve({ findings: [] });
+      },
+      fix(input) {
+        fixes.push(input);
+        return Promise.resolve({ summary: "fixed user selection" });
+      },
+      commitMessage: "chore: fix selected finding",
+    });
+
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0]?.attempt).toBe(2);
+    expect(fixes[0]?.history).toEqual(priorRounds);
+    expect(checks.map((check) => check.trigger)).toEqual(["verify"]);
+    expect(checks[0]?.attempt).toBe(2);
+    expect(result).toEqual({
+      stopReason: "clean",
+      findings: [],
+      rounds: [
+        ...priorRounds,
+        {
+          trigger: "user_fix",
+          findings: [selected],
+          selectedFindingIds: [selected.id],
+          fixSummary: "fixed user selection",
+          commitSha: "abc",
+        },
+        { trigger: "verify", findings: [] },
+      ],
+      attempts: 2,
+    });
+  });
+
   test("stops for user decision when no selected finding can be fixed", async () => {
     const issue = finding("ask-user", "Confirm contract");
     const { ctx, asks } = fakeCtx();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CheckRun, Pending, PullRequest } from "@tml/core";
+import { TimeoutError, type CheckRun, type Pending, type PullRequest } from "@tml/core";
 import { ciWaitStep } from "../src/steps/ci-wait.ts";
 import { FakeGit, FakeGitProvider, FakeHarness, fakeCtx } from "./fake-ctx.ts";
 
@@ -95,11 +95,15 @@ describe("ci-wait step", () => {
     const gitProvider = new FakeGitProvider();
     gitProvider.checks = [{ name: "build", status: "completed", conclusion: "cancelled" }];
     const agent = new FakeHarness();
-    const { ctx } = fakeCtx({ agent, gitProvider, reads: { pullRequest: pr } });
+    const { ctx, approvals } = fakeCtx({ agent, gitProvider, reads: { pullRequest: pr } });
 
     const result = await ciWaitStep().run(ctx);
 
     expect(agent.tasks).toHaveLength(0);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.findings).toMatchObject([
+      { severity: "error", action: "ask-user", title: "build did not pass" },
+    ]);
     expect(result).toMatchObject({
       artifacts: {},
       rounds: [
@@ -107,6 +111,30 @@ describe("ci-wait step", () => {
           trigger: "initial",
           findings: [{ severity: "error", action: "ask-user", title: "build did not pass" }],
         },
+        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
+      ],
+    });
+  });
+
+  test("reports timed out checks through structured approval", async () => {
+    class TimeoutGitProvider extends FakeGitProvider {
+      override getChecks(_prNumber: number): Pending<CheckRun[]> {
+        return { poll: () => Promise.reject(new TimeoutError()) };
+      }
+    }
+    const gitProvider = new TimeoutGitProvider();
+    const { ctx, approvals } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await ciWaitStep().run(ctx);
+
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.findings).toMatchObject([
+      { severity: "warning", action: "ask-user", title: "CI did not settle before the timeout" },
+    ]);
+    expect(result).toMatchObject({
+      rounds: [
+        { trigger: "initial", findings: [{ title: "CI did not settle before the timeout" }] },
+        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
       ],
     });
   });

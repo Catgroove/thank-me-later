@@ -9,7 +9,6 @@
 
 import {
   defineStep,
-  executeRoundLoop,
   type Ctx,
   type Git,
   type GitStatus,
@@ -17,6 +16,7 @@ import {
   type RoundCheckInput,
   type Step,
 } from "@tml/core";
+import { executeRoundLoopWithApproval } from "../approval-gate.ts";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import {
   architecturePrompt,
@@ -132,7 +132,8 @@ export function reviewStep(): Step {
     async run(ctx) {
       let latestPasses: ReviewPass[] = [];
 
-      const result = await executeRoundLoop(ctx, {
+      const result = await executeRoundLoopWithApproval(ctx, {
+        stepName: "review",
         async check(input) {
           latestPasses = await runReviewPasses(ctx, input);
           return { findings: latestPasses.flatMap((p) => p.result.findings) };
@@ -144,6 +145,7 @@ export function reviewStep(): Step {
         commitMessage: "chore: apply fixes from review",
       });
 
+      if ("kind" in result) return result;
       return {
         artifacts: {
           reviewSummary: summarize(latestPasses, fixSummaries(result.rounds), {

@@ -16,6 +16,7 @@ import {
   present,
   type Renderer,
 } from "@tml/view";
+import { createCliApprovalResponder } from "./approval.ts";
 import { assembleShipConfig } from "./config.ts";
 import { init } from "./init.ts";
 import { loadTmlConfig } from "./load.ts";
@@ -86,7 +87,11 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
                 ...(deps.runId ? { runId: deps.runId } : {}),
               })
             : undefined));
-    const engine = engineFor(await buildConfig(cwd), { cwd, ...(journal ? { journal } : {}) });
+    const engine = engineFor(await buildConfig(cwd), {
+      cwd,
+      approveFindings: createCliApprovalResponder(),
+      ...(journal ? { journal } : {}),
+    });
     let view = initialView;
     let failed = false;
     let cancelled = false;

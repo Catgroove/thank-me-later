@@ -181,11 +181,13 @@ export interface FakeCtxResult {
   ctx: Ctx;
   logs: string[];
   asks: string[];
+  approvals: ApproveFindingsInput[];
 }
 
 export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const logs: string[] = [];
   const asks: string[] = [];
+  const approvals: ApproveFindingsInput[] = [];
   const reads = parts.reads ?? {};
   const signal = parts.signal ?? new AbortController().signal;
   const ask = parts.ask ?? ((_prompt: string) => Promise.resolve(""));
@@ -207,6 +209,7 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
       return ask(prompt);
     },
     approveFindings(input) {
+      approvals.push(input);
       return approveFindings(input);
     },
     rounds(stepName?: string) {
@@ -220,5 +223,5 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
     },
   };
 
-  return { ctx, logs, asks };
+  return { ctx, logs, asks, approvals };
 }

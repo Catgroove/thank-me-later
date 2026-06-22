@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { makeFinding, type Finding } from "@tml/core";
 import { checkStep, formatStep, lintStep, testStep, typecheckStep } from "../src/steps/check.ts";
 import { checkFindingsSchema, formatPrompt } from "../src/prompts.ts";
 import { FakeGit, FakeHarness, fakeCtx } from "./fake-ctx.ts";
@@ -22,11 +23,20 @@ describe("checkStep", () => {
   test("returns an ask-user finding when a non-ok check has no structured output", async () => {
     const agent = new FakeHarness();
     agent.result = { ok: false, summary: "lint failures remain" };
-    const { ctx, asks } = fakeCtx({ agent });
+    const { ctx, asks, approvals } = fakeCtx({ agent });
 
     const result = await checkStep("lint", "lint it").run(ctx);
 
     expect(asks).toEqual([]);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.findings).toMatchObject([
+      {
+        severity: "error",
+        action: "ask-user",
+        title: "lint check did not return structured findings",
+        detail: "lint failures remain",
+      },
+    ]);
     expect(result).toMatchObject({
       artifacts: {},
       rounds: [
@@ -40,6 +50,10 @@ describe("checkStep", () => {
               detail: "lint failures remain",
             },
           ],
+        },
+        {
+          trigger: "user_fix",
+          fixSummary: "Operator approved unresolved findings.",
         },
       ],
     });
@@ -93,6 +107,154 @@ describe("checkStep", () => {
           commitSha: "abc",
         },
         { trigger: "verify", findings: [] },
+      ],
+    });
+  });
+
+  test("approval abort returns a cancel flow signal", async () => {
+    const agent = new FakeHarness();
+    agent.result = { ok: false, summary: "lint failures remain" };
+    const { ctx } = fakeCtx({
+      agent,
+      approveFindings: () => Promise.resolve({ action: "abort" }),
+    });
+
+    const result = await checkStep("lint", "lint it").run(ctx);
+
+    expect(result).toMatchObject({ kind: "cancel" });
+  });
+
+  test("approval approve records notes and user-authored findings", async () => {
+    const agent = new FakeHarness();
+    agent.result = { ok: false, summary: "lint failures remain" };
+    const userFinding = makeFinding("user", {
+      severity: "warning",
+      action: "no-op",
+      title: "Known follow-up",
+      detail: "Track separately",
+    });
+    const { ctx } = fakeCtx({
+      agent,
+      approveFindings: (input) =>
+        Promise.resolve({
+          action: "approve",
+          notes: { [input.findings[0]?.id ?? "missing"]: "accepted risk" },
+          userFindings: [userFinding],
+        }),
+    });
+
+    const result = await checkStep("lint", "lint it").run(ctx);
+    const rounds = (
+      result as { rounds?: { userNotes?: Record<string, string>; findings?: Finding[] }[] }
+    ).rounds;
+    const findingId = rounds?.[0]?.findings?.[0]?.id ?? "missing";
+
+    expect(rounds?.[1]?.userNotes).toEqual({ [findingId]: "accepted risk" });
+    expect(rounds?.[1]?.findings).toContainEqual(userFinding);
+  });
+
+  test("approval fix runs a user-selected fix and then verifies fresh", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      {
+        ok: true,
+        summary: "needs input",
+        output: {
+          findings: [
+            {
+              severity: "warning",
+              action: "ask-user",
+              title: "Choose contract",
+              detail: "needs operator selection",
+            },
+          ],
+        },
+      },
+      { ok: true, summary: "fixed selected finding" },
+      { ok: true, summary: "clean", output: { findings: [] } },
+    );
+    const git = new FakeGit();
+    git.stagedFiles = ["src/a.ts"];
+    const { ctx } = fakeCtx({
+      agent,
+      git,
+      approveFindings: (input) =>
+        Promise.resolve({ action: "fix", selectedFindingIds: [input.findings[0]?.id ?? ""] }),
+    });
+
+    const result = await checkStep("lint", "lint it").run(ctx);
+
+    expect(agent.tasks).toHaveLength(3);
+    expect(agent.tasks[1]).toContain("Fix step: lint");
+    expect(agent.tasks[2]).toContain("Prior check round history");
+    expect(result).toMatchObject({
+      rounds: [
+        { trigger: "initial", findings: [{ title: "Choose contract" }] },
+        { trigger: "user_fix", fixSummary: "fixed selected finding" },
+        { trigger: "verify", findings: [] },
+      ],
+    });
+  });
+
+  test("approval fix asks again when fresh verification still needs a decision", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      {
+        ok: true,
+        summary: "needs input",
+        output: {
+          findings: [
+            {
+              severity: "warning",
+              action: "ask-user",
+              title: "Choose contract",
+              detail: "needs operator selection",
+            },
+          ],
+        },
+      },
+      { ok: true, summary: "fixed selected finding" },
+      {
+        ok: true,
+        summary: "still needs input",
+        output: {
+          findings: [
+            {
+              severity: "warning",
+              action: "ask-user",
+              title: "Confirm follow-up",
+              detail: "still pending",
+            },
+          ],
+        },
+      },
+    );
+    const git = new FakeGit();
+    git.stagedFiles = ["src/a.ts"];
+    let approvals = 0;
+    const { ctx } = fakeCtx({
+      agent,
+      git,
+      approveFindings: (input) => {
+        approvals += 1;
+        return Promise.resolve(
+          approvals === 1
+            ? { action: "fix", selectedFindingIds: [input.findings[0]?.id ?? ""] }
+            : { action: "approve" },
+        );
+      },
+    });
+
+    const result = await checkStep("lint", "lint it").run(ctx);
+
+    expect(approvals).toBe(2);
+    expect(agent.tasks).toHaveLength(3);
+    expect(result).toMatchObject({
+      rounds: [
+        { trigger: "initial", findings: [{ title: "Choose contract" }] },
+        { trigger: "user_fix", fixSummary: "fixed selected finding" },
+        { trigger: "verify", findings: [{ title: "Confirm follow-up" }] },
+        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
       ],
     });
   });
