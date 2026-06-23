@@ -1,10 +1,24 @@
 // Small pure formatting helpers shared by the TUI components: status glyphs/labels and human
 // duration/elapsed strings. Kept generic - no Step-name knowledge, no default-Pipeline assumptions.
 
+import type { Finding, FindingDisposition } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 
 export type StepStatus = StepView["status"];
+
+/** Disposition accent color, shared by the findings inspector and the approval drawer. */
+export const DISPOSITION_COLOR: Record<FindingDisposition, string> = {
+  blocker: "#ef4444",
+  "should-fix": "#f59e0b",
+  consider: "#38bdf8",
+  nit: "#94a3b8",
+};
+
+/** The `[disposition]` marker prefixing a finding line in both finding surfaces. */
+export function findingMarker(finding: Finding): string {
+  return `[${finding.disposition}]`;
+}
 
 /**
  * The phases of a Step's latest group (the most recently started), deduped by label keeping the
@@ -43,10 +57,6 @@ export function statusGlyph(status: StepStatus): string {
 
 export function statusColor(status: StepStatus): string {
   return COLORS[status];
-}
-
-export function statusLabel(status: StepStatus): string {
-  return status;
 }
 
 /**

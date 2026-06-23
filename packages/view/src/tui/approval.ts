@@ -16,7 +16,15 @@ export interface FindingSection {
 // Most-actionable first: the decisions the user must make, then what the next round fixes on its
 // own, then purely informational notes. This single order is the source of truth for both the
 // drawer layout and the keyboard navigation index, so the two never drift apart.
-const SECTION_ORDER: readonly FindingAction[] = ["ask-user", "auto-fix", "no-op"];
+export const SECTION_ORDER: readonly FindingAction[] = ["ask-user", "auto-fix", "no-op"];
+
+// The canonical header label for each action group, shared by the findings inspector and the
+// approval drawer so the two surfaces name a group identically.
+export const SECTION_LABEL: Record<FindingAction, string> = {
+  "ask-user": "Needs your decision",
+  "auto-fix": "Auto-fix",
+  "no-op": "Informational",
+};
 
 /** Group findings by action into the canonical section order, dropping empty sections. */
 export function findingSections(findings: readonly Finding[]): FindingSection[] {

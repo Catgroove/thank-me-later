@@ -18,6 +18,11 @@ const RUN_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 export type RunStatus = "running" | "finished" | "failed" | "cancelled";
 export type RunJournalResumeMode = "fresh" | "auto" | "exact";
 
+export interface RunWorktreeHandoff {
+  readonly sourceResumeKey: string;
+  readonly workspaceBranch: string;
+}
+
 export interface RunMetadata {
   readonly runId: string;
   readonly checkoutKey: string;
@@ -29,12 +34,14 @@ export interface RunMetadata {
   readonly completedSteps: string[];
   /** Disposable checkout where the Run executes. It lives under this Run's private state dir. */
   readonly workspacePath?: string;
+  /** Branch checked out by the disposable workspace, once the source checkout has handed it off. */
+  readonly workspaceBranch?: string;
+  /** Durable source-to-worktree handoff state used to resume either side of an interrupted handoff. */
+  readonly worktreeHandoff?: RunWorktreeHandoff;
   /**
-   * The git branch this Run is shipping, used to scope `auto` resume. Set to the branch at start and
-   * advanced to the feature branch once the Run cuts one. A new Run only resumes a parked Run whose
-   * `resumeKey` equals the branch you're on now - so a fresh `tml ship` on the default branch starts
-   * clean instead of replaying a prior shipment, while re-running on the feature branch resumes it.
-   * Optional: absent on legacy journals and when no git branch is available.
+   * Branch-scoped selector for `auto` resume. A new Run only resumes a parked Run whose `resumeKey`
+   * equals the branch you're on now. Optional: absent on legacy journals and when no git branch is
+   * available.
    */
   readonly resumeKey?: string;
 }
@@ -56,8 +63,10 @@ export interface RunJournal {
    * `resumeKey` is resumed (see `RunMetadata.resumeKey`).
    */
   begin(input: { pipeline: string[]; resumeKey?: string }): Promise<RunJournalSnapshot>;
-  /** Advance the Run's resume key as the working branch changes (e.g. once a feature branch is cut). */
+  /** Advance the Run's resume key as the working branch changes. */
   recordResumeKey(resumeKey: string): Promise<void>;
+  /** Atomically persist the source-to-worktree handoff selectors. */
+  recordWorktreeHandoff(input: RunWorktreeHandoff): Promise<void>;
   /** Persist an artifact value before its producing Step is marked complete. */
   recordArtifact(input: { step: string; artifact: string; value: unknown }): Promise<void>;
   /** Mark a Step complete after all of its artifacts have been persisted. */
@@ -229,6 +238,26 @@ class FileRunJournal implements RunJournal {
     await this.writeMetadata();
   }
 
+  async recordWorktreeHandoff(input: RunWorktreeHandoff): Promise<void> {
+    const metadata = this.requireMetadata();
+    if (
+      metadata.resumeKey === input.sourceResumeKey &&
+      metadata.workspaceBranch === input.workspaceBranch &&
+      metadata.worktreeHandoff?.sourceResumeKey === input.sourceResumeKey &&
+      metadata.worktreeHandoff.workspaceBranch === input.workspaceBranch
+    ) {
+      return;
+    }
+    this.metadata = {
+      ...metadata,
+      resumeKey: input.sourceResumeKey,
+      workspaceBranch: input.workspaceBranch,
+      worktreeHandoff: input,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.writeMetadata();
+  }
+
   async recordRound(round: RoundRecord): Promise<void> {
     await appendJsonLine(join(this.requireRunDir(), "rounds.jsonl"), round);
     this.touch(new Date().toISOString());
@@ -287,10 +316,10 @@ class FileRunJournal implements RunJournal {
       const metadata = await readMetadataIfExists(join(runsDir, runId));
       if (metadata === undefined || metadata.status === "finished") continue;
       if (!samePipeline(metadata.pipeline, pipeline)) continue;
-      // Only resume a parked Run that belongs to the branch you're on now. This keeps a fresh
-      // `tml ship` on the default branch from hijacking a prior shipment's feature branch, while a
-      // re-run on that feature branch still resumes it. Legacy runs without a key match a keyless start.
-      if (metadata.resumeKey !== resumeKey) continue;
+      // Only resume a parked Run that belongs to the branch you're on now. Once the source checkout
+      // has started handing the feature branch to a worktree, either side of that handoff may need to
+      // recover the same Run.
+      if (!matchesResumeKey(metadata, resumeKey)) continue;
       candidates.push(metadata);
     }
     candidates.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -359,6 +388,12 @@ function assertCompatible(metadata: RunMetadata, pipeline: string[], runId: stri
   if (!samePipeline(metadata.pipeline, pipeline)) {
     throw new Error(`tml: cannot resume run ${runId}: the Pipeline no longer matches the journal.`);
   }
+}
+
+function matchesResumeKey(metadata: RunMetadata, resumeKey: string | undefined): boolean {
+  if (metadata.resumeKey === resumeKey) return true;
+  const handoff = metadata.worktreeHandoff;
+  return handoff?.sourceResumeKey === resumeKey || handoff?.workspaceBranch === resumeKey;
 }
 
 function samePipeline(a: readonly string[], b: readonly string[]): boolean {

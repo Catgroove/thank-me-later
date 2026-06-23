@@ -30,12 +30,11 @@ export {
   currentFindings,
   findingId,
   findingLifecycle,
+  hasPriorRounds,
   makeFinding,
   parseAgentFindingsOutput,
   renderFindingForPr,
   renderPipelineSummaryForPr,
-  renderRoundForPr,
-  renderRoundForPrompt,
   renderRoundsForPr,
   renderRoundsForPrompt,
   renderUnresolvedFindingsForPr,
@@ -93,11 +92,8 @@ export {
   type RunJournalSnapshot,
   type RunMetadata,
   type RunStatus,
+  type RunWorktreeHandoff,
 } from "./run-journal.ts";
-export {
-  createIsolatedWorkspace,
-  currentWorkspaceSourceBranch,
-  removeIsolatedWorkspace,
-  type WorkspaceSnapshot,
-} from "./workspace.ts";
-export { AssemblyError, validatePipeline } from "./validate.ts";
+export { createWorktree, currentWorkspaceSourceBranch, removeWorktree } from "./workspace.ts";
+export { AssemblyError, isolationBoundaryFor, validatePipeline } from "./validate.ts";
+export type { IsolationBoundary } from "./validate.ts";

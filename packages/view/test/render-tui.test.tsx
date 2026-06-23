@@ -132,7 +132,7 @@ describe("TUI App (no real terminal)", () => {
     expect(frame).toContain("approval needed"); // the drawer is the primary surface
     // Findings are split into action sections instead of one flat list.
     expect(frame).toContain("Needs your decision");
-    expect(frame).toContain("Auto-fix next round");
+    expect(frame).toContain("Auto-fix");
     // The per-row action tag is gone now that the section header carries it.
     expect(frame).not.toContain("(ask-user)");
     t.renderer.destroy();

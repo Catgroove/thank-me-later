@@ -8,28 +8,13 @@ import { parseAgentFindingsOutput, type Finding, renderFindingForPr } from "@tml
 export type { Finding };
 export type Risk = "low" | "medium" | "high";
 
-export interface PassResult {
-  readonly findings: Finding[];
-}
-
-/** A pass paired with the human-facing section title `summarize` renders it under. */
-export interface ReviewPass {
-  readonly title: string;
-  readonly result: PassResult;
-}
-
-/** Validate one pass's structured reply into a `PassResult`, throwing on anything malformed. */
-export function parsePassResult(output: unknown): PassResult {
-  if (typeof output !== "object" || output === null) {
-    throw new Error("review: the agent did not return a structured pass result");
-  }
-  return {
-    findings: parseAgentFindingsOutput(output, {
-      namespace: "review",
-      sourceName: "review",
-      enforceActionForDisposition: true,
-    }),
-  };
+/** Validate the review pass's structured reply into core Findings, throwing on anything malformed. */
+export function parseReviewFindings(output: unknown): Finding[] {
+  return parseAgentFindingsOutput(output, {
+    namespace: "review",
+    sourceName: "review",
+    enforceActionForDisposition: true,
+  });
 }
 
 /** Strongest disposition wins. */
@@ -39,48 +24,18 @@ export function riskOf(findings: readonly Finding[]): Risk {
   return "low";
 }
 
-function renderFinding(f: Finding, fixedFindingIds: ReadonlySet<string> | undefined): string {
-  const text = renderFindingForPr(f);
-  // By default, preserve the original one-shot review behavior: auto-fix findings in the
-  // summarized passes were handed to the fix pass and read as already handled. Round-based review
-  // can pass an explicit fixed-id set when summarizing a verification pass, where an auto-fix
-  // finding still present is unresolved and must not be struck through.
-  if (f.action === "auto-fix" && (fixedFindingIds === undefined || fixedFindingIds.has(f.id))) {
-    return `- ~~${text.slice(2)}~~ (fixed)`;
-  }
-  return text;
-}
-
-export interface SummarizeOptions {
-  readonly fixedFindingIds?: readonly string[];
-}
-
-/** Fold the passes into the `reviewSummary` markdown. Above the fold: risk, a one-line tally,
+/** Fold the findings into the `reviewSummary` markdown. Above the fold: risk, a one-line tally,
  *  and the fixes applied. The full review breakdown is tucked into a collapsible `<details>` so
  *  the PR body stays scannable. Deterministic. */
-export function summarize(
-  passes: readonly ReviewPass[],
-  fixSummary: string,
-  options: SummarizeOptions = {},
-): string {
-  const all = passes.flatMap((p) => p.result.findings);
+export function summarize(findings: readonly Finding[], fixSummary: string): string {
   const fixes = fixSummary.trim();
-  const fixedFindingIds =
-    options.fixedFindingIds === undefined ? undefined : new Set(options.fixedFindingIds);
+  const unresolvedAutoFix = findings.filter((f) => f.action === "auto-fix").length;
+  const decide = findings.filter((f) => f.action === "ask-user").length;
+  const info = findings.filter((f) => f.action === "no-op").length;
 
-  const fixed = all.filter(
-    (f) => f.action === "auto-fix" && (fixedFindingIds === undefined || fixedFindingIds.has(f.id)),
-  ).length;
-  const unresolvedAutoFix = all.filter(
-    (f) => f.action === "auto-fix" && fixedFindingIds !== undefined && !fixedFindingIds.has(f.id),
-  ).length;
-  const decide = all.filter((f) => f.action === "ask-user").length;
-  const info = all.filter((f) => f.action === "no-op").length;
-
-  const head: string[] = [`**Risk: ${riskOf(all)}**`, ""];
+  const head: string[] = [`**Risk: ${riskOf(findings)}**`, ""];
 
   const tally = [
-    fixed > 0 ? `${fixed} fixed` : null,
     unresolvedAutoFix > 0
       ? `${unresolvedAutoFix} ${unresolvedAutoFix === 1 ? "still needs" : "still need"} an auto-fix`
       : null,
@@ -90,18 +45,16 @@ export function summarize(
   if (tally.length > 0) head.push(tally.join(" · "), "");
   if (fixes.length > 0) head.push(`**Fixes applied:** ${fixes}`, "");
 
-  // The full, per-phase breakdown - collapsed by default.
-  const body: string[] = [];
-  for (const pass of passes) {
-    if (pass.result.findings.length === 0) continue;
-    body.push(`### ${pass.title}`);
-    for (const f of pass.result.findings) body.push(renderFinding(f, fixedFindingIds));
-    body.push("");
-  }
-
   const lines = [...head];
-  if (body.length > 0) {
-    lines.push("<details>", "<summary>Full review</summary>", "", ...body, "</details>");
+  if (findings.length > 0) {
+    lines.push(
+      "<details>",
+      "<summary>Full review</summary>",
+      "",
+      ...findings.map(renderFindingForPr),
+      "",
+      "</details>",
+    );
   } else {
     lines.push("No findings.");
   }

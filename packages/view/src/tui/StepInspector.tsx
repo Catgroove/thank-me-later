@@ -8,23 +8,20 @@
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
-import type {
-  Finding,
-  FindingAction,
-  FindingLifecycle,
-  FindingStatus,
-  RoundRecord,
-} from "@tml/core";
+import type { FindingLifecycle, FindingStatus, RoundRecord } from "@tml/core";
 import { findingLifecycle } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
+  DISPOSITION_COLOR,
+  findingMarker,
   latestGroupPhases,
   phaseElapsed,
   statusColor,
   statusGlyph,
   stepElapsed,
 } from "./format.ts";
+import { SECTION_LABEL, SECTION_ORDER } from "./approval.ts";
 import { TABS, effectiveIndex, type NavState, type Tab } from "./navigation.ts";
 
 export interface InspectorProps {
@@ -38,13 +35,6 @@ export interface InspectorProps {
    */
   readonly focusedFindingId?: Accessor<string | undefined>;
 }
-
-const DISPOSITION_COLOR: Record<Finding["disposition"], string> = {
-  blocker: "#ef4444",
-  "should-fix": "#f59e0b",
-  consider: "#38bdf8",
-  nit: "#94a3b8",
-};
 
 function TabBar(props: { active: Tab }) {
   return (
@@ -210,7 +200,7 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const meta = () => STATUS_META[props.entry.status];
   // The focused background matches the approval drawer's focused-finding row so the two surfaces
   // read as pointing at the same finding.
-  const marker = () => `[${f().disposition}]`;
+  const marker = () => findingMarker(f());
   // Resolved findings dim so the eye lands on what still needs work; open/pending keep the finding's
   // disposition color.
   const titleColor = () => (meta().resolved ? "#64748b" : DISPOSITION_COLOR[f().disposition]);
@@ -239,17 +229,10 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   );
 }
 
-// Findings split by what happens to them, most-actionable first: a decision the user must make, then
-// the set the next round will fix on its own, then purely informational notes. Grouping replaces the
-// per-line `(action)` tag - the section header now carries it - so the user sees at a glance what
-// needs them versus what the pipeline handles. The per-line status glyph adds the orthogonal
-// progress dimension: which of those findings are still pending, fixed, or decided.
-const FINDING_SECTIONS: readonly { action: FindingAction; label: string }[] = [
-  { action: "ask-user", label: "Needs your decision" },
-  { action: "auto-fix", label: "Auto-fix" },
-  { action: "no-op", label: "Informational" },
-];
-
+// the set the next round will fix on its own, then purely informational notes. The grouping and its
+// canonical order are shared with the approval drawer (SECTION_ORDER/SECTION_LABEL), so the section
+// header carries the action and the per-line `(action)` tag drops away. The per-line status glyph
+// adds the orthogonal progress dimension: which of those findings are still pending, fixed, or decided.
 function FindingSection(props: { label: string; entries: FindingLifecycle[]; focusedId?: string }) {
   return (
     <box flexDirection="column" marginBottom={1}>
@@ -273,13 +256,13 @@ function Findings(props: { step: StepView; focusedId?: string }) {
             {progressLine(entries())}
           </text>
         </Show>
-        <For each={FINDING_SECTIONS}>
-          {(section) => {
-            const items = () => entries().filter((e) => e.finding.action === section.action);
+        <For each={SECTION_ORDER}>
+          {(action) => {
+            const items = () => entries().filter((e) => e.finding.action === action);
             return (
               <Show when={items().length > 0}>
                 <FindingSection
-                  label={section.label}
+                  label={SECTION_LABEL[action]}
                   entries={items()}
                   focusedId={props.focusedId}
                 />

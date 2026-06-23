@@ -19,6 +19,16 @@ import {
 
 const reviewDiff = "diff --git a/src/a.ts b/src/a.ts\n+const marker = true;";
 const reviewPass = reviewPrompt({ prBody: "a body", diff: reviewDiff });
+const inspectGroundRules =
+  "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
+  "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
+  "directly instead of invoking local quality tools. If a tool can only prove or repair the " +
+  "problem by changing files, return an auto-fix finding for the later fix round. ";
+const runGroundRules =
+  "\n\nThis is a check/verification round, not a fix round. Run the check's command to judge " +
+  "the repository, building or installing whatever it needs to run. Do not edit source " +
+  "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
+  "repaired by changing files, return an auto-fix finding for the later fix round. ";
 
 describe("default pipeline prompts", () => {
   test("check + review prompts are non-empty and avoid specific toolchains", () => {
@@ -44,26 +54,44 @@ describe("default pipeline prompts", () => {
     }
   });
 
-  test("checkPrompt creates structured read-only check and verification prompts", () => {
+  test("inspect-mode checkPrompt stays read-only and forbids invoking toolchains", () => {
     const initial = checkPrompt({
       name: "lint",
       goal: lintPrompt,
+      groundRules: inspectGroundRules,
       trigger: "initial",
       historyText: "No prior rounds.",
     });
     const verify = checkPrompt({
       name: "lint",
       goal: lintPrompt,
+      groundRules: inspectGroundRules,
       trigger: "verify",
       historyText: "Round 0: initial",
     });
     expect(initial).toContain("Check step: lint");
     expect(initial).toContain("structured findings");
-    expect(initial).toContain("format and lint checks");
-    expect(initial.toLowerCase()).toContain("do not modify");
+    expect(initial).toContain("Inspect files directly instead of invoking local quality tools");
+    expect(initial.toLowerCase()).toContain("do not modify files");
     expect(initial.toLowerCase()).toContain("install dependencies");
     expect(verify).toContain("Prior check round history");
     expect(verify).toContain("Round 0: initial");
+  });
+
+  test("run-mode checkPrompt runs the command and may install deps, but never commits", () => {
+    const initial = checkPrompt({
+      name: "test",
+      goal: testPrompt,
+      groundRules: runGroundRules,
+      trigger: "initial",
+      historyText: "No prior rounds.",
+    });
+    expect(initial).toContain("Check step: test");
+    expect(initial).toContain("Run the check's command");
+    expect(initial).toContain("building or installing whatever it needs to run");
+    expect(initial).not.toContain("Inspect files directly instead of invoking local quality tools");
+    expect(initial.toLowerCase()).toContain("do not edit source files");
+    expect(initial.toLowerCase()).toContain("commit");
   });
 
   test("checkFixPrompt lists selected findings and avoids tml-side command detection", () => {

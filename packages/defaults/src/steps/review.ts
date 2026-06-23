@@ -7,6 +7,7 @@
 import {
   defineStep,
   executeRoundLoop,
+  hasPriorRounds,
   type Ctx,
   type Finding,
   type Harness,
@@ -16,25 +17,20 @@ import {
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
-import {
-  type PassResult,
-  type ReviewPass,
-  parsePassResult,
-  summarize,
-} from "../review/synthesize.ts";
+import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 
 const REVIEW_PASS_TITLE = "Thermo-nuclear code quality review";
 
 /** Run the read-only review pass: structured reply against the findings schema, validated. */
-async function runPass(agent: Harness, prompt: string): Promise<PassResult> {
+async function runPass(agent: Harness, prompt: string): Promise<Finding[]> {
   const result = await agent.run(prompt, { schema: findingsSchema });
-  return parsePassResult(result.output);
+  return parseReviewFindings(result.output);
 }
 
 const READ_ONLY_EDIT_WARNING =
   "warning: the read-only review pass modified the worktree; reverting before continuing";
 
-async function runGuardedPass(ctx: Ctx, prompt: string): Promise<PassResult> {
+async function runGuardedPass(ctx: Ctx, prompt: string): Promise<Finding[]> {
   const before = await ctx.git.status();
   try {
     return await runPass(ctx.agent, prompt);
@@ -44,15 +40,13 @@ async function runGuardedPass(ctx: Ctx, prompt: string): Promise<PassResult> {
 }
 
 function withRoundHistory(prompt: string, input: RoundCheckInput): string {
-  if (input.trigger === "initial") return prompt;
-  const history = input.historyText.trim();
-  if (history.length === 0 || history === "No prior rounds.") return prompt;
+  if (input.trigger === "initial" || !hasPriorRounds(input.historyText)) return prompt;
   return (
     prompt +
     "\n\nPrior review round history from this run. Use it explicitly: verify that previous " +
     "auto-fix findings were actually fixed, do not re-report resolved findings, and explain any " +
     "remaining or newly introduced findings against the current diff.\n" +
-    history
+    input.historyText.trim()
   );
 }
 
@@ -61,27 +55,18 @@ function passGroup(input: RoundCheckInput): string {
   return input.trigger === "initial" ? "initial" : `verify · attempt ${input.attempt}`;
 }
 
-/** The pass's findings, surfaced live as the phase resolves. */
-const passFindings = (result: PassResult): readonly Finding[] => result.findings;
-
-function reviewFindings(passes: readonly ReviewPass[]): Finding[] {
-  return passes.flatMap((pass) => pass.result.findings);
-}
-
-async function runReviewPasses(
+async function runReviewPass(
   ctx: Ctx<readonly [typeof prBody]>,
   input: RoundCheckInput,
-): Promise<ReviewPass[]> {
+): Promise<Finding[]> {
   const prompt = reviewPrompt({
     prBody: ctx.read(prBody),
     diff: await ctx.git.diffAgainst(await ctx.git.defaultBranch()),
   });
-  const result = await ctx.phase(
-    REVIEW_PASS_TITLE,
-    () => runGuardedPass(ctx, withRoundHistory(prompt, input)),
-    { group: passGroup(input), findings: passFindings },
-  );
-  return [{ title: REVIEW_PASS_TITLE, result }];
+  return ctx.phase(REVIEW_PASS_TITLE, () => runGuardedPass(ctx, withRoundHistory(prompt, input)), {
+    group: passGroup(input),
+    findings: (findings) => findings,
+  });
 }
 
 function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): string {
@@ -97,13 +82,13 @@ export function reviewStep(): Step {
     consumes: [prBody],
     produces: [reviewSummary],
     async run(ctx) {
-      let latestPasses: ReviewPass[] = [];
+      let latestFindings: Finding[] = [];
 
       const result = await executeRoundLoop(ctx, {
         stepName: "review",
         async check(input) {
-          latestPasses = await runReviewPasses(ctx, input);
-          return { findings: reviewFindings(latestPasses) };
+          latestFindings = await runReviewPass(ctx, input);
+          return { findings: latestFindings };
         },
         async fix(input) {
           return ctx.phase(
@@ -121,9 +106,7 @@ export function reviewStep(): Step {
 
       return {
         artifacts: {
-          reviewSummary: summarize(latestPasses, fixSummaries(result.rounds), {
-            fixedFindingIds: [],
-          }),
+          reviewSummary: summarize(latestFindings, fixSummaries(result.rounds)),
         },
         rounds: [],
       };

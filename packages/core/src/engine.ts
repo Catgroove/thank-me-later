@@ -28,6 +28,20 @@ import { validatePipeline } from "./validate.ts";
 
 const MAX_RETRIES = 3;
 
+/** The cross-cutting dependencies every event-emitting helper needs, bundled so they thread through
+ *  `emit`/`failed`/`cancelled`/`makeContext` as one value instead of three positional args. */
+interface EngineEventCoalescing {
+  readonly suppressRunStarted?: boolean;
+  readonly replaySteps?: ReadonlySet<string>;
+}
+
+interface EngineRun {
+  readonly queue: EventQueue<RunEvent>;
+  readonly journal: RunJournal | undefined;
+  readonly now: () => number;
+  readonly coalescing?: EngineEventCoalescing;
+}
+
 export interface EngineOptions {
   /** Working dir for the native Git capability. Defaults to process.cwd(). */
   cwd?: string;
@@ -43,6 +57,18 @@ export interface EngineOptions {
   journal?: RunJournal | false;
   /** Clock for the `at` timestamp stamped on every event. Defaults to `Date.now`; injectable for tests. */
   now?: () => number;
+  /**
+   * Halt the Run after the named Step completes, without finishing the journal. The host uses this
+   * to pause at the isolation boundary, hand the work off to a worktree, then resume the same
+   * journaled Run in a second pass (which replays the completed Steps from the journal). Absent: the
+   * Run executes to completion as usual.
+   */
+  stopAfter?: string;
+  /** Suppress host-coalesced resume events before they reach either the journal or consumers. */
+  coalesceEvents?: {
+    readonly suppressRunStarted?: boolean;
+    readonly replaySteps?: ReadonlySet<string> | readonly string[];
+  };
 }
 
 export interface Engine {
@@ -71,9 +97,10 @@ async function* runPipeline(config: Config, opts: EngineOptions): AsyncGenerator
   else external?.addEventListener("abort", onExternalAbort, { once: true });
 
   // Run the pipeline in the background, pushing events live. A truly unexpected
-  // throw (the driver catches Step errors itself) still terminates the stream.
+  // throw (the driver catches Step errors itself) still terminates the stream. This fallback uses
+  // only an explicitly-injected journal (no default), as before drive owns the default it creates.
   const driver = drive(config, opts, queue, controller.signal).catch((error) =>
-    failed(queue, opts.journal === false ? undefined : opts.journal, now, error),
+    failed({ queue, journal: opts.journal === false ? undefined : opts.journal, now }, error),
   );
 
   try {
@@ -97,6 +124,8 @@ async function drive(
   const git = opts.git ?? createGit(cwd);
   const journal =
     opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
+  const coalescing = eventCoalescing(opts.coalesceEvents);
+  const run: EngineRun = { queue, journal, now, ...(coalescing ? { coalescing } : {}) };
   // The branch you're on scopes `auto` resume: a parked Run only resumes on the branch it was
   // shipping. We seed it at start and advance it as Steps move HEAD onto a feature branch.
   let resumeKey = await currentBranchOrUndefined(git);
@@ -133,7 +162,7 @@ async function drive(
   const runRounds: RoundRecord[] = [...(snapshot?.rounds ?? [])];
   const roundIndexes = new Map<string, number>(snapshot?.roundIndexes);
 
-  await emit(queue, journal, now, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
+  await emit(run, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
 
   // Validate configured model ids against the live Harness *before* the first Step,
   // but only when the Harness can list its models - otherwise we can't, so we don't.
@@ -143,30 +172,37 @@ async function drive(
     try {
       available = new Set(await providers.agent.listModels());
     } catch (error) {
-      if (signal.aborted) return cancelled(queue, journal, now);
-      return failed(queue, journal, now, error);
+      if (signal.aborted) return cancelled(run);
+      return failed(run, error);
     }
-    if (signal.aborted) return cancelled(queue, journal, now);
+    if (signal.aborted) return cancelled(run);
     // An empty list is not a usable allowlist (the Harness can't, or won't, enumerate) - skip
     // rather than reject every id. Only a non-empty list validates configured ids.
     for (const [key, id] of available.size === 0 ? [] : Object.entries(models)) {
       if (id === undefined || available.has(id)) continue;
       const where = key === "default" ? "models.default" : `models["${key}"]`;
       return failed(
-        queue,
-        journal,
-        now,
+        run,
         `${where} is "${id}", which the Harness does not list as an available model.`,
       );
     }
   }
 
+  // The isolation boundary: once the run advances past this Step, pause instead of continuing, so
+  // the host can hand off to a worktree and resume this same journaled Run in a second pass.
+  const stopIndex = opts.stopAfter !== undefined ? stepByName.get(opts.stopAfter) : undefined;
+
   let replayFromJournal = true;
   let i = 0;
   while (i < pipeline.length) {
+    if (stopIndex !== undefined && i > stopIndex) {
+      await emit(run, { type: "run:paused", step: opts.stopAfter as string });
+      queue.close();
+      return;
+    }
     const step = pipeline[i];
     if (step === undefined) break;
-    if (signal.aborted) return cancelled(queue, journal, now, step.name);
+    if (signal.aborted) return cancelled(run, step.name);
 
     if (step.resume === "reconcile") replayFromJournal = false;
     try {
@@ -176,7 +212,7 @@ async function drive(
         // render the Step empty. Mirrors the normal completion path (artifacts, then rounds).
         for (const artifact of step.produces) {
           const value = snapshot?.artifacts.get(artifact.name);
-          await emit(queue, journal, now, {
+          await emitReplay(run, {
             type: "artifact:written",
             step: step.name,
             artifact: artifact.name,
@@ -185,22 +221,22 @@ async function drive(
         }
         for (const round of snapshot?.rounds ?? []) {
           if (round.step !== step.name) continue;
-          await emit(queue, journal, now, { type: "round:recorded", step: step.name, round });
+          await emitReplay(run, { type: "round:recorded", step: step.name, round });
         }
-        await emit(queue, journal, now, { type: "step:skipped", step: step.name });
+        await emitReplay(run, { type: "step:skipped", step: step.name });
         i += 1;
         continue;
       }
     } catch (error) {
-      return failed(queue, journal, now, error, step.name);
+      return failed(run, error, step.name);
     }
 
-    await emit(queue, journal, now, { type: "step:started", step: step.name });
+    await emit(run, { type: "step:started", step: step.name });
     const visibleRounds = runRounds.filter((round) => (stepByName.get(round.step) ?? Infinity) < i);
     const recordStepRound = async (round: RoundRecordInput): Promise<RoundRecord> => {
       const [record] = await appendRounds(journal, roundIndexes, step.name, [round]);
       if (record === undefined) throw new Error("round recorder produced no record");
-      await emit(queue, journal, now, { type: "round:recorded", step: step.name, round: record });
+      await emit(run, { type: "round:recorded", step: step.name, round: record });
       runRounds.push(record);
       return record;
     };
@@ -210,13 +246,11 @@ async function drive(
       store,
       providers,
       git,
-      queue,
-      now,
+      run,
       ask,
       approveFindings,
       signal,
       models,
-      journal,
       visibleRounds,
       recordStepRound,
     );
@@ -227,22 +261,22 @@ async function drive(
     } catch (error) {
       // An abort surfaces here as a thrown AbortError (from until / the agent);
       // report it as a cancellation, not a failure.
-      if (signal.aborted) return cancelled(queue, journal, now, step.name);
-      return failed(queue, journal, now, error, step.name);
+      if (signal.aborted) return cancelled(run, step.name);
+      return failed(run, error, step.name);
     }
-    if (signal.aborted) return cancelled(queue, journal, now, step.name);
+    if (signal.aborted) return cancelled(run, step.name);
 
     if (isFlowSignal(result)) {
       switch (result.kind) {
         case "skip": {
           await journal?.recordStepCompleted(step.name);
-          await emit(queue, journal, now, { type: "step:skipped", step: step.name });
+          await emit(run, { type: "step:skipped", step: step.name });
           i += 1;
           continue;
         }
         case "cancel": {
           await journal?.finish("finished");
-          await emit(queue, journal, now, { type: "run:finished" });
+          await emit(run, { type: "run:finished" });
           queue.close();
           return;
         }
@@ -250,28 +284,20 @@ async function drive(
           const target = stepByName.get(result.step);
           if (target === undefined) {
             return failed(
-              queue,
-              journal,
-              now,
+              run,
               `goto target "${result.step}" is not a Step in the Pipeline`,
               step.name,
             );
           }
           await journal?.recordStepCompleted(step.name);
-          await emit(queue, journal, now, { type: "step:finished", step: step.name });
+          await emit(run, { type: "step:finished", step: step.name });
           i = target;
           continue;
         }
         case "retry": {
           const n = (retries.get(step.name) ?? 0) + 1;
           if (n > MAX_RETRIES) {
-            return failed(
-              queue,
-              journal,
-              now,
-              `Step "${step.name}" exceeded ${MAX_RETRIES} retries`,
-              step.name,
-            );
+            return failed(run, `Step "${step.name}" exceeded ${MAX_RETRIES} retries`, step.name);
           }
           retries.set(step.name, n);
           continue;
@@ -283,21 +309,13 @@ async function drive(
     const declared = new Set(step.produces.map((a) => a.name));
     for (const key of Object.keys(produced)) {
       if (!declared.has(key)) {
-        return failed(
-          queue,
-          journal,
-          now,
-          `Step "${step.name}" returned undeclared artifact "${key}".`,
-          step.name,
-        );
+        return failed(run, `Step "${step.name}" returned undeclared artifact "${key}".`, step.name);
       }
     }
     for (const artifact of step.produces) {
       if (!(artifact.name in produced)) {
         return failed(
-          queue,
-          journal,
-          now,
+          run,
           `Step "${step.name}" did not produce declared artifact "${artifact.name}".`,
           step.name,
         );
@@ -306,12 +324,12 @@ async function drive(
       try {
         await journal?.recordArtifact({ step: step.name, artifact: artifact.name, value });
       } catch (error) {
-        return failed(queue, journal, now, error, step.name);
+        return failed(run, error, step.name);
       }
       store.set(artifact.name, value);
       // Relay the value's string form for presentation when it has one; non-string artifacts
       // (e.g. a PullRequest object - surfaced via `pr:opened`) carry no `rendered`.
-      await emit(queue, journal, now, {
+      await emit(run, {
         type: "artifact:written",
         step: step.name,
         artifact: artifact.name,
@@ -324,23 +342,23 @@ async function drive(
       // can render Findings and Round history without scraping Markdown or waiting on a gate.
       const recorded = await appendRounds(journal, roundIndexes, step.name, rounds);
       for (const round of recorded) {
-        await emit(queue, journal, now, { type: "round:recorded", step: step.name, round });
+        await emit(run, { type: "round:recorded", step: step.name, round });
       }
       runRounds.push(...recorded);
     } catch (error) {
-      return failed(queue, journal, now, error, step.name);
+      return failed(run, error, step.name);
     }
 
     await journal?.recordStepCompleted(step.name);
     // A Step may have moved HEAD onto a feature branch; keep the resume key pointed at it so a
     // re-run on that branch resumes this Run (and a fresh run elsewhere does not).
     await syncResumeKey();
-    await emit(queue, journal, now, { type: "step:finished", step: step.name });
+    await emit(run, { type: "step:finished", step: step.name });
     i += 1;
   }
 
   await journal?.finish("finished");
-  await emit(queue, journal, now, { type: "run:finished" });
+  await emit(run, { type: "run:finished" });
   queue.close();
 }
 
@@ -395,21 +413,63 @@ function stamp(event: RunEventInput, now: () => number): RunEvent {
   return { ...event, at: now() } as RunEvent;
 }
 
-async function emit(
-  queue: EventQueue<RunEvent>,
-  journal: RunJournal | undefined,
-  now: () => number,
+async function emit(run: EngineRun, event: RunEventInput): Promise<void> {
+  if (shouldCoalesce(event, run.coalescing)) return;
+  await emitRecorded(run, event);
+}
+
+type ReplayEventInput = Extract<
+  RunEventInput,
+  { type: "artifact:written" | "round:recorded" | "step:skipped" }
+>;
+
+async function emitReplay(run: EngineRun, event: ReplayEventInput): Promise<void> {
+  if (shouldCoalesceReplay(event, run.coalescing)) return;
+  await emitRecorded(run, event);
+}
+
+async function emitRecorded(run: EngineRun, event: RunEventInput): Promise<void> {
+  const stamped = stamp(event, run.now);
+  await run.journal?.recordEvent(stamped).catch(() => undefined);
+  run.queue.push(stamped);
+}
+
+function eventCoalescing(
+  input: EngineOptions["coalesceEvents"],
+): EngineEventCoalescing | undefined {
+  if (input === undefined) return undefined;
+  const replaySteps =
+    input.replaySteps === undefined
+      ? undefined
+      : input.replaySteps instanceof Set
+        ? input.replaySteps
+        : new Set(input.replaySteps);
+  return {
+    ...(input.suppressRunStarted !== undefined
+      ? { suppressRunStarted: input.suppressRunStarted }
+      : {}),
+    ...(replaySteps !== undefined ? { replaySteps } : {}),
+  };
+}
+
+function shouldCoalesce(
   event: RunEventInput,
-): Promise<void> {
-  const stamped = stamp(event, now);
-  await journal?.recordEvent(stamped).catch(() => undefined);
-  queue.push(stamped);
+  coalescing: EngineEventCoalescing | undefined,
+): boolean {
+  if (coalescing === undefined) return false;
+  if (event.type === "run:started") return coalescing.suppressRunStarted === true;
+  return false;
+}
+
+function shouldCoalesceReplay(
+  event: ReplayEventInput,
+  coalescing: EngineEventCoalescing | undefined,
+): boolean {
+  return coalescing?.replaySteps?.has(event.step) === true;
 }
 
 async function failed(
-  queue: EventQueue<RunEvent>,
-  journal: RunJournal | undefined,
-  now: () => number,
+  { queue, journal, now }: EngineRun,
   error: unknown,
   step?: string,
 ): Promise<void> {
@@ -425,12 +485,7 @@ async function failed(
   queue.close();
 }
 
-async function cancelled(
-  queue: EventQueue<RunEvent>,
-  journal: RunJournal | undefined,
-  now: () => number,
-  step?: string,
-): Promise<void> {
+async function cancelled({ queue, journal, now }: EngineRun, step?: string): Promise<void> {
   await journal?.finish("cancelled").catch(() => undefined);
   const event = stamp(
     step === undefined ? { type: "run:cancelled" } : { type: "run:cancelled", step },
@@ -446,16 +501,15 @@ function makeContext(
   store: Map<string, unknown>,
   providers: Providers,
   git: Git,
-  queue: EventQueue<RunEvent>,
-  now: () => number,
+  run: EngineRun,
   ask: (prompt: string) => Promise<string>,
   approveFindings: (input: ApproveFindingsInput) => Promise<ApprovalDecision>,
   signal: AbortSignal,
   models: ModelMap | undefined,
-  journal: RunJournal | undefined,
   visibleRounds: readonly RoundRecord[],
   recordRound: (round: RoundRecordInput) => Promise<RoundRecord>,
 ): Ctx {
+  const { queue, journal, now } = run;
   const read = (artifact: Artifact<unknown, string>): unknown => {
     if (!store.has(artifact.name)) {
       throw new Error(

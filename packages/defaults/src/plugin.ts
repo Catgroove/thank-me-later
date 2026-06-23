@@ -1,10 +1,13 @@
 // `tmlDefaults` - the blessed default pipeline as an injected-API Plugin. In order:
-//   branch → describe → commit(the change) → rebase → format → lint → typecheck → test
+//   branch → describe → commit(the change) │ rebase → format → lint → typecheck → test
 //          → review → open-pr → ci-wait
-// The work lands as a clean history - your change, then tml's fixes in their own commits. Checks
-// and review commit their auto-fixes through the core round executor. `rebase`
-// runs once the change is committed (clean worktree) so the checks, review, and CI all see the
-// freshly fetched base; turn it off with `disable: ["rebase"]` in tml.json.
+// The `│` marks the isolation boundary (carried on commit-change): branch/describe/commit-change run
+// in the source checkout, then the host switches the checkout back to the default branch and hands
+// the feature branch to a disposable worktree where the rest of the pipeline runs. The work lands as
+// a clean history - your change, then tml's fixes in their own commits. Checks and review commit
+// their auto-fixes through the core round executor. `rebase` runs once the change is committed
+// (clean worktree) so the checks, review, and CI all see the freshly fetched base; turn it off with
+// `disable: ["rebase"]` in tml.json.
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
 // (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
 // (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
@@ -26,7 +29,9 @@ export const tmlDefaults: Plugin = (tml) => {
   tml.pipeline.append(
     branchStep(asBranchMode(tml.config.branch)),
     describeStep(),
-    commitStep("commit-change", prTitle), // your work, subject = the PR title
+    // The isolation boundary: branch/describe/commit-change run in the source checkout, then the
+    // host hands the feature branch to a disposable worktree where the rest of the pipeline runs.
+    { ...commitStep("commit-change", prTitle), isolate: true }, // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
     formatStep(),
     lintStep(),

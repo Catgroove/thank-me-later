@@ -12,6 +12,7 @@ import { type Config, createAssembly, type Plugin } from "@tml/core";
 import tmlDefaults from "@tml/defaults";
 import { createGitHubProvider } from "@tml/github";
 import { createPiHarness } from "@tml/pi";
+import { errorMessage } from "./error.ts";
 import type { Loaded } from "./load.ts";
 
 export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<Config> {
@@ -45,8 +46,4 @@ async function loadPlugin(path: string): Promise<Plugin> {
     throw new Error(`tml: plugin ${path} must \`export default\` a function: (tml) => { … }`);
   }
   return mod.default as Plugin;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

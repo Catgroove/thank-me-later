@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { ModelMap, Selection } from "@tml/core";
+import { errorMessage } from "./error.ts";
 
 const FILENAME = "tml.json";
 const ALLOWED_KEYS = new Set([
@@ -191,8 +192,4 @@ function mergeModels(global?: ModelMap, project?: ModelMap): ModelMap | undefine
 function union(global?: string[], project?: string[]): string[] | undefined {
   if (global === undefined && project === undefined) return undefined;
   return [...new Set([...(global ?? []), ...(project ?? [])])];
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

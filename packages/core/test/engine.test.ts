@@ -190,6 +190,7 @@ describe("engine - happy path", () => {
       recordArtifact: () => Promise.resolve(),
       recordStepCompleted: () => Promise.resolve(),
       recordResumeKey: () => Promise.resolve(),
+      recordWorktreeHandoff: () => Promise.resolve(),
       recordRound: (record) => Promise.resolve(void records.push(record)),
       recordEvent: () => Promise.resolve(),
       finish: () => Promise.resolve(),

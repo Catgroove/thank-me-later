@@ -6,6 +6,7 @@
 
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { errorMessage } from "./error.ts";
 import { findProjectRoot } from "./load.ts";
 
 /** Seams, injected by tests; production uses the real filesystem and console. */
@@ -57,7 +58,7 @@ export async function init(deps: InitDeps = {}): Promise<number> {
     log("Run `tml ship` to ship your work.");
     return 0;
   } catch (caught) {
-    error(`tml init: ${caught instanceof Error ? caught.message : String(caught)}`);
+    error(`tml init: ${errorMessage(caught)}`);
     return 1;
   }
 }

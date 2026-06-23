@@ -5,12 +5,14 @@ import { join } from "node:path";
 import {
   type Config,
   createEngine,
+  createGit,
   type Engine,
   type EngineOptions,
-  createIsolatedWorkspace,
   createRunJournal,
+  createWorktree,
   currentWorkspaceSourceBranch,
-  removeIsolatedWorkspace,
+  isolationBoundaryFor,
+  removeWorktree,
   type RunJournal,
   type RunJournalResumeMode,
 } from "@tml/core";
@@ -24,6 +26,7 @@ import {
   type Renderer,
 } from "@tml/view";
 import { assembleShipConfig } from "./config.ts";
+import { errorMessage } from "./error.ts";
 import { init } from "./init.ts";
 import { loadTmlConfig } from "./load.ts";
 
@@ -124,89 +127,154 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   };
   for (const signal of signals) process.on(signal, onSignal);
 
-  // Production `tml ship` runs in an isolated snapshot workspace. Test seams that inject an Engine
-  // keep the old direct cwd path, so unit tests can stay small and avoid creating git fixtures.
+  // Production `tml ship` runs the early, deterministic Steps (branch/describe/commit-change) in the
+  // user's checkout, then hands the feature branch to a disposable worktree for the rest. Test seams
+  // that inject an Engine keep the direct single-pass cwd path, so unit tests avoid git fixtures.
   let view = initialView;
   let workspaceToClean: string | undefined;
   let setupJournal: RunJournal | undefined;
-  try {
-    let runCwd = cwd;
-    let config: Config;
-    let journal: RunJournal | undefined;
 
-    if (deps.engineFor === undefined) {
-      if (deps.journal === false) {
-        throw new Error("tml ship: isolated runs require the Run Journal.");
+  // Outcome of one engine pass. Two passes (source phase, worktree phase) fold into the same `view`
+  // and the same journaled Run; the engine coalesces phase-2 replay-only events before they reach
+  // either this live stream or the durable journal.
+  interface PassOutcome {
+    failed: boolean;
+    cancelled: boolean;
+    finished: boolean;
+    paused: boolean;
+  }
+  const runPass = async (engine: Engine): Promise<PassOutcome> => {
+    const outcome: PassOutcome = {
+      failed: false,
+      cancelled: false,
+      finished: false,
+      paused: false,
+    };
+    for await (const event of engine.run()) {
+      if (event.type === "run:paused") {
+        outcome.paused = true;
+        continue;
       }
-      const sourceConfig = await buildConfig(cwd);
-      journal =
-        deps.journal ??
-        createRunJournal({
-          checkoutPath: cwd,
-          resume: deps.journalResume ?? "auto",
-          ...(deps.runId ? { runId: deps.runId } : {}),
-        });
-      setupJournal = journal;
-      const resumeKey = await currentWorkspaceSourceBranch(cwd);
-      const snapshot = await journal.begin({
-        pipeline: sourceConfig.pipeline.map((s) => s.name),
-        ...(resumeKey !== undefined ? { resumeKey } : {}),
+      view = present(view, event);
+      renderer.render(view, event);
+      if (event.type === "run:failed") outcome.failed = true;
+      if (event.type === "run:cancelled") outcome.cancelled = true;
+      if (event.type === "run:finished") outcome.finished = true;
+    }
+    return outcome;
+  };
+  const exitCode = (o: PassOutcome): number => (o.cancelled ? 130 : o.failed ? 1 : 0);
+
+  try {
+    // Test seam: a single engine pass directly in the checkout.
+    if (deps.engineFor !== undefined) {
+      const journal = deps.journal === false ? undefined : deps.journal;
+      const config = await buildConfig(cwd);
+      const engine = engineFor(config, {
+        cwd,
+        ask,
+        approveFindings,
+        signal: abortController.signal,
+        ...(journal ? { journal } : {}),
       });
-      const workspacePath = snapshot.metadata.workspacePath;
-      if (workspacePath === undefined) throw new Error("tml ship: Run Journal has no workspace.");
-      const workspaceExists = existsSync(join(workspacePath, ".git"));
-      const hasRunProgress =
-        snapshot.completedSteps.size > 0 ||
-        snapshot.rounds.length > 0 ||
-        snapshot.artifacts.size > 0;
-      if (!workspaceExists) {
-        if (hasRunProgress) {
-          throw new Error(
-            `tml ship: cannot resume run ${snapshot.metadata.runId}; its workspace is missing. ` +
-              "Use `tml ship --fresh` to start a new isolated run.",
-          );
-        }
-        await createIsolatedWorkspace(cwd, workspacePath);
-      }
-      runCwd = workspacePath;
-      workspaceToClean = workspacePath;
-      config = await buildConfig(runCwd);
-      const names = config.pipeline.map((s) => s.name);
-      if (names.join("\0") !== snapshot.metadata.pipeline.join("\0")) {
-        throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
-      }
-    } else {
-      journal = deps.journal === false ? undefined : deps.journal;
-      config = await buildConfig(cwd);
+      return exitCode(await runPass(engine));
     }
 
-    const engine = engineFor(config, {
-      cwd: runCwd,
+    if (deps.journal === false) {
+      throw new Error("tml ship: isolated runs require the Run Journal.");
+    }
+    const sourceConfig = await buildConfig(cwd);
+    const journal =
+      deps.journal ??
+      createRunJournal({
+        checkoutPath: cwd,
+        resume: deps.journalResume ?? "auto",
+        ...(deps.runId ? { runId: deps.runId } : {}),
+      });
+    setupJournal = journal;
+    const resumeKey = await currentWorkspaceSourceBranch(cwd);
+    const pipelineNames = sourceConfig.pipeline.map((s) => s.name);
+    const snapshot = await journal.begin({
+      pipeline: pipelineNames,
+      ...(resumeKey !== undefined ? { resumeKey } : {}),
+    });
+    const worktreePath = snapshot.metadata.workspacePath;
+    if (worktreePath === undefined) throw new Error("tml ship: Run Journal has no workspace.");
+
+    const boundary = isolationBoundaryFor(sourceConfig.pipeline);
+    if (boundary === undefined) {
+      const engine = engineFor(sourceConfig, {
+        cwd,
+        ask,
+        approveFindings,
+        signal: abortController.signal,
+        journal,
+      });
+      return exitCode(await runPass(engine));
+    }
+    const boundaryName = boundary.step.name;
+    const sourcePhase = new Set(boundary.sourceSteps.map((step) => step.name));
+
+    // Phase 1: branch/describe/commit-change in the source checkout, pausing at the boundary. Skip
+    // it when a resumed Run already finished the boundary (the branch + commit are durable in git).
+    if (!snapshot.completedSteps.has(boundaryName)) {
+      const phase1 = engineFor(sourceConfig, {
+        cwd,
+        ask,
+        approveFindings,
+        signal: abortController.signal,
+        journal,
+        stopAfter: boundaryName,
+      });
+      const outcome = await runPass(phase1);
+      if (outcome.finished || outcome.failed || outcome.cancelled) return exitCode(outcome);
+      if (!outcome.paused)
+        throw new Error("tml ship: engine stopped before the isolation handoff.");
+    }
+
+    // Handoff: the source checkout is on the feature branch with the work committed. Switch it back
+    // to the default branch so the worktree can claim the feature branch (git allows a branch in one
+    // worktree only), then add the worktree on that branch.
+    const sourceGit = createGit(cwd);
+    const base = await sourceGit.defaultBranch();
+    const currentBranch = await sourceGit.currentBranch();
+    const featureBranch =
+      snapshot.metadata.worktreeHandoff?.workspaceBranch ??
+      snapshot.metadata.workspaceBranch ??
+      currentBranch;
+    if (featureBranch === base || featureBranch === "HEAD") {
+      throw new Error("tml ship: could not determine the feature branch to isolate.");
+    }
+    await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
+    if (currentBranch === featureBranch) await sourceGit.checkout(base);
+    if (!existsSync(join(worktreePath, ".git"))) {
+      await createWorktree(cwd, featureBranch, worktreePath);
+    }
+    workspaceToClean = worktreePath;
+
+    // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
+    // engine coalesces the source-phase replay so the Run reads as one continuous stream.
+    const worktreeConfig = await buildConfig(worktreePath);
+    if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
+      throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
+    }
+    const phase2 = engineFor(worktreeConfig, {
+      cwd: worktreePath,
       ask,
       approveFindings,
       signal: abortController.signal,
-      ...(journal ? { journal } : {}),
+      journal,
+      coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
     });
-    let failed = false;
-    let cancelled = false;
-    let finished = false;
-    // Fold each event into the shared ViewState, then let the renderer draw it.
-    for await (const event of engine.run()) {
-      view = present(view, event);
-      renderer.render(view, event);
-      if (event.type === "run:failed") failed = true;
-      if (event.type === "run:cancelled") cancelled = true;
-      if (event.type === "run:finished") finished = true;
-    }
-    if (finished && workspaceToClean !== undefined) {
-      await removeIsolatedWorkspace(workspaceToClean);
+    const outcome = await runPass(phase2);
+    if (outcome.finished && workspaceToClean !== undefined) {
+      await removeWorktree(cwd, workspaceToClean);
       workspaceToClean = undefined;
     }
-    // 130 = the conventional SIGINT exit code; an Abort is not a failure.
-    return cancelled ? 130 : failed ? 1 : 0;
+    return exitCode(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(errorMessage(error));
     return 1;
   } finally {
     for (const signal of signals) process.off(signal, onSignal);
@@ -309,7 +377,7 @@ async function main(argv: string[]): Promise<number> {
     try {
       args = parseShipArgs(rest);
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(errorMessage(error));
       return 1;
     }
     return ship(args);
