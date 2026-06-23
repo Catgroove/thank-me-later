@@ -8,7 +8,7 @@
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
-import type { Finding, RoundRecord } from "@tml/core";
+import type { Finding, FindingAction, RoundRecord } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
@@ -174,7 +174,7 @@ function FindingLine(props: { finding: Finding }) {
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg={SEVERITY_COLOR[f.severity]}>
-        [{f.severity}] {sanitize(f.title)} ({f.action})
+        [{f.severity}] {sanitize(f.title)}
         {f.location ? ` — ${sanitize(f.location)}` : ""}
       </text>
       <text fg="#94a3b8" wrapMode="word" marginLeft={2}>
@@ -184,12 +184,42 @@ function FindingLine(props: { finding: Finding }) {
   );
 }
 
+// Findings split by what happens to them, most-actionable first: a decision the user must make, then
+// the set the next round will fix on its own, then purely informational notes. Grouping replaces the
+// per-line `(action)` tag - the section header now carries it - so the user sees at a glance what
+// needs them versus what the pipeline handles.
+const FINDING_SECTIONS: readonly { action: FindingAction; label: string }[] = [
+  { action: "ask-user", label: "Needs your decision" },
+  { action: "auto-fix", label: "Auto-fix" },
+  { action: "no-op", label: "Informational" },
+];
+
+function FindingSection(props: { label: string; findings: Finding[] }) {
+  return (
+    <box flexDirection="column" marginBottom={1}>
+      <text fg="#64748b" attributes={1}>
+        {props.label} ({props.findings.length})
+      </text>
+      <For each={props.findings}>{(finding) => <FindingLine finding={finding} />}</For>
+    </box>
+  );
+}
+
 function Findings(props: { step: StepView }) {
   const findings = () => visibleFindings(props.step);
   return (
     <box flexDirection="column">
       <Show when={findings().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
-        <For each={findings()}>{(finding) => <FindingLine finding={finding} />}</For>
+        <For each={FINDING_SECTIONS}>
+          {(section) => {
+            const items = () => findings().filter((f) => f.action === section.action);
+            return (
+              <Show when={items().length > 0}>
+                <FindingSection label={section.label} findings={items()} />
+              </Show>
+            );
+          }}
+        </For>
       </Show>
     </box>
   );
