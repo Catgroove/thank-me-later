@@ -49,6 +49,14 @@ export function statusLabel(status: StepStatus): string {
   return status;
 }
 
+/**
+ * Glyph and color for an active Step blocked on a human decision (an `ask`/`approval` gate). Such a
+ * Step is not working - it is waiting on *you* - so it must not wear the busy spinner. The amber
+ * matches the interaction drawer's "input needed"/"approval needed" framing.
+ */
+export const WAITING_GLYPH = "?";
+export const WAITING_COLOR = "#f59e0b";
+
 /** A compact human duration: "0.4s", "12s", "3m 05s". Empty when unknown. */
 export function formatDuration(ms: number | undefined): string {
   if (ms === undefined) return "";
