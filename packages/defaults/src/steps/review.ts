@@ -94,6 +94,14 @@ function withRoundHistory(prompt: string, input: RoundCheckInput): string {
   );
 }
 
+/** A human label grouping a round's passes, so the presenter can show the current round only. */
+function passGroup(input: RoundCheckInput): string {
+  return input.trigger === "initial" ? "initial" : `verify · attempt ${input.attempt}`;
+}
+
+/** A pass's own findings, surfaced live as the phase resolves (before the deduped round set). */
+const passFindings = (result: PassResult): readonly Finding[] => result.findings;
+
 const MAX_TEST_CONTEXT_CHARS = 12_000;
 
 function truncateTestContext(text: string): string {
@@ -145,11 +153,16 @@ async function runPostContextPasses(
     correctness: withRoundHistory(correctnessPrompt(understanding, diff, testResults), input),
     structural: withRoundHistory(structuralPrompt(understanding, diff), input),
   };
+  const group = passGroup(input);
+  const phase = (label: string, run: () => Promise<PassResult>) =>
+    ctx.phase(label, run, { group, findings: passFindings });
   const before = await ctx.git.status();
   const settled = await Promise.allSettled([
-    runPass(ctx.agent, prompts.architecture, architectureSchema),
-    runPass(ctx.agent, prompts.correctness),
-    runPass(ctx.agent, prompts.structural),
+    phase(REVIEW_PASS_TITLES.architecture, () =>
+      runPass(ctx.agent, prompts.architecture, architectureSchema),
+    ),
+    phase(REVIEW_PASS_TITLES.correctness, () => runPass(ctx.agent, prompts.correctness)),
+    phase(REVIEW_PASS_TITLES.structural, () => runPass(ctx.agent, prompts.structural)),
   ]);
   const tainted = await revertIfWorktreeChanged(
     ctx.git,
@@ -167,9 +180,11 @@ async function runPostContextPasses(
 
   ctx.log("warning: rerunning read-only review passes serially after reverting rogue edits");
   return [
-    await runGuardedPass(ctx, prompts.architecture, architectureSchema),
-    await runGuardedPass(ctx, prompts.correctness),
-    await runGuardedPass(ctx, prompts.structural),
+    await phase(REVIEW_PASS_TITLES.architecture, () =>
+      runGuardedPass(ctx, prompts.architecture, architectureSchema),
+    ),
+    await phase(REVIEW_PASS_TITLES.correctness, () => runGuardedPass(ctx, prompts.correctness)),
+    await phase(REVIEW_PASS_TITLES.structural, () => runGuardedPass(ctx, prompts.structural)),
   ];
 }
 
@@ -180,7 +195,11 @@ async function runReviewPasses(
   const body = ctx.read(prBody);
   const diff = await ctx.git.diffAgainst(await ctx.git.defaultBranch());
   const testResults = formatTestRoundContext(ctx.rounds("test"));
-  const context = await runGuardedPass(ctx, withRoundHistory(contextPrompt(body, diff), input));
+  const context = await ctx.phase(
+    REVIEW_PASS_TITLES.context,
+    () => runGuardedPass(ctx, withRoundHistory(contextPrompt(body, diff), input)),
+    { group: passGroup(input), findings: passFindings },
+  );
   const understanding = context.understanding ?? "";
   const [architecture, correctness, structural] = await runPostContextPasses(
     ctx,
@@ -225,8 +244,14 @@ export function reviewStep(): Step {
           return hasBlockVerdict(latestPasses) ? "needs_user" : undefined;
         },
         async fix(input) {
-          const result = await ctx.agent.run(fixPrompt(input.findings, input.historyText));
-          return { summary: result.summary };
+          return ctx.phase(
+            "Apply fixes",
+            async () => {
+              const result = await ctx.agent.run(fixPrompt(input.findings, input.historyText));
+              return { summary: result.summary };
+            },
+            { group: `fix · attempt ${input.attempt}` },
+          );
         },
         commitMessage: "chore: apply fixes from review",
       });

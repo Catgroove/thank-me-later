@@ -26,6 +26,21 @@ export interface ArtifactView {
   readonly at: number;
 }
 
+/**
+ * One observable span of work within a Step (e.g. a single review pass), folded from
+ * `phase:started`/`phase:finished`. `findings` are the phase's own findings, surfaced live ahead
+ * of the deduped authoritative set on the Step's rounds. Phases accumulate across the Step's run;
+ * `group` (e.g. a round label) lets a presenter show only the current group.
+ */
+export interface PhaseView {
+  readonly label: string;
+  readonly group?: string;
+  readonly status: "active" | "done" | "failed";
+  readonly findings: Finding[];
+  readonly startedAt: number;
+  readonly finishedAt?: number;
+}
+
 /** One bounded entry in a Step's (or the Run's) recent-activity trail. */
 export interface ActivityEntry {
   readonly at: number;
@@ -55,6 +70,8 @@ export interface StepView {
   readonly findings: Finding[];
   /** Bounded recent activity for the Step (agent text, tool calls, log lines). */
   readonly activity: readonly ActivityEntry[];
+  /** Observable phases the Step opened, in start order. Empty for Steps that declare none. */
+  readonly phases: PhaseView[];
   /** The current tool while the Step is active, set on `start` and cleared on `end`. */
   readonly currentTool?: ToolView;
   readonly error?: string;
@@ -156,6 +173,39 @@ function latestFindings(rounds: readonly RoundRecord[]): Finding[] {
   return [...latest.findings];
 }
 
+/**
+ * Close the most recent still-active phase matching `label` + `group`. Matching the last active one
+ * (not the first) is correct when a phase label recurs across rounds, or a tainted pass reruns. If
+ * none matches (a stray finish) the list is returned unchanged.
+ */
+function resolvePhase(
+  phases: readonly PhaseView[],
+  label: string,
+  group: string | undefined,
+  status: "ok" | "error",
+  findings: Finding[],
+  at: number,
+): PhaseView[] {
+  const index = phases.reduceRight(
+    (found, phase, i) =>
+      found === -1 && phase.status === "active" && phase.label === label && phase.group === group
+        ? i
+        : found,
+    -1,
+  );
+  if (index === -1) return [...phases];
+  return phases.map((phase, i) =>
+    i === index
+      ? {
+          ...phase,
+          status: status === "ok" ? "done" : "failed",
+          findings: [...findings],
+          finishedAt: at,
+        }
+      : phase,
+  );
+}
+
 /** Fold one event into both the named Step's activity and the global activity trail. */
 function recordActivity(view: ViewState, step: string, entry: ActivityEntry): ViewState {
   return {
@@ -193,6 +243,7 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
           rounds: [],
           findings: [],
           activity: [],
+          phases: [],
         })),
       };
     case "step:started":
@@ -338,6 +389,36 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
         }),
       };
     }
+    case "phase:started": {
+      // Append a new active phase. Phases accumulate across rounds; `group` distinguishes them.
+      const phase: PhaseView = {
+        label: event.phase,
+        ...(event.group !== undefined ? { group: event.group } : {}),
+        status: "active",
+        findings: [],
+        startedAt: event.at,
+      };
+      return {
+        ...view,
+        steps: mapStep(view.steps, event.step, (s) => ({ ...s, phases: [...s.phases, phase] })),
+      };
+    }
+    case "phase:finished":
+      // Resolve the most recent matching active phase (label + group); attach its findings.
+      return {
+        ...view,
+        steps: mapStep(view.steps, event.step, (s) => ({
+          ...s,
+          phases: resolvePhase(
+            s.phases,
+            event.phase,
+            event.group,
+            event.status,
+            event.findings,
+            event.at,
+          ),
+        })),
+      };
     case "ask:pending":
       // The prompt blocks the Run awaiting input; presenters surface it from `pendingInteraction`.
       return {

@@ -46,6 +46,64 @@ describe("review step", () => {
     expect(summaryOf(result)).toContain("**Risk: low**");
   });
 
+  test("opens an observable phase per pass, grouped by round", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      pass([], { understanding: "adds a --json flag" }),
+      pass([], { verdict: "proceed" }),
+      pass([]),
+      pass([]),
+    );
+    const { ctx, phases } = fakeCtx({ agent, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    expect(phases.map((p) => p.label)).toEqual([
+      "Context & intent",
+      "Architecture & scope",
+      "Correctness, tests & non-functional",
+      "Structural maintainability",
+    ]);
+    expect(phases.every((p) => p.group === "initial")).toBe(true);
+  });
+
+  test("a fix round opens phases grouped by the fix and the verify", async () => {
+    const agent = new FakeHarness();
+    const auto = makeFinding("review", {
+      severity: "warning",
+      action: "auto-fix",
+      title: "Tidy",
+      detail: "Small cleanup.",
+    });
+    agent.responses.push(
+      pass([], { understanding: "x" }),
+      pass([auto], { verdict: "proceed" }), // architecture pass finds an auto-fix
+      pass([]),
+      pass([]),
+      { ok: true, summary: "fixed", output: {} }, // fix pass
+      pass([], { understanding: "x" }), // verify round
+      pass([], { verdict: "proceed" }),
+      pass([]),
+      pass([]),
+    );
+    const { ctx, phases } = fakeCtx({ agent, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    expect(phases.map((p) => p.group)).toEqual([
+      "initial",
+      "initial",
+      "initial",
+      "initial",
+      "fix · attempt 1",
+      "verify · attempt 1",
+      "verify · attempt 1",
+      "verify · attempt 1",
+      "verify · attempt 1",
+    ]);
+    expect(phases.find((p) => p.group?.startsWith("fix"))?.label).toBe("Apply fixes");
+  });
+
   test("threads the context pass understanding into the later passes", async () => {
     const agent = new FakeHarness();
     agent.responses.push(

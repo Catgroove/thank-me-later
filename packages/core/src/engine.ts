@@ -537,6 +537,36 @@ function makeContext(
     log(message: string) {
       pushEvent({ type: "step:log", step: step.name, message });
     },
+    async phase(label, fn, opts) {
+      pushEvent({
+        type: "phase:started",
+        step: step.name,
+        phase: label,
+        ...(opts?.group !== undefined ? { group: opts.group } : {}),
+      });
+      try {
+        const result = await fn();
+        pushEvent({
+          type: "phase:finished",
+          step: step.name,
+          phase: label,
+          ...(opts?.group !== undefined ? { group: opts.group } : {}),
+          findings: opts?.findings ? [...opts.findings(result)] : [],
+          status: "ok",
+        });
+        return result;
+      } catch (error) {
+        pushEvent({
+          type: "phase:finished",
+          step: step.name,
+          phase: label,
+          ...(opts?.group !== undefined ? { group: opts.group } : {}),
+          findings: [],
+          status: "error",
+        });
+        throw error;
+      }
+    },
   };
 }
 

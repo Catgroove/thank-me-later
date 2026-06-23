@@ -508,6 +508,8 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
         }
         case "pr:opened": // held in view.prUrl; surfaced in the results block / run-end line
         case "artifact:written": // surfaced on the step's result line and the results block
+        case "phase:started": // folded into the step's phases; the append-only CLI rides the live line
+        case "phase:finished":
           return;
       }
     },
