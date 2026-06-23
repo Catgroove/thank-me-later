@@ -52,10 +52,10 @@ export interface EngineOptions {
   /** Clock for the `at` timestamp stamped on every event. Defaults to `Date.now`; injectable for tests. */
   now?: () => number;
   /**
-   * Halt the Run after the named Step completes, without finishing the journal or emitting
-   * `run:finished`. The host uses this to pause at the isolation boundary, hand the work off to a
-   * worktree, then resume the same journaled Run in a second pass (which replays the completed Steps
-   * from the journal). Absent: the Run executes to completion as usual.
+   * Halt the Run after the named Step completes, without finishing the journal. The host uses this
+   * to pause at the isolation boundary, hand the work off to a worktree, then resume the same
+   * journaled Run in a second pass (which replays the completed Steps from the journal). Absent: the
+   * Run executes to completion as usual.
    */
   stopAfter?: string;
 }
@@ -184,8 +184,7 @@ async function drive(
   let i = 0;
   while (i < pipeline.length) {
     if (stopIndex !== undefined && i > stopIndex) {
-      // Paused at the boundary: leave the journal "running" (no finish) and emit no terminal event.
-      // The host detects the pause by the stream ending without run:finished/failed/cancelled.
+      await emit(run, { type: "run:paused", step: opts.stopAfter as string });
       queue.close();
       return;
     }

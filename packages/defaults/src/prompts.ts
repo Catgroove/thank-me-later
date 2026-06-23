@@ -35,17 +35,12 @@ export const testPrompt =
   "Report each real failing test or test infrastructure problem that remains. If there are no " +
   "tests, report no findings.";
 
-/**
- * How a check reaches its verdict. `inspect` checks (format, lint, typecheck) read source and never
- * invoke local toolchains; `run` checks (test) discover and execute their command. The mode only
- * changes the round's ground rules - both still report structured findings and feed the same loop.
- */
 export type CheckMode = "inspect" | "run";
 
 export interface CheckPromptInput {
   readonly name: string;
   readonly goal: string;
-  readonly mode: CheckMode;
+  readonly groundRules: string;
   readonly trigger: Extract<RoundTrigger, "initial" | "verify">;
   readonly historyText: string;
 }
@@ -59,20 +54,10 @@ export function checkPrompt(input: CheckPromptInput): string {
         "any remaining or newly introduced findings against the current worktree.\n" +
         history
       : "";
-  const groundRules =
-    input.mode === "run"
-      ? "\n\nThis is a check/verification round, not a fix round. Run the check's command to judge " +
-        "the repository, building or installing whatever it needs to run. Do not edit source " +
-        "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
-        "repaired by changing files, return an auto-fix finding for the later fix round. "
-      : "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
-        "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
-        "directly instead of invoking local quality tools. If a tool can only prove or repair the " +
-        "problem by changing files, return an auto-fix finding for the later fix round. ";
   return (
     `Check step: ${input.name}.\n\n` +
     input.goal +
-    groundRules +
+    input.groundRules +
     "Return structured findings. Use action auto-fix only for issues a future fix round can " +
     "safely repair without changing product intent; use ask-user when human judgement is " +
     "required; use no-op only for informational observations. Report no findings when the check " +

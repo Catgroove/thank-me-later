@@ -489,6 +489,8 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           commit([...sealed(), `${STEP_INDENT}? ${event.step}: ${approvalPrompt(event)}`], "");
           showCursor();
           return;
+        case "run:paused":
+          return;
         case "run:finished":
           stopTimer();
           commit([...sealed(), ...resultsBlock(view), "■ run finished"], "");

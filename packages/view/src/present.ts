@@ -337,6 +337,8 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
         activeStep: undefined,
         tool: undefined,
       };
+    case "run:paused":
+      return view;
     case "run:finished":
       return {
         ...view,

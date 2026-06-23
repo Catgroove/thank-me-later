@@ -19,6 +19,16 @@ import {
 
 const reviewDiff = "diff --git a/src/a.ts b/src/a.ts\n+const marker = true;";
 const reviewPass = reviewPrompt({ prBody: "a body", diff: reviewDiff });
+const inspectGroundRules =
+  "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
+  "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
+  "directly instead of invoking local quality tools. If a tool can only prove or repair the " +
+  "problem by changing files, return an auto-fix finding for the later fix round. ";
+const runGroundRules =
+  "\n\nThis is a check/verification round, not a fix round. Run the check's command to judge " +
+  "the repository, building or installing whatever it needs to run. Do not edit source " +
+  "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
+  "repaired by changing files, return an auto-fix finding for the later fix round. ";
 
 describe("default pipeline prompts", () => {
   test("check + review prompts are non-empty and avoid specific toolchains", () => {
@@ -41,14 +51,14 @@ describe("default pipeline prompts", () => {
     const initial = checkPrompt({
       name: "lint",
       goal: lintPrompt,
-      mode: "inspect",
+      groundRules: inspectGroundRules,
       trigger: "initial",
       historyText: "No prior rounds.",
     });
     const verify = checkPrompt({
       name: "lint",
       goal: lintPrompt,
-      mode: "inspect",
+      groundRules: inspectGroundRules,
       trigger: "verify",
       historyText: "Round 0: initial",
     });
@@ -65,7 +75,7 @@ describe("default pipeline prompts", () => {
     const initial = checkPrompt({
       name: "test",
       goal: testPrompt,
-      mode: "run",
+      groundRules: runGroundRules,
       trigger: "initial",
       historyText: "No prior rounds.",
     });

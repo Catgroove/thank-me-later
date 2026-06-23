@@ -29,12 +29,12 @@ export interface RunMetadata {
   readonly completedSteps: string[];
   /** Disposable checkout where the Run executes. It lives under this Run's private state dir. */
   readonly workspacePath?: string;
+  /** Branch checked out by the disposable workspace, once the source checkout has handed it off. */
+  readonly workspaceBranch?: string;
   /**
-   * The git branch this Run is shipping, used to scope `auto` resume. Set to the branch at start and
-   * advanced to the feature branch once the Run cuts one. A new Run only resumes a parked Run whose
-   * `resumeKey` equals the branch you're on now - so a fresh `tml ship` on the default branch starts
-   * clean instead of replaying a prior shipment, while re-running on the feature branch resumes it.
-   * Optional: absent on legacy journals and when no git branch is available.
+   * Branch-scoped selector for `auto` resume. A new Run only resumes a parked Run whose `resumeKey`
+   * equals the branch you're on now. Optional: absent on legacy journals and when no git branch is
+   * available.
    */
   readonly resumeKey?: string;
 }
@@ -56,8 +56,10 @@ export interface RunJournal {
    * `resumeKey` is resumed (see `RunMetadata.resumeKey`).
    */
   begin(input: { pipeline: string[]; resumeKey?: string }): Promise<RunJournalSnapshot>;
-  /** Advance the Run's resume key as the working branch changes (e.g. once a feature branch is cut). */
+  /** Advance the Run's resume key as the working branch changes. */
   recordResumeKey(resumeKey: string): Promise<void>;
+  /** Persist the branch checked out by the disposable workspace. */
+  recordWorkspaceBranch(branch: string): Promise<void>;
   /** Persist an artifact value before its producing Step is marked complete. */
   recordArtifact(input: { step: string; artifact: string; value: unknown }): Promise<void>;
   /** Mark a Step complete after all of its artifacts have been persisted. */
@@ -226,6 +228,13 @@ class FileRunJournal implements RunJournal {
     const metadata = this.requireMetadata();
     if (metadata.resumeKey === resumeKey) return;
     this.metadata = { ...metadata, resumeKey, updatedAt: new Date().toISOString() };
+    await this.writeMetadata();
+  }
+
+  async recordWorkspaceBranch(branch: string): Promise<void> {
+    const metadata = this.requireMetadata();
+    if (metadata.workspaceBranch === branch) return;
+    this.metadata = { ...metadata, workspaceBranch: branch, updatedAt: new Date().toISOString() };
     await this.writeMetadata();
   }
 

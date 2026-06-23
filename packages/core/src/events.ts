@@ -2,8 +2,9 @@
 // The standalone TUI, CLI logs, and host Adapters are all consumers of this one
 // stream; the engine itself renders nothing. Events are emitted live as they
 // occur — including `agent:progress` mid-Step — not batched at
-// Step boundaries. `run:finished` means success; `run:failed` carries a failure;
-// `run:cancelled` is an external Abort (distinct from the `cancel()` flow signal).
+// Step boundaries. `run:finished` means success; `run:paused` means the host asked the
+// engine to stop after a boundary Step; `run:failed` carries a failure; `run:cancelled` is an
+// external Abort (distinct from the `cancel()` flow signal).
 // The `type` is the discriminant, so there is no redundant `ok` flag.
 //
 // Every event carries `at`: the epoch-millisecond timestamp the engine stamped it
@@ -60,6 +61,7 @@ export type RunEvent =
   | { type: "ask:pending"; at: number; step: string; prompt: string }
   | { type: "approval:pending"; at: number; step: string; input: ApproveFindingsInput }
   | { type: "run:finished"; at: number }
+  | { type: "run:paused"; at: number; step: string }
   | { type: "run:cancelled"; at: number; step?: string }
   | { type: "run:failed"; at: number; step?: string; error: string };
 

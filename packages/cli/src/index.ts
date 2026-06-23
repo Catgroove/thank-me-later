@@ -155,13 +155,18 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     failed: boolean;
     cancelled: boolean;
     finished: boolean;
+    paused: boolean;
   }
   const runPass = async (
     engine: Engine,
     suppressReplayOf?: ReadonlySet<string>,
   ): Promise<PassOutcome> => {
-    const outcome: PassOutcome = { failed: false, cancelled: false, finished: false };
+    const outcome: PassOutcome = { failed: false, cancelled: false, finished: false, paused: false };
     for await (const event of engine.run()) {
+      if (event.type === "run:paused") {
+        outcome.paused = true;
+        continue;
+      }
       if (suppressReplayOf !== undefined && isCoalescedAwayEvent(event, suppressReplayOf)) continue;
       view = present(view, event);
       renderer.render(view, event);
@@ -241,9 +246,8 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         stopAfter: boundary,
       });
       const outcome = await runPass(phase1);
-      // `finished` means the pipeline had no Steps after the boundary; failure/abort exit here. Only
-      // a clean *pause* (no terminal event) falls through to the handoff.
       if (outcome.finished || outcome.failed || outcome.cancelled) return exitCode(outcome);
+      if (!outcome.paused) throw new Error("tml ship: engine stopped before the isolation handoff.");
     }
 
     // Handoff: the source checkout is on the feature branch with the work committed. Switch it back
@@ -253,14 +257,14 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     const base = await sourceGit.defaultBranch();
     let featureBranch = await sourceGit.currentBranch();
     if (featureBranch === base || featureBranch === "HEAD") {
-      // Resumed after a prior handoff: the source already moved off the feature branch. Recover its
-      // name from the Run's resume key (advanced to the feature branch in phase 1).
-      featureBranch = snapshot.metadata.resumeKey ?? featureBranch;
+      featureBranch = snapshot.metadata.workspaceBranch ?? featureBranch;
     }
     if (featureBranch === base || featureBranch === "HEAD") {
       throw new Error("tml ship: could not determine the feature branch to isolate.");
     }
+    await journal.recordWorkspaceBranch(featureBranch);
     if ((await sourceGit.currentBranch()) === featureBranch) await sourceGit.checkout(base);
+    await journal.recordResumeKey(base);
     if (!existsSync(join(worktreePath, ".git"))) {
       await createWorktree(cwd, featureBranch, worktreePath);
     }

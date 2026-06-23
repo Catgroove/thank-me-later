@@ -8,7 +8,9 @@ import {
   executeRoundLoop,
   makeFinding,
   parseAgentFindingsOutput,
+  type Ctx,
   type Finding,
+  type GitStatus,
   type Step,
 } from "@tml/core";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
@@ -23,23 +25,65 @@ import {
   typecheckPrompt,
 } from "../prompts.ts";
 
+interface CheckPolicy {
+  readonly groundRules: string;
+  before(ctx: Ctx): Promise<GitStatus>;
+  after(ctx: Ctx, before: GitStatus): Promise<void>;
+}
+
+const checkPolicies: Record<CheckMode, CheckPolicy> = {
+  inspect: {
+    groundRules:
+      "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
+      "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
+      "directly instead of invoking local quality tools. If a tool can only prove or repair the " +
+      "problem by changing files, return an auto-fix finding for the later fix round. ",
+    before: (ctx) => ctx.git.status(),
+    async after(ctx, before) {
+      await revertIfWorktreeChanged(
+        ctx.git,
+        before,
+        (m) => ctx.log(m),
+        "warning: a check round modified the worktree; reverting before continuing",
+      );
+    },
+  },
+  run: {
+    groundRules:
+      "\n\nThis is a check/verification round, not a fix round. Run the check's command to judge " +
+      "the repository, building or installing whatever it needs to run. Do not edit source " +
+      "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
+      "repaired by changing files, return an auto-fix finding for the later fix round. ",
+    before: (ctx) => ctx.git.status(),
+    async after(ctx, before) {
+      await revertIfWorktreeChanged(
+        ctx.git,
+        before,
+        (m) => ctx.log(m),
+        "check command left worktree changes; cleaning up before continuing",
+      );
+    },
+  },
+};
+
 export function checkStep(name: string, goal: string, mode: CheckMode = "inspect"): Step {
   return defineStep({
     name,
     async run(ctx) {
+      const policy = checkPolicies[mode];
       const result = await executeRoundLoop(ctx, {
         stepName: name,
         async check(input) {
-          const before = await ctx.git.status();
-          const agentResult = await ctx.agent.run(checkPrompt({ name, goal, mode, ...input }), {
-            schema: checkFindingsSchema,
-          });
-          await revertIfWorktreeChanged(
-            ctx.git,
-            before,
-            (m) => ctx.log(m),
-            "warning: a check round modified the worktree; reverting before continuing",
-          );
+          const before = await policy.before(ctx);
+          let agentResult: Awaited<ReturnType<typeof ctx.agent.run>>;
+          try {
+            agentResult = await ctx.agent.run(
+              checkPrompt({ name, goal, groundRules: policy.groundRules, ...input }),
+              { schema: checkFindingsSchema },
+            );
+          } finally {
+            await policy.after(ctx, before);
+          }
           return {
             findings: parseCheckResult(
               name,
