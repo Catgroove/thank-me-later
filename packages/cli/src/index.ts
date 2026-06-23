@@ -9,8 +9,15 @@ import {
   type RunJournal,
   type RunJournalResumeMode,
 } from "@tml/core";
-import { createTerminalRenderer, initialView, present, type Renderer } from "@tml/view";
-import { createCliApprovalResponder } from "./approval.ts";
+import {
+  createTerminalRenderer,
+  failingApproveResponder,
+  failingAskResponder,
+  initialView,
+  type InteractiveRenderer,
+  present,
+  type Renderer,
+} from "@tml/view";
 import { assembleShipConfig } from "./config.ts";
 import { init } from "./init.ts";
 import { loadTmlConfig } from "./load.ts";
@@ -29,13 +36,40 @@ export interface ShipDeps {
   runId?: string;
   /** Seal the full per-step trail instead of the quiet, results-forward default (`--verbose`). */
   verbose?: boolean;
-  /** Override the renderer; defaults to TTY-vs-plain by `process.stdout.isTTY`. */
+  /** Force the append-only/inline terminal renderer instead of the full-screen TUI (`--plain`). */
+  plain?: boolean;
+  /** Whether stdout is a TTY. Defaults to `process.stdout.isTTY`; injected by tests. */
+  isTTY?: boolean;
+  /** Override the renderer; defaults to the TTY-vs-plain-vs-TUI selection below. */
   renderer?: Renderer;
+  /** Build the full-screen TUI renderer. Behind a seam so non-TTY paths never initialize OpenTUI. */
+  createTui?: (options: {
+    onAbort: () => void;
+  }) => Promise<InteractiveRenderer> | InteractiveRenderer;
 }
 
-/** A TTY live region when stdout is a terminal; clean append-only lines otherwise. */
-function defaultRenderer(verbose: boolean): Renderer {
-  return createTerminalRenderer({ verbose, plain: !process.stdout.isTTY });
+/**
+ * Pick the renderer for the Run. Non-TTY (pipes, CI) gets the append-only plain renderer;
+ * `--plain` keeps the inline TTY renderer; an interactive TTY gets the full-screen TUI. The TUI is
+ * built through `createTui` (a dynamic import by default) so the OpenTUI runtime is only loaded
+ * when actually selected.
+ */
+async function selectRenderer(opts: {
+  isTTY: boolean;
+  plain: boolean;
+  verbose: boolean;
+  onAbort: () => void;
+  createTui: NonNullable<ShipDeps["createTui"]>;
+}): Promise<Renderer> {
+  if (!opts.isTTY) return createTerminalRenderer({ plain: true, verbose: opts.verbose });
+  if (opts.plain) return createTerminalRenderer({ verbose: opts.verbose });
+  return opts.createTui({ onAbort: opts.onAbort });
+}
+
+/** Default TUI factory: dynamically imports the OpenTUI renderer so non-TTY paths never load it. */
+async function defaultCreateTui(options: { onAbort: () => void }): Promise<InteractiveRenderer> {
+  const { createTuiRenderer } = await import("@tml/view/tui");
+  return createTuiRenderer(options);
 }
 
 // 128 + signal number: the conventional exit code for a signal-terminated process.
@@ -46,7 +80,27 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   const buildConfig =
     deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
   const engineFor = deps.engineFor ?? createEngine;
-  const renderer = deps.renderer ?? defaultRenderer(deps.verbose ?? false);
+  const verbose = deps.verbose ?? false;
+  // Closing the TUI while the Run is active aborts it through this controller (ending the Run with
+  // `run:cancelled`); plain/non-TTY renderers never trip it.
+  const abortController = new AbortController();
+  const renderer =
+    deps.renderer ??
+    (await selectRenderer({
+      isTTY: deps.isTTY ?? !!process.stdout.isTTY,
+      plain: deps.plain ?? false,
+      verbose,
+      onAbort: () => abortController.abort(),
+      createTui: deps.createTui ?? defaultCreateTui,
+    }));
+
+  // The renderer may also be the Run's interactive responder (the TUI is). When it is not (plain /
+  // non-TTY), wire clear failing responders so an Ask/approval fails with an actionable message
+  // instead of the engine's internal headless-suspend error.
+  const interactive = renderer as InteractiveRenderer;
+  const ask = interactive.ask?.bind(interactive) ?? failingAskResponder();
+  const approveFindings =
+    interactive.approveFindings?.bind(interactive) ?? failingApproveResponder();
 
   // On a signal (Ctrl-C, kill) Bun terminates the process without running the `finally`
   // below, so the renderer's teardown never fires and the terminal is left with a hidden
@@ -67,6 +121,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
 
   // tml ship runs in place: the pipeline branches, commits, and pushes in the user's own checkout
   // so the Providers and `ctx.git` all bind to `cwd`.
+  let view = initialView;
   try {
     const journal =
       deps.journal === false
@@ -81,10 +136,11 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
             : undefined));
     const engine = engineFor(await buildConfig(cwd), {
       cwd,
-      approveFindings: createCliApprovalResponder(),
+      ask,
+      approveFindings,
+      signal: abortController.signal,
       ...(journal ? { journal } : {}),
     });
-    let view = initialView;
     let failed = false;
     let cancelled = false;
     // Fold each event into the shared ViewState, then let the renderer draw it.
@@ -101,24 +157,32 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     return 1;
   } finally {
     for (const signal of signals) process.off(signal, onSignal);
-    renderer.close(); // stop the spinner timer / clear the live region on every path
+    renderer.close(); // stop the spinner timer / clear the live region / tear down the TUI
+    // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
+    interactive.epilogue?.(view);
   }
 }
 
-interface ShipArgs {
+export interface ShipArgs {
   readonly verbose: boolean;
+  readonly plain: boolean;
   readonly journalResume?: RunJournalResumeMode;
   readonly runId?: string;
 }
 
-function parseShipArgs(args: string[]): ShipArgs {
+export function parseShipArgs(args: string[]): ShipArgs {
   let verbose = false;
+  let plain = false;
   let journalResume: RunJournalResumeMode | undefined;
   let runId: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--verbose" || arg === "-v") {
       verbose = true;
+      continue;
+    }
+    if (arg === "--plain" || arg === "--no-tui") {
+      plain = true;
       continue;
     }
     if (arg === "--fresh") {
@@ -141,7 +205,12 @@ function parseShipArgs(args: string[]): ShipArgs {
     }
     throw new Error(`Unknown ship option: ${arg}`);
   }
-  return { verbose, ...(journalResume ? { journalResume } : {}), ...(runId ? { runId } : {}) };
+  return {
+    verbose,
+    plain,
+    ...(journalResume ? { journalResume } : {}),
+    ...(runId ? { runId } : {}),
+  };
 }
 
 async function main(argv: string[]): Promise<number> {

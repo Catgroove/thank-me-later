@@ -15,15 +15,15 @@ export function approvalPrompt(event: Extract<RunEvent, { type: "approval:pendin
   return `${event.input.prompt} (${suffix})`;
 }
 
-export function narrativeSteps(view: ViewState): (StepView & { rendered: string })[] {
+export function narrativeSteps(view: ViewState): (StepView & { headline: string })[] {
   return view.steps.filter(
-    (step): step is StepView & { rendered: string } =>
-      step.rendered !== undefined && isNarrativeArtifact(step.rendered),
+    (step): step is StepView & { headline: string } =>
+      step.headline !== undefined && isNarrativeArtifact(step.headline),
   );
 }
 
 export function resultLabelWidth(
-  steps: readonly (StepView & { rendered: string })[],
+  steps: readonly (StepView & { headline: string })[],
   hasPrUrl: boolean,
 ): number {
   return Math.max(

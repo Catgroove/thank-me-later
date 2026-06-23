@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import type { RunEvent } from "@tml/core";
+import type { RunEvent, RunEventInput } from "@tml/core";
 import { initialView, present } from "../src/present.ts";
 import { createTerminalRenderer, type TerminalRendererOptions } from "../src/render-terminal.ts";
 
+/** Stamp a deterministic `at` so fixtures can be written without one. */
+const stamp = (event: RunEventInput, i: number): RunEvent => ({ ...event, at: i }) as RunEvent;
+
 /** Drive a sequence through the fold + TTY renderer, capturing the raw chunks written. */
-function renderRaw(events: RunEvent[], options: Partial<TerminalRendererOptions> = {}): string {
+function renderRaw(
+  events: RunEventInput[],
+  options: Partial<TerminalRendererOptions> = {},
+): string {
   let out = "";
   const renderer = createTerminalRenderer({
     write: (chunk) => {
@@ -18,16 +24,17 @@ function renderRaw(events: RunEvent[], options: Partial<TerminalRendererOptions>
     ...options,
   });
   let view = initialView;
-  for (const event of events) {
+  events.forEach((raw, i) => {
+    const event = stamp(raw, i);
     view = present(view, event);
     renderer.render(view, event);
-  }
+  });
   renderer.close();
   return out;
 }
 
 /** Drive a sequence through the fold + plain (append-only) renderer, collecting the lines. */
-function renderLines(events: RunEvent[], options: { verbose?: boolean } = {}): string[] {
+function renderLines(events: RunEventInput[], options: { verbose?: boolean } = {}): string[] {
   let out = "";
   const renderer = createTerminalRenderer({
     plain: true,
@@ -37,16 +44,17 @@ function renderLines(events: RunEvent[], options: { verbose?: boolean } = {}): s
     ...options,
   });
   let view = initialView;
-  for (const event of events) {
+  events.forEach((raw, i) => {
+    const event = stamp(raw, i);
     view = present(view, event);
     renderer.render(view, event);
-  }
+  });
   renderer.close();
   // The plain path writes each line as `<line>\n`; split back into lines, dropping the trailing "".
   return out.split("\n").slice(0, -1);
 }
 
-const HAPPY: RunEvent[] = [
+const HAPPY: RunEventInput[] = [
   { type: "run:started", pipeline: ["format", "lint"] },
   { type: "step:started", step: "format" },
   {
@@ -191,7 +199,9 @@ describe("createTerminalRenderer (TTY)", () => {
         verbose: true,
       });
       let view = initialView;
-      const send = (event: RunEvent): void => {
+      let tick = 0;
+      const send = (raw: RunEventInput): void => {
+        const event = stamp(raw, (tick += 1));
         view = present(view, event);
         renderer.render(view, event);
       };
@@ -387,7 +397,7 @@ describe("createTerminalRenderer (TTY)", () => {
   });
 });
 
-const TRAIL: RunEvent[] = [
+const TRAIL: RunEventInput[] = [
   { type: "run:started", pipeline: ["format", "lint"] },
   { type: "step:started", step: "format" },
   { type: "agent:progress", step: "format", progress: { kind: "text", text: "Running " } },
@@ -466,7 +476,7 @@ describe("createTerminalRenderer (plain)", () => {
   });
 
   test("step:log lines show in both modes (CI progress)", () => {
-    const events: RunEvent[] = [
+    const events: RunEventInput[] = [
       { type: "run:started", pipeline: ["ci-wait"] },
       { type: "step:started", step: "ci-wait" },
       { type: "step:log", step: "ci-wait", message: "ci: build → success" },

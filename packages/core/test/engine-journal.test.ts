@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineArtifact } from "../src/artifact.ts";
 import { createEngine } from "../src/engine.ts";
-import type { RunEvent } from "../src/events.ts";
+import type { RunEvent, RunEventInput } from "../src/events.ts";
 import type { Config } from "../src/pipeline.ts";
 import { checkoutKeyForPath, createRunJournal } from "../src/run-journal.ts";
 import { defineStep } from "../src/step.ts";
@@ -21,9 +21,16 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+/** Strip the engine-stamped `at` so event-shape assertions stay timestamp-agnostic. */
+function withoutAt(event: RunEvent): RunEventInput {
+  const copy = { ...event } as { at?: number };
+  delete copy.at;
+  return copy as RunEventInput;
+}
+
 async function collect(config: Config, journal = createRunJournal({ stateHome: tempDir() })) {
-  const events: RunEvent[] = [];
-  for await (const event of createEngine(config, { journal }).run()) events.push(event);
+  const events: RunEventInput[] = [];
+  for await (const event of createEngine(config, { journal }).run()) events.push(withoutAt(event));
   return events;
 }
 

@@ -3,7 +3,14 @@
   "version": "1.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tui": "./src/render-tui.tsx"
+  },
+  "dependencies": {
+    "@opentui/core": "0.4.1",
+    "@opentui/solid": "0.4.1",
+    "opentui-spinner": "0.0.7",
+    "solid-js": "1.9.12"
   },
   "devDependencies": {
     "@tml/core": "workspace:*"
