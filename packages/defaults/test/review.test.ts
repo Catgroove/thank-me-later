@@ -140,7 +140,12 @@ describe("review step", () => {
     expect(summary.toLowerCase()).toContain("blocking concern");
     expect(asks).toHaveLength(0);
     expect(approvals).toHaveLength(1);
-    expect(approvals[0]?.findings).toMatchObject([{ action: "ask-user", title: "Too large" }]);
+    expect(approvals[0]?.findings).toContainEqual(
+      expect.objectContaining({ action: "ask-user", title: "Too large" }),
+    );
+    expect(approvals[0]?.findings).toContainEqual(
+      expect.objectContaining({ action: "ask-user", title: "Blocking architecture verdict" }),
+    );
     expect(agent.tasks).toHaveLength(4); // ask-user is not auto-fix, so no fix pass
   });
 
@@ -160,6 +165,28 @@ describe("review step", () => {
       { action: "ask-user", title: "Blocking architecture verdict" },
     ]);
     expect(summaryOf(result)).toContain("Blocking architecture verdict");
+  });
+
+  test("a block verdict stays visible when another pass already needs user approval", async () => {
+    const agent = new FakeHarness();
+    agent.responses.push(
+      pass([]),
+      pass([], { verdict: "block" }),
+      pass([
+        { severity: "warning", action: "ask-user", title: "Confirm behavior", detail: "intent?" },
+      ]),
+      pass([]),
+    );
+    const { ctx, approvals } = fakeCtx({ agent, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    expect(approvals[0]?.findings).toContainEqual(
+      expect.objectContaining({ title: "Confirm behavior" }),
+    );
+    expect(approvals[0]?.findings).toContainEqual(
+      expect.objectContaining({ title: "Blocking architecture verdict" }),
+    );
   });
 
   test("runs the fix pass for auto-fix findings, then verifies with fresh passes", async () => {

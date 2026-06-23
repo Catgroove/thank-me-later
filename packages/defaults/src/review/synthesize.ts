@@ -34,19 +34,48 @@ function findingDedupeKey(finding: Finding): string {
   return `${title}\u0000${normalizeFindingKeyPart(finding.detail)}`;
 }
 
-/** Preserve the first report of a finding and drop duplicates from later review passes. */
+function severityPriority(severity: Finding["severity"]): number {
+  if (severity === "error") return 3;
+  if (severity === "warning") return 2;
+  return 1;
+}
+
+function actionPriority(action: Finding["action"]): number {
+  if (action === "auto-fix") return 3;
+  if (action === "ask-user") return 2;
+  return 1;
+}
+
+function findingPriority(finding: Finding): readonly [number, number] {
+  return [severityPriority(finding.severity), actionPriority(finding.action)];
+}
+
+function isHigherPriority(candidate: Finding, current: Finding): boolean {
+  const [candidateSeverity, candidateAction] = findingPriority(candidate);
+  const [currentSeverity, currentAction] = findingPriority(current);
+  return (
+    candidateSeverity > currentSeverity ||
+    (candidateSeverity === currentSeverity && candidateAction > currentAction)
+  );
+}
+
+/** Keep one report per finding key, preferring the highest-severity, most-actionable version. */
 export function dedupeReviewPasses(passes: readonly ReviewPass[]): ReviewPass[] {
-  const seen = new Set<string>();
+  const best = new Map<string, Finding>();
+  for (const pass of passes) {
+    for (const finding of pass.result.findings) {
+      const key = findingDedupeKey(finding);
+      const current = best.get(key);
+      if (current === undefined || isHigherPriority(finding, current)) best.set(key, finding);
+    }
+  }
   return passes.map((pass) => ({
     title: pass.title,
     result: {
       ...pass.result,
-      findings: pass.result.findings.filter((finding) => {
-        const key = findingDedupeKey(finding);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }),
+      findings: pass.result.findings.filter(
+        (finding) => best.get(findingDedupeKey(finding)) === finding,
+      ),
     },
   }));
 }

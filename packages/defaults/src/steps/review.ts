@@ -12,7 +12,7 @@ import {
   defineStep,
   type Ctx,
   makeFinding,
-  renderFindingForPr,
+  renderRoundsForPr,
   type Finding,
   type Git,
   type GitStatus,
@@ -125,15 +125,7 @@ function formatTestRoundContext(rounds: readonly RoundRecord[]): string {
   if (rounds.length === 0) return "No test step rounds were recorded.";
   const latest = rounds.reduce((a, b) => (b.index > a.index ? b : a));
   const status = latest.findings.length === 0 ? "passed" : "has unresolved findings";
-  const lines = [`Latest test step status: ${status}.`, ""];
-  for (const round of rounds) {
-    lines.push(`Round ${round.index}: ${round.trigger}`);
-    if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
-    if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
-    if (round.findings.length === 0) lines.push("No findings.");
-    else lines.push(...round.findings.map(renderFindingForPr));
-    lines.push("");
-  }
+  const lines = [`Latest test step status: ${status}.`, "", renderRoundsForPr(rounds)];
   return truncateTestContext(lines.join("\n").trim());
 }
 
@@ -143,13 +135,12 @@ function hasBlockVerdict(passes: readonly ReviewPass[]): boolean {
 
 function ensureBlockRequiresUser(passes: readonly ReviewPass[]): ReviewPass[] {
   if (!hasBlockVerdict(passes)) return [...passes];
-  if (
-    passes.some((pass) => pass.result.findings.some((finding) => finding.action === "ask-user"))
-  ) {
-    return [...passes];
-  }
   return passes.map((pass) => {
     if (pass.result.verdict !== "block") return pass;
+    const hasBlockingFinding = pass.result.findings.some(
+      (finding) => finding.id === BLOCK_APPROVAL_FINDING.id,
+    );
+    if (hasBlockingFinding) return pass;
     return {
       ...pass,
       result: { ...pass.result, findings: [...pass.result.findings, BLOCK_APPROVAL_FINDING] },

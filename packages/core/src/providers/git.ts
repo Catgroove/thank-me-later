@@ -57,7 +57,7 @@ export interface Git {
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
   status(): Promise<GitStatus>;
-  /** Full review diff against `base`, including committed, tracked worktree, and untracked changes. */
+  /** Git diff against `base`, including committed, tracked worktree, and untracked changes. */
   diffAgainst(base: string): Promise<string>;
   /** Discard all uncommitted changes — tracked and untracked — returning the worktree to `HEAD`. */
   discardChanges(): Promise<void>;
@@ -112,11 +112,6 @@ async function comparisonRef(cwd: string, base: string): Promise<string> {
   if (await refExists(cwd, `refs/remotes/origin/${base}`)) return `origin/${base}`;
   if (await refExists(cwd, `refs/heads/${base}`)) return base;
   return base;
-}
-
-function diffSection(title: string, diff: string): string | null {
-  const text = diff.trim();
-  return text.length > 0 ? `## ${title}\n\n${text}` : null;
 }
 
 async function untrackedDiff(cwd: string): Promise<string> {
@@ -251,18 +246,14 @@ export function createGit(cwd: string): Git {
 
     async diffAgainst(base) {
       const ref = await comparisonRef(cwd, base);
-      const sections = [
-        diffSection(
-          `Committed branch diff (${ref}...HEAD)`,
-          await git(cwd, ["diff", "--find-renames", `${ref}...HEAD`, "--"]),
-        ),
-        diffSection(
-          "Tracked worktree diff (HEAD -> worktree)",
-          await git(cwd, ["diff", "--find-renames", "HEAD", "--"]),
-        ),
-        diffSection("Untracked file diff", await untrackedDiff(cwd)),
-      ].filter((section): section is string => section !== null);
-      return sections.length > 0 ? sections.join("\n\n") : `No diff against ${ref}.`;
+      const diffs = [
+        await git(cwd, ["diff", "--find-renames", `${ref}...HEAD`, "--"]),
+        await git(cwd, ["diff", "--find-renames", "HEAD", "--"]),
+        await untrackedDiff(cwd),
+      ]
+        .map((diff) => diff.trim())
+        .filter((diff) => diff.length > 0);
+      return diffs.join("\n\n");
     },
 
     async discardChanges() {

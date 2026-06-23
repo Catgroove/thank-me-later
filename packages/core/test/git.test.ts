@@ -153,12 +153,14 @@ describe("createGit (real git, against a throwaway temp repo)", () => {
 
     const diff = await g.diffAgainst("main");
 
-    expect(diff).toContain("Committed branch diff (main...HEAD)");
+    expect(diff).toContain("diff --git a/a.txt b/a.txt");
     expect(diff).toContain("+committed");
-    expect(diff).toContain("Tracked worktree diff");
     expect(diff).toContain("+worktree");
-    expect(diff).toContain("Untracked file diff");
+    expect(diff).toContain("diff --git a/b.txt b/b.txt");
     expect(diff).toContain("+untracked");
+    expect(diff).not.toContain("Committed branch diff");
+    expect(diff).not.toContain("Tracked worktree diff");
+    expect(diff).not.toContain("Untracked file diff");
   });
 
   test("force push updates a rewritten branch the remote already has", async () => {

@@ -76,7 +76,7 @@ describe("riskOf", () => {
 });
 
 describe("dedupeReviewPasses", () => {
-  test("preserves first matching finding by location and title", () => {
+  test("preserves first matching finding by location and title when priority ties", () => {
     const duplicateA = finding({ id: "finding:1", title: "Same", location: "src/a.ts:1" });
     const duplicateB = finding({
       id: "finding:2",
@@ -93,6 +93,31 @@ describe("dedupeReviewPasses", () => {
 
     expect(passes[0]?.result.findings).toEqual([duplicateA]);
     expect(passes[1]?.result.findings).toEqual([unique]);
+  });
+
+  test("keeps the most severe and actionable duplicate", () => {
+    const informational = finding({
+      id: "finding:1",
+      severity: "info",
+      action: "no-op",
+      title: "Same",
+      location: "src/a.ts:1",
+    });
+    const fixable = finding({
+      id: "finding:2",
+      severity: "warning",
+      action: "auto-fix",
+      title: "Same",
+      location: "src/a.ts:1",
+    });
+
+    const passes = dedupeReviewPasses([
+      { title: "Context", result: { findings: [informational] } },
+      { title: "Correctness", result: { findings: [fixable] } },
+    ]);
+
+    expect(passes[0]?.result.findings).toEqual([]);
+    expect(passes[1]?.result.findings).toEqual([fixable]);
   });
 });
 
