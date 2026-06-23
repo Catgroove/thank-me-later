@@ -45,30 +45,37 @@ function TabBar(props: { active: Tab }) {
 }
 
 function Summary(props: { step: StepView; now: number }) {
-  const s = props.step;
+  // Read `props.step` inside JSX (never hoisted into a const) so the panel stays reactive when the
+  // selected Step changes under j/k - hoisting captures a stale StepView and freezes the tab.
   return (
     <box flexDirection="column">
-      <text fg="#cbd5e1">status: {s.status}</text>
-      <Show when={stepElapsed(s, props.now) !== ""}>
-        <text fg="#94a3b8">elapsed: {stepElapsed(s, props.now)}</text>
+      <text fg="#cbd5e1">status: {props.step.status}</text>
+      <Show when={stepElapsed(props.step, props.now) !== ""}>
+        <text fg="#94a3b8">elapsed: {stepElapsed(props.step, props.now)}</text>
       </Show>
-      <Show when={s.headline !== undefined}>
+      <Show when={props.step.headline !== undefined}>
         <text fg="#e2e8f0" wrapMode="word">
-          {sanitize(s.headline ?? "", { preserveNewlines: true })}
+          {sanitize(props.step.headline ?? "", { preserveNewlines: true })}
         </text>
       </Show>
-      <Show when={s.currentTool !== undefined}>
+      <Show when={props.step.currentTool !== undefined}>
         <text fg="#a78bfa">
-          ⚙ {sanitize(s.currentTool?.name ?? "")}
-          {s.currentTool?.detail ? ` · ${sanitize(s.currentTool.detail)}` : ""}
+          ⚙ {sanitize(props.step.currentTool?.name ?? "")}
+          {props.step.currentTool?.detail ? ` · ${sanitize(props.step.currentTool.detail)}` : ""}
         </text>
       </Show>
-      <Show when={s.error !== undefined}>
+      <Show when={props.step.error !== undefined}>
         <text fg="#ef4444" wrapMode="word">
-          error: {sanitize(s.error ?? "", { preserveNewlines: true })}
+          error: {sanitize(props.step.error ?? "", { preserveNewlines: true })}
         </text>
       </Show>
-      <Show when={s.artifacts.length === 0 && s.rounds.length === 0 && s.headline === undefined}>
+      <Show
+        when={
+          props.step.artifacts.length === 0 &&
+          props.step.rounds.length === 0 &&
+          props.step.headline === undefined
+        }
+      >
         <text fg="#64748b">No facts recorded yet.</text>
       </Show>
     </box>
