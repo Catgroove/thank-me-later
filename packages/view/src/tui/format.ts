@@ -1,22 +1,23 @@
 // Small pure formatting helpers shared by the TUI components: status glyphs/labels and human
 // duration/elapsed strings. Kept generic - no Step-name knowledge, no default-Pipeline assumptions.
 
-import type { Finding, FindingSeverity } from "@tml/core";
+import type { Finding, FindingDisposition } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 
 export type StepStatus = StepView["status"];
 
-/** Severity accent color, shared by the findings inspector and the approval drawer. */
-export const SEVERITY_COLOR: Record<FindingSeverity, string> = {
-  error: "#ef4444",
-  warning: "#f59e0b",
-  info: "#38bdf8",
+/** Disposition accent color, shared by the findings inspector and the approval drawer. */
+export const DISPOSITION_COLOR: Record<FindingDisposition, string> = {
+  blocker: "#ef4444",
+  "should-fix": "#f59e0b",
+  consider: "#38bdf8",
+  nit: "#94a3b8",
 };
 
-/** The `[blocking] [severity]` marker prefixing a finding line in both finding surfaces. */
+/** The `[disposition]` marker prefixing a finding line in both finding surfaces. */
 export function findingMarker(finding: Finding): string {
-  return finding.blocking === true ? `[blocking] [${finding.severity}]` : `[${finding.severity}]`;
+  return `[${finding.disposition}]`;
 }
 
 /**

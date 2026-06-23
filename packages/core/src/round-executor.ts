@@ -286,12 +286,13 @@ function currentSelectedFindingIds(
 function approvalRound(findings: readonly Finding[], decision: ApprovalDecision): RoundRecordInput {
   const userFindings = decision.userFindings ?? [];
   const userNotes = cleanNotes(decision.notes);
-  const action = decision.action === "skip" ? "skipped" : "approved";
+  const resolution = decision.action === "skip" ? "skipped" : "approved";
   return {
     trigger: "user_fix",
     findings: [...findings, ...userFindings],
     ...(userNotes ? { userNotes } : {}),
-    fixSummary: `Operator ${action} unresolved findings.`,
+    resolution,
+    fixSummary: `Operator ${resolution} unresolved findings.`,
   };
 }
 

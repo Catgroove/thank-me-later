@@ -11,7 +11,7 @@ const reads = {
 };
 
 const finding = makeFinding("review", {
-  severity: "warning",
+  disposition: "should-fix",
   action: "ask-user",
   title: "Confirm behavior",
   detail: "Public behavior changed.",

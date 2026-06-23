@@ -2,14 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { type Finding, parseReviewFindings, riskOf, summarize } from "../src/review/synthesize.ts";
 
 function finding(over: Partial<Finding> = {}): Finding {
-  return { id: "finding:1", severity: "info", action: "no-op", title: "T", detail: "D", ...over };
+  return { id: "finding:1", disposition: "nit", action: "no-op", title: "T", detail: "D", ...over };
 }
 
 describe("parseReviewFindings", () => {
   test("parses a well-formed result", () => {
     const findings = parseReviewFindings({
       findings: [
-        { severity: "warning", action: "auto-fix", title: "x", detail: "y", location: "a.ts:1" },
+        {
+          disposition: "should-fix",
+          action: "auto-fix",
+          title: "x",
+          detail: "y",
+          location: "a.ts:1",
+        },
       ],
     });
     expect(findings).toHaveLength(1);
@@ -18,7 +24,7 @@ describe("parseReviewFindings", () => {
 
   test("omits an empty location", () => {
     const findings = parseReviewFindings({
-      findings: [{ severity: "info", action: "no-op", title: "t", detail: "d", location: "  " }],
+      findings: [{ disposition: "nit", action: "no-op", title: "t", detail: "d", location: "  " }],
     });
     expect(findings[0]?.location).toBeUndefined();
   });
@@ -28,48 +34,54 @@ describe("parseReviewFindings", () => {
     expect(() => parseReviewFindings({})).toThrow();
     expect(() =>
       parseReviewFindings({
-        findings: [{ severity: "bogus", action: "no-op", title: "t", detail: "d" }],
+        findings: [{ disposition: "bogus", action: "no-op", title: "t", detail: "d" }],
       }),
     ).toThrow();
     expect(() =>
       parseReviewFindings({
-        findings: [{ severity: "info", action: "no-op", title: "", detail: "d" }],
+        findings: [{ disposition: "nit", action: "no-op", title: "", detail: "d" }],
       }),
     ).toThrow();
   });
 
-  test("constrains actions by severity", () => {
+  test("constrains actions by disposition", () => {
     expect(() =>
       parseReviewFindings({
-        findings: [{ severity: "error", action: "no-op", title: "t", detail: "d" }],
+        findings: [{ disposition: "blocker", action: "no-op", title: "t", detail: "d" }],
       }),
-    ).toThrow(/error and warning findings must be auto-fix or ask-user/);
+    ).toThrow(/blocker and should-fix findings must be auto-fix or ask-user/);
     expect(() =>
       parseReviewFindings({
-        findings: [{ severity: "info", action: "auto-fix", title: "t", detail: "d" }],
+        findings: [{ disposition: "should-fix", action: "no-op", title: "t", detail: "d" }],
       }),
-    ).toThrow(/info findings must be no-op/);
+    ).toThrow(/blocker and should-fix findings must be auto-fix or ask-user/);
   });
 });
 
 describe("riskOf", () => {
   test("empty findings are low", () => expect(riskOf([])).toBe("low"));
-  test("a warning is medium", () =>
-    expect(riskOf([finding({ severity: "warning" })])).toBe("medium"));
-  test("an error is high", () => expect(riskOf([finding({ severity: "error" })])).toBe("high"));
+  test("a should-fix is medium", () =>
+    expect(riskOf([finding({ disposition: "should-fix" })])).toBe("medium"));
+  test("a blocker is high", () =>
+    expect(riskOf([finding({ disposition: "blocker" })])).toBe("high"));
 });
 
 describe("summarize", () => {
-  test("renders risk, the findings breakdown, severity labels, and fixes", () => {
+  test("renders risk, the findings breakdown, disposition labels, and fixes", () => {
     const findings = [
-      finding({ severity: "warning", action: "auto-fix", title: "Scope creep", detail: "two" }),
-      finding({ severity: "error", action: "auto-fix", title: "NPE", detail: "null deref" }),
+      finding({
+        disposition: "should-fix",
+        action: "auto-fix",
+        title: "Scope creep",
+        detail: "two",
+      }),
+      finding({ disposition: "blocker", action: "auto-fix", title: "NPE", detail: "null deref" }),
     ];
     const out = summarize(findings, "fixed the NPE");
-    expect(out).toContain("**Risk: high**"); // error present
+    expect(out).toContain("**Risk: high**"); // blocker present
     expect(out).toContain("<details>"); // full breakdown is collapsible
-    expect(out).toContain("Warning:");
-    expect(out).toContain("Error:");
+    expect(out).toContain("Should fix:");
+    expect(out).toContain("Blocker:");
     expect(out).toContain("2 still need an auto-fix"); // headline tally
     expect(out).toContain("**Fixes applied:** fixed the NPE");
   });

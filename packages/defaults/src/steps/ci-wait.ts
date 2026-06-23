@@ -33,7 +33,7 @@ function findingForCheck(check: CheckRun): Finding | null {
   if (isGreen(check)) return null;
   const status = check.conclusion ?? check.status;
   return makeFinding("ci", {
-    severity: check.status === "completed" ? "error" : "warning",
+    disposition: check.status === "completed" ? "blocker" : "should-fix",
     action:
       check.status === "completed" && check.conclusion === "failure" ? "auto-fix" : "ask-user",
     title: `${check.name} did not pass`,
@@ -44,7 +44,7 @@ function findingForCheck(check: CheckRun): Finding | null {
 
 function timeoutFinding(prNumber: number): Finding {
   return makeFinding("ci", {
-    severity: "warning",
+    disposition: "should-fix",
     action: "ask-user",
     title: "CI did not settle before the timeout",
     detail: `Checks for PR #${prNumber} were still pending when the CI wait timeout elapsed.`,

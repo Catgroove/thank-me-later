@@ -6,17 +6,45 @@
 import { createHash } from "node:crypto";
 
 export type FindingAction = "auto-fix" | "ask-user" | "no-op";
-export type FindingSeverity = "error" | "warning" | "info";
+// How strongly tml recommends acting on a finding. `blocker` gates the ship; `should-fix` is a
+// clear improvement the author should make; `consider` is an optional suggestion; `nit` is a
+// trivial take-it-or-leave-it remark.
+export type FindingDisposition = "blocker" | "should-fix" | "consider" | "nit";
 export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify";
+
+/**
+ * How a round resolved an operator decision, set only on the terminal round of an approval gate.
+ * `approved` means the operator accepted the round's findings as-is; `skipped` means they skipped the
+ * Step leaving them. Distinguishes a real fix round (no resolution) from an accept/skip so the
+ * finding checklist can show "accepted as-is"/"skipped" instead of "still open".
+ */
+export type RoundResolution = "approved" | "skipped";
+
+/**
+ * The lifecycle of a single finding across a Step's rounds.
+ *
+ * - `open`: reported and not yet acted on.
+ * - `pending`: selected for a fix that is applied or in flight, not yet verified.
+ * - `fixed`: was fixed and a later verification pass no longer reports it.
+ * - `unresolved`: a fix was attempted but the finding persists.
+ * - `accepted`: the operator approved it as-is at the gate.
+ * - `skipped`: the operator skipped the Step, leaving it.
+ */
+export type FindingStatus = "open" | "pending" | "fixed" | "unresolved" | "accepted" | "skipped";
+
+/** One finding paired with its derived lifecycle status (see {@link findingLifecycle}). */
+export interface FindingLifecycle {
+  readonly finding: Finding;
+  readonly status: FindingStatus;
+}
 
 export interface Finding {
   readonly id: string;
-  readonly severity: FindingSeverity;
+  readonly disposition: FindingDisposition;
   readonly action: FindingAction;
   readonly title: string;
   readonly detail: string;
   readonly location?: string;
-  readonly blocking?: boolean;
 }
 
 export interface RoundRecord {
@@ -28,6 +56,8 @@ export interface RoundRecord {
   readonly userNotes?: Record<string, string>;
   readonly fixSummary?: string;
   readonly commitSha?: string;
+  /** Set on the terminal round of an approval gate that the operator approved or skipped. */
+  readonly resolution?: RoundResolution;
 }
 
 export interface StepRoundSummary {
@@ -48,7 +78,7 @@ export function findingId(namespace: string, finding: FindingInput): string {
     .update(
       JSON.stringify({
         namespace,
-        severity: finding.severity,
+        disposition: finding.disposition,
         action: finding.action,
         title: finding.title.trim(),
         location: finding.location?.trim() ?? "",
@@ -63,13 +93,18 @@ export function makeFinding(namespace: string, finding: FindingInput): Finding {
   return { ...finding, id: findingId(namespace, finding) };
 }
 
-const SEVERITIES: ReadonlySet<string> = new Set<FindingSeverity>(["error", "warning", "info"]);
+const DISPOSITIONS: ReadonlySet<string> = new Set<FindingDisposition>([
+  "blocker",
+  "should-fix",
+  "consider",
+  "nit",
+]);
 const ACTIONS: ReadonlySet<string> = new Set<FindingAction>(["auto-fix", "ask-user", "no-op"]);
 
 export interface ParseAgentFindingsOptions {
   readonly namespace: string;
   readonly sourceName?: string;
-  readonly enforceActionForSeverity?: boolean;
+  readonly enforceActionForDisposition?: boolean;
 }
 
 /** Validate an agent's structured `{ findings }` reply into core Findings. */
@@ -98,16 +133,19 @@ function parseAgentFinding(
     throw new Error(`${sourceName}: finding ${index} is not an object`);
   }
   const f = raw as Record<string, unknown>;
-  if (typeof f.severity !== "string" || !SEVERITIES.has(f.severity)) {
-    throw new Error(`${sourceName}: finding ${index} has an invalid severity`);
+  if (typeof f.disposition !== "string" || !DISPOSITIONS.has(f.disposition)) {
+    throw new Error(`${sourceName}: finding ${index} has an invalid disposition`);
   }
   if (typeof f.action !== "string" || !ACTIONS.has(f.action)) {
     throw new Error(`${sourceName}: finding ${index} has an invalid action`);
   }
-  if (options.enforceActionForSeverity && !isAllowedActionForSeverity(f.severity, f.action)) {
+  if (
+    options.enforceActionForDisposition &&
+    !isAllowedActionForDisposition(f.disposition, f.action)
+  ) {
     throw new Error(
-      `${sourceName}: finding ${index} has action ${f.action} for severity ${f.severity}; ` +
-        "error and warning findings must be auto-fix or ask-user, and info findings must be no-op",
+      `${sourceName}: finding ${index} has action ${f.action} for disposition ${f.disposition}; ` +
+        "blocker and should-fix findings must be auto-fix or ask-user",
     );
   }
   if (typeof f.title !== "string" || f.title.trim().length === 0) {
@@ -117,20 +155,23 @@ function parseAgentFinding(
     throw new Error(`${sourceName}: finding ${index} is missing a detail`);
   }
   return makeFinding(options.namespace, {
-    severity: f.severity as Finding["severity"],
+    disposition: f.disposition as Finding["disposition"],
     action: f.action as Finding["action"],
     title: f.title.trim(),
     detail: f.detail.trim(),
     ...(typeof f.location === "string" && f.location.trim().length > 0
       ? { location: f.location.trim() }
       : {}),
-    ...(typeof f.blocking === "boolean" ? { blocking: f.blocking } : {}),
   });
 }
 
-function isAllowedActionForSeverity(severity: string, action: string): boolean {
-  if (severity === "info") return action === "no-op";
-  return action === "auto-fix" || action === "ask-user";
+// A finding that recommends action cannot also do nothing: blocker and should-fix must carry a
+// real action. consider and nit may use any action, including no-op for one tml is merely noting.
+function isAllowedActionForDisposition(disposition: string, action: string): boolean {
+  if (disposition === "blocker" || disposition === "should-fix") {
+    return action === "auto-fix" || action === "ask-user";
+  }
+  return true;
 }
 
 function slug(value: string): string {
@@ -141,17 +182,17 @@ function slug(value: string): string {
   return s.length > 0 ? s : "finding";
 }
 
-function label(severity: FindingSeverity): string {
-  if (severity === "error") return "Error";
-  if (severity === "warning") return "Warning";
-  return "Info";
+function label(disposition: FindingDisposition): string {
+  if (disposition === "blocker") return "Blocker";
+  if (disposition === "should-fix") return "Should fix";
+  if (disposition === "consider") return "Consider";
+  return "Nit";
 }
 
 /** Pure Markdown rendering for a single PR-summary finding line. */
 export function renderFindingForPr(finding: Finding): string {
   const location = finding.location ? ` \`${finding.location}\`` : "";
-  const prefix =
-    finding.blocking === true ? `Blocking ${label(finding.severity)}` : label(finding.severity);
+  const prefix = label(finding.disposition);
   const action =
     finding.action === "auto-fix"
       ? " (auto-fix)"
@@ -227,6 +268,97 @@ export function renderRoundsForPrompt(rounds: readonly RoundRecordInput[]): stri
 export function hasPriorRounds(historyText: string): boolean {
   const trimmed = historyText.trim();
   return trimmed.length > 0 && trimmed !== NO_PRIOR_ROUNDS;
+}
+
+/**
+ * Fold one Step's rounds into a per-finding lifecycle, in first-seen order. A finding's status is
+ * derived entirely from the round history: which check round last reported it, whether a fix round
+ * ever attempted it, what the last round queued, and any terminal approval resolution. Findings that
+ * vanished without ever being acted on are dropped - the list is the work that mattered, not noise.
+ *
+ * `settled` (the Step is no longer active) collapses any lingering `pending` to `unresolved`: a fix
+ * that is queued but will never run is not in flight. Pass the Step's rounds only, ordered or not.
+ */
+export function findingLifecycle(
+  rounds: readonly RoundRecord[],
+  opts: { readonly settled?: boolean } = {},
+): FindingLifecycle[] {
+  const ordered = [...rounds].sort((a, b) => a.index - b.index);
+
+  const isCheck = (r: RoundRecord) => r.trigger === "initial" || r.trigger === "verify";
+  const isFix = (r: RoundRecord) =>
+    (r.trigger === "auto_fix" || r.trigger === "user_fix") && r.resolution === undefined;
+
+  // The freshest re-scan decides what is still reported; fix and approval rounds are not re-scans.
+  const lastCheck = ordered.filter(isCheck).at(-1);
+  const present = new Set(lastCheck?.findings.map((f) => f.id) ?? []);
+
+  // A fix round records the findings it attempted; that is what can later be confirmed fixed.
+  const attempted = new Set<string>();
+  for (const r of ordered) if (isFix(r)) for (const f of r.findings) attempted.add(f.id);
+
+  // The last round's queued/attempted set is in flight: a check that just selected fixes, or a fix
+  // round awaiting its verify. Either way the fix has not yet been confirmed.
+  const last = ordered.at(-1);
+  const inFlight = new Set<string>();
+  if (last !== undefined) {
+    if (isFix(last)) for (const f of last.findings) inFlight.add(f.id);
+    else if (isCheck(last)) for (const id of last.selectedFindingIds ?? []) inFlight.add(id);
+  }
+
+  // The terminal approval round stamps its findings accepted or skipped.
+  const approval = ordered.filter((r) => r.resolution !== undefined).at(-1);
+  const accepted = approval?.resolution === "approved" ? idSet(approval) : new Set<string>();
+  const skipped = approval?.resolution === "skipped" ? idSet(approval) : new Set<string>();
+
+  const latest = new Map<string, Finding>();
+  const order: string[] = [];
+  for (const r of ordered) {
+    for (const f of r.findings) {
+      if (!latest.has(f.id)) order.push(f.id);
+      latest.set(f.id, f);
+    }
+  }
+
+  const settled = opts.settled ?? false;
+  const out: FindingLifecycle[] = [];
+  for (const id of order) {
+    const finding = latest.get(id);
+    if (finding === undefined) continue;
+    const status = lifecycleStatus({
+      present: present.has(id),
+      attempted: attempted.has(id),
+      inFlight: inFlight.has(id),
+      accepted: accepted.has(id),
+      skipped: skipped.has(id),
+      settled,
+    });
+    if (status === undefined) continue; // vanished without being acted on - not part of the work
+    out.push({ finding, status });
+  }
+  return out;
+}
+
+function idSet(round: RoundRecord): Set<string> {
+  return new Set(round.findings.map((f) => f.id));
+}
+
+interface LifecycleFacts {
+  readonly present: boolean;
+  readonly attempted: boolean;
+  readonly inFlight: boolean;
+  readonly accepted: boolean;
+  readonly skipped: boolean;
+  readonly settled: boolean;
+}
+
+function lifecycleStatus(f: LifecycleFacts): FindingStatus | undefined {
+  if (!f.present) return f.attempted ? "fixed" : undefined;
+  if (f.accepted) return "accepted";
+  if (f.skipped) return "skipped";
+  if (f.inFlight) return f.settled ? "unresolved" : "pending";
+  if (f.attempted) return "unresolved";
+  return "open";
 }
 
 /** Current findings are the findings from the latest recorded round per Step. */

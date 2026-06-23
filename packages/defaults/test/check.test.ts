@@ -31,7 +31,7 @@ describe("checkStep", () => {
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.findings).toMatchObject([
       {
-        severity: "error",
+        disposition: "blocker",
         action: "ask-user",
         title: "lint check did not return structured findings",
         detail: "lint failures remain",
@@ -44,7 +44,7 @@ describe("checkStep", () => {
           trigger: "initial",
           findings: [
             {
-              severity: "error",
+              disposition: "blocker",
               action: "ask-user",
               title: "lint check did not return structured findings",
               detail: "lint failures remain",
@@ -68,7 +68,7 @@ describe("checkStep", () => {
         output: {
           findings: [
             {
-              severity: "warning",
+              disposition: "should-fix",
               action: "auto-fix",
               title: "Formatting drift",
               detail: "src/a.ts is not formatted",
@@ -119,7 +119,7 @@ describe("checkStep", () => {
       output: {
         findings: [
           {
-            severity: "info",
+            disposition: "nit",
             action: "no-op",
             title: "FYI",
             detail: "informational only",
@@ -160,7 +160,7 @@ describe("checkStep", () => {
     const agent = new FakeHarness();
     agent.result = { ok: false, summary: "lint failures remain" };
     const userFinding = makeFinding("user", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "no-op",
       title: "Known follow-up",
       detail: "Track separately",
@@ -194,7 +194,7 @@ describe("checkStep", () => {
         output: {
           findings: [
             {
-              severity: "warning",
+              disposition: "should-fix",
               action: "ask-user",
               title: "Choose contract",
               detail: "needs operator selection",
@@ -237,7 +237,7 @@ describe("checkStep", () => {
         output: {
           findings: [
             {
-              severity: "warning",
+              disposition: "should-fix",
               action: "ask-user",
               title: "Choose contract",
               detail: "needs operator selection",
@@ -252,7 +252,7 @@ describe("checkStep", () => {
         output: {
           findings: [
             {
-              severity: "warning",
+              disposition: "should-fix",
               action: "ask-user",
               title: "Confirm follow-up",
               detail: "still pending",
@@ -298,7 +298,9 @@ describe("checkStep", () => {
         ok: true,
         summary: "auto fix first",
         output: {
-          findings: [{ severity: "warning", action: "auto-fix", title: "A", detail: "fix A" }],
+          findings: [
+            { disposition: "should-fix", action: "auto-fix", title: "A", detail: "fix A" },
+          ],
         },
       },
       { ok: true, summary: "fixed A" },
@@ -306,7 +308,9 @@ describe("checkStep", () => {
         ok: true,
         summary: "needs input",
         output: {
-          findings: [{ severity: "warning", action: "ask-user", title: "B", detail: "decide B" }],
+          findings: [
+            { disposition: "should-fix", action: "ask-user", title: "B", detail: "decide B" },
+          ],
         },
       },
     );
@@ -334,7 +338,9 @@ describe("checkStep", () => {
         ok: true,
         summary: "needs input",
         output: {
-          findings: [{ severity: "warning", action: "ask-user", title: "B", detail: "decide B" }],
+          findings: [
+            { disposition: "should-fix", action: "ask-user", title: "B", detail: "decide B" },
+          ],
         },
       },
       { ok: true, summary: "fixed B" },

@@ -100,13 +100,13 @@ describe("TUI App (no real terminal)", () => {
         prompt: "Approve these findings",
         findings: [
           makeFinding("x", {
-            severity: "warning",
+            disposition: "should-fix",
             action: "ask-user",
             title: "Tighten the retry",
             detail: "consider a backoff",
           }),
           makeFinding("x", {
-            severity: "info",
+            disposition: "nit",
             action: "auto-fix",
             title: "Reformat the import",
             detail: "oxfmt will handle it",
@@ -126,7 +126,7 @@ describe("TUI App (no real terminal)", () => {
     await t.flush();
     const frame = t.captureCharFrame();
     expect(frame).toContain("Approve these findings"); // the prompt
-    expect(frame).toContain("1 warning"); // severity summary
+    expect(frame).toContain("1 should-fix"); // disposition summary
     expect(frame).toContain("0 selected for fix");
     expect(frame).toContain("Tighten the retry"); // visible finding selection row
     expect(frame).toContain("approval needed"); // the drawer is the primary surface

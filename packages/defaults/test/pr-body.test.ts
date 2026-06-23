@@ -3,7 +3,7 @@ import { makeFinding, type RoundRecord } from "@tml/core";
 import { buildDefaultPrBody, updateDefaultPrBody } from "../src/pr-body.ts";
 
 const finding = makeFinding("review", {
-  severity: "warning",
+  disposition: "should-fix",
   action: "ask-user",
   title: "Confirm behavior",
   detail: "Public behavior changed.",

@@ -70,13 +70,16 @@ function cleanDescription(description: string): string {
 }
 
 function riskAssessment(
-  findings: readonly { readonly severity: string }[],
+  findings: readonly { readonly disposition: string }[],
   reviewSummary: string,
 ): string {
-  const errors = findings.filter((f) => f.severity === "error").length;
-  const warnings = findings.filter((f) => f.severity === "warning").length;
-  const info = findings.filter((f) => f.severity === "info").length;
-  const lines = [`- Unresolved findings: ${errors} error, ${warnings} warning, ${info} info.`];
+  const blockers = findings.filter((f) => f.disposition === "blocker").length;
+  const shouldFix = findings.filter((f) => f.disposition === "should-fix").length;
+  const consider = findings.filter((f) => f.disposition === "consider").length;
+  const nits = findings.filter((f) => f.disposition === "nit").length;
+  const lines = [
+    `- Unresolved findings: ${blockers} blocker, ${shouldFix} should-fix, ${consider} consider, ${nits} nit.`,
+  ];
   const review = reviewSummary.trim();
   if (review.length > 0) lines.push("", review);
   return lines.join("\n");

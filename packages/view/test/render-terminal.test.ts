@@ -360,14 +360,14 @@ describe("createTerminalRenderer (TTY)", () => {
           findings: [
             {
               id: "review:1",
-              severity: "warning",
+              disposition: "should-fix",
               action: "auto-fix",
               title: "Fix me",
               detail: "Needs a fix.",
             },
             {
               id: "review:2",
-              severity: "error",
+              disposition: "blocker",
               action: "ask-user",
               title: "Confirm",
               detail: "Needs a decision.",
@@ -498,7 +498,7 @@ describe("createTerminalRenderer (plain)", () => {
           findings: [
             {
               id: "review:1",
-              severity: "warning",
+              disposition: "should-fix",
               action: "auto-fix",
               title: "Fix me",
               detail: "Needs a fix.",

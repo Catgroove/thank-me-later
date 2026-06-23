@@ -8,7 +8,7 @@ import type { Accessor } from "solid-js";
 import type { Finding, FindingAction } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
 import { actionOptions, findingSections, SECTION_LABEL, summaryLine } from "./approval.ts";
-import { findingMarker, SEVERITY_COLOR } from "./format.ts";
+import { DISPOSITION_COLOR, findingMarker } from "./format.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
 export type ApprovalFocusArea = "findings" | "actions";
@@ -94,7 +94,7 @@ function AskBody(props: {
 }
 
 // The action category is carried by the section header now, so the per-row label drops the
-// redundant `(action)` tag and leads with the severity instead.
+// redundant `(action)` tag and leads with the disposition instead.
 function findingLabel(finding: Finding): string {
   const location = finding.location ? ` - ${finding.location}` : "";
   return `${findingMarker(finding)} ${finding.title}${location}`;
@@ -145,7 +145,7 @@ function ApprovalBody(props: {
                       paddingRight={1}
                     >
                       <text
-                        fg={focused() ? "#e2e8f0" : SEVERITY_COLOR[finding.severity]}
+                        fg={focused() ? "#e2e8f0" : DISPOSITION_COLOR[finding.disposition]}
                         wrapMode="word"
                       >
                         {selected(finding.id) ? "[x] " : "[ ] "}

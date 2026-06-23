@@ -118,7 +118,7 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
       ? []
       : [
           makeFinding(name, {
-            severity: "error",
+            disposition: "blocker",
             action: "ask-user",
             title: `${name} check did not return structured findings`,
             detail: summary,
@@ -130,5 +130,5 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
 
 export const formatStep = (): Step => checkStep("format", formatPrompt);
 export const lintStep = (): Step => checkStep("lint", lintPrompt);
-export const typecheckStep = (): Step => checkStep("typecheck", typecheckPrompt);
+export const typecheckStep = (): Step => checkStep("typecheck", typecheckPrompt, "run");
 export const testStep = (): Step => checkStep("test", testPrompt, "run");

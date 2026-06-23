@@ -16,7 +16,7 @@ export interface FindingSection {
 // Most-actionable first: the decisions the user must make, then what the next round fixes on its
 // own, then purely informational notes. This single order is the source of truth for both the
 // drawer layout and the keyboard navigation index, so the two never drift apart.
-const SECTION_ORDER: readonly FindingAction[] = ["ask-user", "auto-fix", "no-op"];
+export const SECTION_ORDER: readonly FindingAction[] = ["ask-user", "auto-fix", "no-op"];
 
 // The canonical header label for each action group, shared by the findings inspector and the
 // approval drawer so the two surfaces name a group identically.
@@ -104,24 +104,24 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-/** One-line severity tally for the drawer header. */
+/** One-line disposition tally for the drawer header. */
 export function summaryLine(findings: readonly Finding[]): string {
   if (findings.length === 0) return "No findings.";
-  let blocking = 0;
-  let errors = 0;
-  let warnings = 0;
-  let infos = 0;
+  let blockers = 0;
+  let shouldFix = 0;
+  let consider = 0;
+  let nits = 0;
   for (const finding of findings) {
-    if (finding.blocking === true) blocking += 1;
-    if (finding.severity === "error") errors += 1;
-    else if (finding.severity === "warning") warnings += 1;
-    else infos += 1;
+    if (finding.disposition === "blocker") blockers += 1;
+    else if (finding.disposition === "should-fix") shouldFix += 1;
+    else if (finding.disposition === "consider") consider += 1;
+    else nits += 1;
   }
   const parts: string[] = [];
-  if (blocking > 0) parts.push(`${blocking} blocking`);
-  if (errors > 0) parts.push(plural(errors, "error"));
-  if (warnings > 0) parts.push(plural(warnings, "warning"));
-  if (infos > 0) parts.push(plural(infos, "info"));
+  if (blockers > 0) parts.push(plural(blockers, "blocker"));
+  if (shouldFix > 0) parts.push(`${shouldFix} should-fix`);
+  if (consider > 0) parts.push(`${consider} consider`);
+  if (nits > 0) parts.push(plural(nits, "nit"));
   if (parts.length !== 1) parts.push(plural(findings.length, "finding"));
   return parts.join(" · ");
 }

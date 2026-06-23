@@ -86,7 +86,7 @@ describe("ci-wait step", () => {
       "verify",
     ]);
     expect(stepResult.rounds?.[0]?.findings).toMatchObject([
-      { severity: "error", action: "auto-fix", title: "build did not pass" },
+      { disposition: "blocker", action: "auto-fix", title: "build did not pass" },
     ]);
     expect(stepResult.rounds?.[2]?.findings).toEqual([]);
   });
@@ -154,14 +154,14 @@ describe("ci-wait step", () => {
     expect(agent.tasks).toHaveLength(0);
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.findings).toMatchObject([
-      { severity: "error", action: "ask-user", title: "build did not pass" },
+      { disposition: "blocker", action: "ask-user", title: "build did not pass" },
     ]);
     expect(result).toMatchObject({
       artifacts: {},
       rounds: [
         {
           trigger: "initial",
-          findings: [{ severity: "error", action: "ask-user", title: "build did not pass" }],
+          findings: [{ disposition: "blocker", action: "ask-user", title: "build did not pass" }],
         },
         { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
       ],
@@ -181,7 +181,11 @@ describe("ci-wait step", () => {
 
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.findings).toMatchObject([
-      { severity: "warning", action: "ask-user", title: "CI did not settle before the timeout" },
+      {
+        disposition: "should-fix",
+        action: "ask-user",
+        title: "CI did not settle before the timeout",
+      },
     ]);
     expect(result).toMatchObject({
       rounds: [

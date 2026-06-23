@@ -77,8 +77,18 @@ describe("tui navigation", () => {
 });
 
 describe("tui approval helpers", () => {
-  const f1 = makeFinding("x", { severity: "error", action: "auto-fix", title: "a", detail: "d" });
-  const f2 = makeFinding("x", { severity: "warning", action: "ask-user", title: "b", detail: "e" });
+  const f1 = makeFinding("x", {
+    disposition: "blocker",
+    action: "auto-fix",
+    title: "a",
+    detail: "d",
+  });
+  const f2 = makeFinding("x", {
+    disposition: "should-fix",
+    action: "ask-user",
+    title: "b",
+    detail: "e",
+  });
 
   test("actionOptions offers fix only when the operator selected findings", () => {
     expect(actionOptions([f1.id]).map((o) => o.action)).toEqual([
@@ -114,14 +124,14 @@ describe("tui approval helpers", () => {
     expect(buildDecision("fix", [])).toBeUndefined();
   });
 
-  test("summaryLine tallies severities, dropping the redundant total for one bucket", () => {
-    expect(summaryLine([f1, f2])).toBe("1 error · 1 warning · 2 findings");
-    expect(summaryLine([f1])).toBe("1 error");
+  test("summaryLine tallies dispositions, dropping the redundant total for one bucket", () => {
+    expect(summaryLine([f1, f2])).toBe("1 blocker · 1 should-fix · 2 findings");
+    expect(summaryLine([f1])).toBe("1 blocker");
     expect(summaryLine([])).toBe("No findings.");
   });
 
   test("findingSections groups by action, most-actionable first, dropping empty sections", () => {
-    const noop = makeFinding("x", { severity: "info", action: "no-op", title: "c", detail: "f" });
+    const noop = makeFinding("x", { disposition: "nit", action: "no-op", title: "c", detail: "f" });
     // Input arrives auto-fix, ask-user, no-op; sections come back ask-user, auto-fix, no-op.
     const sections = findingSections([f1, f2, noop]);
     expect(sections.map((s) => s.action)).toEqual(["ask-user", "auto-fix", "no-op"]);
@@ -132,7 +142,7 @@ describe("tui approval helpers", () => {
   });
 
   test("orderedFindings flattens sections into the navigation order the drawer renders", () => {
-    const noop = makeFinding("x", { severity: "info", action: "no-op", title: "c", detail: "f" });
+    const noop = makeFinding("x", { disposition: "nit", action: "no-op", title: "c", detail: "f" });
     expect(orderedFindings([f1, noop, f2])).toEqual([f2, f1, noop]);
   });
 });
