@@ -9,13 +9,7 @@ import {
   type RunJournal,
   type RunJournalResumeMode,
 } from "@tml/core";
-import {
-  createCliRenderer,
-  createPlainRenderer,
-  initialView,
-  present,
-  type Renderer,
-} from "@tml/view";
+import { createTerminalRenderer, initialView, present, type Renderer } from "@tml/view";
 import { createCliApprovalResponder } from "./approval.ts";
 import { assembleShipConfig } from "./config.ts";
 import { init } from "./init.ts";
@@ -41,9 +35,7 @@ export interface ShipDeps {
 
 /** A TTY live region when stdout is a terminal; clean append-only lines otherwise. */
 function defaultRenderer(verbose: boolean): Renderer {
-  return process.stdout.isTTY
-    ? createCliRenderer({ verbose })
-    : createPlainRenderer((line: string) => console.log(line), { verbose });
+  return createTerminalRenderer({ verbose, plain: !process.stdout.isTTY });
 }
 
 // 128 + signal number: the conventional exit code for a signal-terminated process.
