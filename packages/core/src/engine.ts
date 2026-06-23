@@ -171,6 +171,22 @@ async function drive(
     if (step.resume === "reconcile") replayFromJournal = false;
     try {
       if (replayFromJournal && isStepReplayableFromJournal(step, snapshot)) {
+        // Replay the durable facts as presentation events so a resumed Step shows its prior
+        // artifacts, headline, and Round history - the view is event-sourced and would otherwise
+        // render the Step empty. Mirrors the normal completion path (artifacts, then rounds).
+        for (const artifact of step.produces) {
+          const value = snapshot?.artifacts.get(artifact.name);
+          await emit(queue, journal, now, {
+            type: "artifact:written",
+            step: step.name,
+            artifact: artifact.name,
+            ...(typeof value === "string" ? { rendered: value } : {}),
+          });
+        }
+        for (const round of snapshot?.rounds ?? []) {
+          if (round.step !== step.name) continue;
+          await emit(queue, journal, now, { type: "round:recorded", step: step.name, round });
+        }
         await emit(queue, journal, now, { type: "step:skipped", step: step.name });
         i += 1;
         continue;
