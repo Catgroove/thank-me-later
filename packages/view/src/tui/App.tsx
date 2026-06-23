@@ -23,6 +23,8 @@ export interface AppProps {
   readonly view: Accessor<ViewState>;
   readonly now: Accessor<number>;
   readonly prompt: Accessor<ActivePrompt | undefined>;
+  /** Copy the active mouse selection to the clipboard; supplied by the CLI renderer. */
+  readonly onCopySelection: () => boolean;
   /** Abort the Run (ends it with `run:cancelled`); supplied by the CLI. */
   readonly onAbort: () => void;
 }
@@ -78,6 +80,12 @@ export function App(props: AppProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (key.eventType === "release") return;
+
+    if (isCopySelectionKey(key) && props.onCopySelection()) {
+      key.preventDefault();
+      key.stopPropagation();
+      return;
+    }
 
     // Abort confirmation takes precedence: it can only be answered, never navigated past.
     if (confirmAbort()) {
@@ -140,9 +148,15 @@ export function App(props: AppProps) {
   );
 }
 
+function isCopySelectionKey(key: KeyEvent): boolean {
+  const name = key.name.toLowerCase();
+  return name === "y" || (name === "c" && (key.meta || key.super === true));
+}
+
 function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
   const status = () => props.view().status;
   const active = () => props.view().activeStep;
+  const elapsed = () => runElapsed(props.view(), props.now());
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
       <text fg="#38bdf8" attributes={1}>
@@ -152,7 +166,9 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
         {status()}
         {active() ? ` · ${sanitize(active() ?? "")}` : ""}
       </text>
-      <text fg="#64748b">{runElapsed(props.view(), props.now())}</text>
+      <Show when={elapsed() !== ""}>
+        <text fg="#64748b">total {elapsed()}</text>
+      </Show>
       <Show when={props.view().prUrl !== undefined}>
         <text marginLeft={2} fg="#22d3ee">
           {sanitize(props.view().prUrl ?? "")}
@@ -233,7 +249,9 @@ function AbortConfirm() {
 function FooterKeys() {
   return (
     <box paddingLeft={1} backgroundColor="#0b1120">
-      <text fg="#475569">j/k move · . follow · tab tabs · enter expand · ? help · q abort</text>
+      <text fg="#475569">
+        j/k move · . follow · tab tabs · enter expand · y/cmd-c copy selection · ? help · q abort
+      </text>
     </box>
   );
 }
