@@ -33,17 +33,21 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
       : "";
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-      <text fg="#475569">{props.last ? " └ " : " ├ "}</text>
+      <text flexShrink={0} fg="#475569">
+        {props.last ? " └ " : " ├ "}
+      </text>
       {props.phase.status === "active" ? (
         <spinner name="dots" color={statusColor("active")} />
       ) : (
-        <text fg={statusColor(props.phase.status)}>{statusGlyph(props.phase.status)}</text>
+        <text flexShrink={0} fg={statusColor(props.phase.status)}>
+          {statusGlyph(props.phase.status)}
+        </text>
       )}
-      <text flexGrow={1} marginLeft={1} fg="#94a3b8">
+      <text flexGrow={1} flexShrink={1} marginLeft={1} fg="#94a3b8" wrapMode="none" truncate>
         {sanitize(props.phase.label)}
       </text>
-      <text fg="#64748b">
-        {elapsed() === "" ? "" : ` ${elapsed()}`}
+      <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
+        {elapsed()}
         {count()}
       </text>
     </box>
@@ -82,12 +86,23 @@ export function PipelineRail(props: RailProps) {
                 {step.status === "active" ? (
                   <spinner name="dots" color={statusColor("active")} />
                 ) : (
-                  <text fg={statusColor(step.status)}>{statusGlyph(step.status)}</text>
+                  <text flexShrink={0} fg={statusColor(step.status)}>
+                    {statusGlyph(step.status)}
+                  </text>
                 )}
-                <text flexGrow={1} marginLeft={1} fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}>
+                <text
+                  flexGrow={1}
+                  flexShrink={1}
+                  marginLeft={1}
+                  fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}
+                  wrapMode="none"
+                  truncate
+                >
                   {sanitize(step.name)}
                 </text>
-                <text fg="#64748b">{elapsed() === "" ? "" : ` ${elapsed()}`}</text>
+                <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
+                  {elapsed()}
+                </text>
               </box>
               <Show when={phases().length > 0}>
                 <For each={phases()}>
