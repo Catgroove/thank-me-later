@@ -30,12 +30,19 @@ const reviewPasses = [
 ];
 
 describe("default pipeline prompts", () => {
-  test("check + review prompts are non-empty and name no specific toolchain", () => {
+  test("check + review prompts are non-empty and avoid specific toolchains", () => {
     for (const prompt of [formatPrompt, lintPrompt, typecheckPrompt, testPrompt, ...reviewPasses]) {
       expect(prompt.length).toBeGreaterThan(0);
-      // Agent-driven: the agent discovers the toolchain, so we never name one.
       expect(prompt.toLowerCase()).not.toContain("npm");
       expect(prompt.toLowerCase()).not.toContain("eslint");
+    }
+  });
+
+  test("quality check prompts use model-backed source inspection", () => {
+    for (const prompt of [formatPrompt, lintPrompt, typecheckPrompt]) {
+      expect(prompt).toContain("model-backed source inspection");
+      expect(prompt).toContain("do not run");
+      expect(prompt).toContain("install commands");
     }
   });
 
@@ -54,12 +61,14 @@ describe("default pipeline prompts", () => {
     });
     expect(initial).toContain("Check step: lint");
     expect(initial).toContain("structured findings");
+    expect(initial).toContain("format, lint, and typecheck checks");
     expect(initial.toLowerCase()).toContain("do not modify");
+    expect(initial.toLowerCase()).toContain("install dependencies");
     expect(verify).toContain("Prior check round history");
     expect(verify).toContain("Round 0: initial");
   });
 
-  test("checkFixPrompt lists selected findings and keeps command discovery agent-driven", () => {
+  test("checkFixPrompt lists selected findings and avoids tml-side command detection", () => {
     const prompt = checkFixPrompt({
       name: "typecheck",
       goal: typecheckPrompt,
@@ -78,7 +87,8 @@ describe("default pipeline prompts", () => {
     expect(prompt).toContain("Fix step: typecheck");
     expect(prompt).toContain("typecheck:1");
     expect(prompt).toContain("Bad type");
-    expect(prompt.toLowerCase()).toContain("discover");
+    expect(prompt.toLowerCase()).toContain("do not add repo-specific command detection");
+    expect(prompt.toLowerCase()).toContain("do not install dependencies");
     expect(prompt.toLowerCase()).toContain("do not commit");
   });
 

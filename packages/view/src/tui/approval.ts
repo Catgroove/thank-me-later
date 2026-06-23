@@ -3,9 +3,33 @@
 // decision must use the visible selection the operator can change; suggested ids are only an initial
 // default, never a hidden replacement for user intent.
 
-import type { ApprovalDecision, ApproveFindingsInput, Finding } from "@tml/core";
+import type { ApprovalDecision, ApproveFindingsInput, Finding, FindingAction } from "@tml/core";
 
 export type ApprovalAction = "fix" | "approve" | "skip" | "abort";
+
+/** One action group of an approval's findings, in canonical render order. */
+export interface FindingSection {
+  readonly action: FindingAction;
+  readonly findings: readonly Finding[];
+}
+
+// Most-actionable first: the decisions the user must make, then what the next round fixes on its
+// own, then purely informational notes. This single order is the source of truth for both the
+// drawer layout and the keyboard navigation index, so the two never drift apart.
+const SECTION_ORDER: readonly FindingAction[] = ["ask-user", "auto-fix", "no-op"];
+
+/** Group findings by action into the canonical section order, dropping empty sections. */
+export function findingSections(findings: readonly Finding[]): FindingSection[] {
+  return SECTION_ORDER.map((action) => ({
+    action,
+    findings: findings.filter((finding) => finding.action === action),
+  })).filter((section) => section.findings.length > 0);
+}
+
+/** Findings flattened in section order - the exact sequence the drawer renders and j/k traverses. */
+export function orderedFindings(findings: readonly Finding[]): Finding[] {
+  return findingSections(findings).flatMap((section) => [...section.findings]);
+}
 
 export interface ActionOption {
   readonly action: ApprovalAction;
