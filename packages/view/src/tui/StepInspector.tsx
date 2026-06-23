@@ -24,6 +24,12 @@ export interface InspectorProps {
   readonly view: Accessor<ViewState>;
   readonly nav: Accessor<NavState>;
   readonly now: Accessor<number>;
+  /**
+   * The id of the finding the operator is currently on in the approval drawer's action list, or
+   * undefined when no approval is pending. The Findings tab highlights this finding so it is clear
+   * which detailed finding the action list is pointing at.
+   */
+  readonly focusedFindingId?: Accessor<string | undefined>;
 }
 
 const SEVERITY_COLOR: Record<Finding["severity"], string> = {
@@ -119,28 +125,12 @@ function Summary(props: { step: StepView; now: number; pendingAt?: number }) {
           {sanitize(props.step.headline ?? "", { preserveNewlines: true })}
         </text>
       </Show>
-      <Show when={props.step.currentTool !== undefined}>
-        <text fg="#a78bfa">
-          ⚙ {sanitize(props.step.currentTool?.name ?? "")}
-          {props.step.currentTool?.detail ? ` · ${sanitize(props.step.currentTool.detail)}` : ""}
-        </text>
-      </Show>
       <Show when={props.step.error !== undefined}>
         <text fg="#ef4444" wrapMode="word">
           error: {sanitize(props.step.error ?? "", { preserveNewlines: true })}
         </text>
       </Show>
       <Phases step={props.step} now={props.now} />
-      <Show
-        when={
-          props.step.artifacts.length === 0 &&
-          props.step.rounds.length === 0 &&
-          props.step.phases.length === 0 &&
-          props.step.headline === undefined
-        }
-      >
-        <text fg="#64748b">No facts recorded yet.</text>
-      </Show>
     </box>
   );
 }
@@ -171,10 +161,18 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
   );
 }
 
-function FindingLine(props: { finding: Finding }) {
+function FindingLine(props: { finding: Finding; focused?: boolean }) {
   const f = props.finding;
+  // The focused background matches the approval drawer's focused-finding row so the two surfaces
+  // read as pointing at the same finding.
   return (
-    <box flexDirection="column" marginBottom={1}>
+    <box
+      flexDirection="column"
+      marginBottom={1}
+      paddingLeft={1}
+      paddingRight={1}
+      backgroundColor={props.focused ? "#334155" : undefined}
+    >
       <text fg={SEVERITY_COLOR[f.severity]}>
         [{f.severity}] {sanitize(f.title)}
         {f.location ? ` — ${sanitize(f.location)}` : ""}
@@ -196,18 +194,20 @@ const FINDING_SECTIONS: readonly { action: FindingAction; label: string }[] = [
   { action: "no-op", label: "Informational" },
 ];
 
-function FindingSection(props: { label: string; findings: Finding[] }) {
+function FindingSection(props: { label: string; findings: Finding[]; focusedId?: string }) {
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg="#64748b" attributes={1}>
         {props.label} ({props.findings.length})
       </text>
-      <For each={props.findings}>{(finding) => <FindingLine finding={finding} />}</For>
+      <For each={props.findings}>
+        {(finding) => <FindingLine finding={finding} focused={finding.id === props.focusedId} />}
+      </For>
     </box>
   );
 }
 
-function Findings(props: { step: StepView }) {
+function Findings(props: { step: StepView; focusedId?: string }) {
   const findings = () => visibleFindings(props.step);
   return (
     <box flexDirection="column">
@@ -217,7 +217,11 @@ function Findings(props: { step: StepView }) {
             const items = () => findings().filter((f) => f.action === section.action);
             return (
               <Show when={items().length > 0}>
-                <FindingSection label={section.label} findings={items()} />
+                <FindingSection
+                  label={section.label}
+                  findings={items()}
+                  focusedId={props.focusedId}
+                />
               </Show>
             );
           }}
@@ -294,7 +298,7 @@ export function StepInspector(props: InspectorProps) {
                 <Artifacts step={s()} expanded={props.nav().expanded} />
               </Show>
               <Show when={tab() === "findings"}>
-                <Findings step={s()} />
+                <Findings step={s()} focusedId={props.focusedFindingId?.()} />
               </Show>
               <Show when={tab() === "rounds"}>
                 <Rounds step={s()} />
