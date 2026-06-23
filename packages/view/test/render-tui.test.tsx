@@ -67,8 +67,9 @@ describe("TUI App (no real terminal)", () => {
     });
     await t.flush();
     const frame = t.captureCharFrame();
-    expect(frame).toContain("Approve these findings");
-    expect(frame).toContain("Tighten the retry");
+    expect(frame).toContain("Approve these findings"); // the prompt
+    expect(frame).toContain("1 warning"); // one-line severity summary, not the finding detail
+    expect(frame).toContain("Fix findings"); // the highlighted action menu
     expect(frame).toContain("approval needed"); // the drawer is the primary surface
     t.renderer.destroy();
   });

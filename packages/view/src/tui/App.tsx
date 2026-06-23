@@ -12,7 +12,7 @@ import type { ActivityEntry, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import { runElapsed, statusColor } from "./format.ts";
 import { initialNav, navOnKey, type NavState } from "./navigation.ts";
-import { buildDecision, initialSelection, toggleSelection } from "./approval.ts";
+import { actionOptions, buildDecision, type ApprovalAction } from "./approval.ts";
 import type { ActivePrompt } from "./interaction.ts";
 import { PipelineRail } from "./PipelineRail.tsx";
 import { StepInspector } from "./StepInspector.tsx";
@@ -29,54 +29,45 @@ export interface AppProps {
 
 export function App(props: AppProps) {
   const [nav, setNav] = createSignal<NavState>(initialNav);
-  const [selection, setSelection] = createSignal<ReadonlySet<string>>(new Set());
   const [focused, setFocused] = createSignal(0);
   const [confirmAbort, setConfirmAbort] = createSignal(false);
 
-  // Reset the approval selection/focus whenever a fresh approval prompt opens.
+  // Reset the action menu to its first option whenever a fresh approval prompt opens.
   createEffect(() => {
-    const p = props.prompt();
-    if (p?.kind === "approval") {
-      setSelection(initialSelection(p.input));
-      setFocused(0);
-    }
+    if (props.prompt()?.kind === "approval") setFocused(0);
   });
 
   const handleApproval = (
     p: Extract<ActivePrompt, { kind: "approval" }>,
     key: KeyEvent,
   ): boolean => {
-    const findings = p.input.findings;
+    const options = actionOptions(p.input);
+    const submit = (action: ApprovalAction) => {
+      const decision = buildDecision(action, p.input);
+      if (decision !== undefined) p.submit(decision);
+    };
     switch (key.name) {
-      case "space": {
-        const id = findings[focused()]?.id;
-        if (id !== undefined) setSelection(toggleSelection(selection(), id));
-        return true;
-      }
-      case "a":
-        p.submit({ action: "approve" });
-        return true;
-      case "s":
-        p.submit({ action: "skip" });
-        return true;
-      case "x":
-        p.submit({ action: "abort" });
-        return true;
-      case "f": {
-        const decision = buildDecision("fix", selection());
-        if (decision !== undefined) p.submit(decision);
-        return true;
-      }
       case "j":
       case "down":
-        setFocused(Math.min(focused() + 1, Math.max(0, findings.length - 1)));
+        setFocused(Math.min(focused() + 1, options.length - 1));
         return true;
       case "k":
       case "up":
         setFocused(Math.max(focused() - 1, 0));
         return true;
-      default:
-        return false;
+      case "return":
+      case "enter": {
+        const option = options[focused()];
+        if (option !== undefined) submit(option.action);
+        return true;
+      }
+      default: {
+        // Direct shortcut letters (f/a/s/x) submit their action; other keys fall through to nav.
+        const option = options.find((candidate) => candidate.key === key.name);
+        if (option === undefined) return false;
+        submit(option.action);
+        return true;
+      }
     }
   };
 
@@ -134,12 +125,7 @@ export function App(props: AppProps) {
         <KeyHelp />
       </Show>
       <Show when={props.prompt() !== undefined}>
-        <InteractionDrawer
-          prompt={props.prompt}
-          selection={selection}
-          focused={focused}
-          onAskSubmit={onAskSubmit}
-        />
+        <InteractionDrawer prompt={props.prompt} focused={focused} onAskSubmit={onAskSubmit} />
       </Show>
       <Show when={confirmAbort()}>
         <AbortConfirm />

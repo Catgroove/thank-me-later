@@ -1,28 +1,23 @@
 /** @jsxImportSource @opentui/solid */
-// The pending-interaction drawer: visually primary, blocking surface for `ctx.ask` (free text) and
-// `ctx.approveFindings` (structured selection). Generic over findings - no Step-name coupling. The
-// drawer renders; App owns the keyboard and calls the prompt's `submit`. Escape never dismisses it.
+// The pending-interaction drawer: a tight, blocking decision surface for `ctx.ask` (free text) and
+// `ctx.approveFindings` (a single choice). It shows only what the decision needs - the prompt, a
+// one-line severity summary, and a highlighted action menu - and never dumps finding detail or round
+// history, which live in the inspector's Findings/Rounds tabs (reachable with `tab` while open).
+// Generic over findings; the drawer renders, App owns the keyboard. Escape never dismisses it.
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { sanitize } from "./sanitize.ts";
+import { actionOptions, summaryLine } from "./approval.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
 export interface DrawerProps {
   readonly prompt: Accessor<ActivePrompt | undefined>;
-  /** Current finding-selection set (approval only). */
-  readonly selection: Accessor<ReadonlySet<string>>;
-  /** Index of the focused finding (approval only). */
+  /** Index of the focused action in the approval menu. */
   readonly focused: Accessor<number>;
   /** Submit the typed text for an ask prompt. */
   readonly onAskSubmit: (value: string) => void;
 }
-
-const SEVERITY_COLOR: Record<"error" | "warning" | "info", string> = {
-  error: "#ef4444",
-  warning: "#f59e0b",
-  info: "#38bdf8",
-};
 
 export function InteractionDrawer(props: DrawerProps) {
   return (
@@ -45,7 +40,6 @@ export function InteractionDrawer(props: DrawerProps) {
           <Show when={prompt().kind === "approval"}>
             <ApprovalBody
               prompt={prompt() as Extract<ActivePrompt, { kind: "approval" }>}
-              selection={props.selection}
               focused={props.focused}
             />
           </Show>
@@ -80,44 +74,42 @@ function AskBody(props: {
 
 function ApprovalBody(props: {
   prompt: Extract<ActivePrompt, { kind: "approval" }>;
-  selection: Accessor<ReadonlySet<string>>;
   focused: Accessor<number>;
 }) {
   const input = () => props.prompt.input;
+  const options = () => actionOptions(input());
   return (
     <box flexDirection="column">
       <text fg="#fde68a" wrapMode="word">
         {sanitize(input().prompt, { preserveNewlines: true })}
       </text>
-      <Show when={(input().context ?? "").trim() !== ""}>
-        <text fg="#a8a29e" wrapMode="word" marginTop={1}>
-          {sanitize(input().context ?? "", { preserveNewlines: true })}
-        </text>
+      <text fg="#a8a29e" marginTop={1}>
+        {summaryLine(input().findings)}
+      </text>
+      <Show when={input().findings.length > 0}>
+        <text fg="#78716c">tab to inspect details</text>
       </Show>
       <box flexDirection="column" marginTop={1}>
-        <Show
-          when={input().findings.length > 0}
-          fallback={<text fg="#a8a29e">No findings to review.</text>}
-        >
-          <For each={input().findings}>
-            {(finding, index) => {
-              const checked = () => props.selection().has(finding.id);
-              const isFocused = () => index() === props.focused();
-              return (
-                <text
-                  fg={isFocused() ? "#e7e5e4" : SEVERITY_COLOR[finding.severity]}
-                  wrapMode="word"
-                >
-                  {isFocused() ? "›" : " "} [{checked() ? "x" : " "}] {finding.severity}{" "}
-                  {sanitize(finding.title)}
+        <For each={options()}>
+          {(option, index) => {
+            const isFocused = () => index() === props.focused();
+            return (
+              <box
+                backgroundColor={isFocused() ? "#f59e0b" : "#1c1917"}
+                paddingLeft={1}
+                paddingRight={1}
+              >
+                <text fg={isFocused() ? "#1c1917" : "#e7e5e4"} attributes={isFocused() ? 1 : 0}>
+                  {isFocused() ? "▸ " : "  "}
+                  {option.label} ({option.key})
                 </text>
-              );
-            }}
-          </For>
-        </Show>
+              </box>
+            );
+          }}
+        </For>
       </box>
       <text fg="#78716c" marginTop={1}>
-        space toggle · a approve · f fix selected · s skip · x abort
+        ↑/↓ move · enter confirm
       </text>
     </box>
   );

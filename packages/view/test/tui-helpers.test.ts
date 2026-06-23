@@ -9,7 +9,7 @@ import {
   selectedStepName,
   TABS,
 } from "../src/tui/navigation.ts";
-import { buildDecision, initialSelection, toggleSelection } from "../src/tui/approval.ts";
+import { actionOptions, buildDecision, fixSelection, summaryLine } from "../src/tui/approval.ts";
 import { createInteractions, type ActivePrompt } from "../src/tui/interaction.ts";
 import { epilogueLines } from "../src/tui/epilogue.ts";
 import { sanitize } from "../src/tui/sanitize.ts";
@@ -78,29 +78,40 @@ describe("tui approval helpers", () => {
   const f1 = makeFinding("x", { severity: "error", action: "auto-fix", title: "a", detail: "d" });
   const f2 = makeFinding("x", { severity: "warning", action: "ask-user", title: "b", detail: "e" });
 
-  test("initial selection comes from the suggested fix ids", () => {
-    expect([
-      ...initialSelection({ prompt: "p", findings: [f1, f2], selectedFindingIds: [f1.id] }),
-    ]).toEqual([f1.id]);
+  test("actionOptions offers fix only when there are findings to send back", () => {
+    expect(actionOptions({ prompt: "p", findings: [f1] }).map((o) => o.action)).toEqual([
+      "fix",
+      "approve",
+      "skip",
+      "abort",
+    ]);
+    expect(actionOptions({ prompt: "p", findings: [] }).map((o) => o.action)).toEqual([
+      "approve",
+      "skip",
+      "abort",
+    ]);
   });
 
-  test("toggle adds and removes without mutating the input set", () => {
-    const a = new Set<string>();
-    const b = toggleSelection(a, f1.id);
-    expect([...b]).toEqual([f1.id]);
-    expect([...a]).toEqual([]); // input untouched
-    expect([...toggleSelection(b, f1.id)]).toEqual([]);
+  test("fixSelection uses the suggested ids, falling back to every finding", () => {
+    expect(fixSelection({ prompt: "p", findings: [f1, f2], selectedFindingIds: [f1.id] })).toEqual([
+      f1.id,
+    ]);
+    expect(fixSelection({ prompt: "p", findings: [f1, f2] })).toEqual([f1.id, f2.id]);
   });
 
-  test("buildDecision maps actions; fix needs a non-empty selection", () => {
-    expect(buildDecision("approve", new Set())).toEqual({ action: "approve" });
-    expect(buildDecision("skip", new Set())).toEqual({ action: "skip" });
-    expect(buildDecision("abort", new Set())).toEqual({ action: "abort" });
-    expect(buildDecision("fix", new Set())).toBeUndefined();
-    expect(buildDecision("fix", new Set([f1.id]))).toEqual({
-      action: "fix",
-      selectedFindingIds: [f1.id],
-    });
+  test("buildDecision maps actions; fix sends the effective selection", () => {
+    const input = { prompt: "p", findings: [f1, f2], selectedFindingIds: [f1.id] };
+    expect(buildDecision("approve", input)).toEqual({ action: "approve" });
+    expect(buildDecision("skip", input)).toEqual({ action: "skip" });
+    expect(buildDecision("abort", input)).toEqual({ action: "abort" });
+    expect(buildDecision("fix", input)).toEqual({ action: "fix", selectedFindingIds: [f1.id] });
+    expect(buildDecision("fix", { prompt: "p", findings: [] })).toBeUndefined();
+  });
+
+  test("summaryLine tallies severities, dropping the redundant total for one bucket", () => {
+    expect(summaryLine([f1, f2])).toBe("1 error · 1 warning · 2 findings");
+    expect(summaryLine([f1])).toBe("1 error");
+    expect(summaryLine([])).toBe("No findings.");
   });
 });
 
