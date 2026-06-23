@@ -1,7 +1,11 @@
 // A reusable fresh-round loop for Steps. The caller supplies the check and fix work; this module
-// owns the round control flow: check, select auto-fix findings, fix once, commit, verify,
-// and repeat until the work is clean or requires a human decision.
+// owns the round control flow: check, select auto-fix findings, fix once, commit, verify, and
+// repeat until the work is clean or stops. When a stop needs a human decision and the Step names
+// itself (`stepName`), the findings are routed through `ctx.approveFindings`: an approve or skip
+// ends the loop with a recorded decision, a fix continues the loop with the operator's selection
+// and notes, and an abort throws.
 
+import type { ApprovalDecision } from "./approval.ts";
 import type { Ctx } from "./context.ts";
 import {
   type Finding,
@@ -72,12 +76,8 @@ export interface RoundLoopOptions {
   check(input: RoundCheckInput): Promise<RoundCheckResult>;
   /** Run one fresh fix round for the selected findings. */
   fix(input: RoundFixInput): Promise<RoundFixResult>;
-  /** Completed rounds to preserve when continuing a loop after an external decision. */
-  initialRounds?: readonly RoundRecordInput[];
-  /** Number of completed fix attempts represented by `initialRounds`. */
-  initialAttempts?: number;
-  /** User-selected findings to fix before the next verification check. */
-  initialFixFindings?: readonly Finding[];
+  /** Names the Step in approval prompts. When set, stops that need a user run `ctx.approveFindings`. */
+  stepName?: string;
   /** Maximum number of fix rounds. Defaults to 3. */
   maxAutoFixAttempts?: number;
   /** Optional stop policy after each check round. Defaults to clean and no-selected stops. */
@@ -108,51 +108,20 @@ export async function executeRoundLoop(
   ctx: Ctx,
   options: RoundLoopOptions,
 ): Promise<RoundLoopResult> {
-  const rounds: RoundRecordInput[] = [...(options.initialRounds ?? [])];
+  const rounds: RoundRecordInput[] = [];
   const maxAutoFixAttempts = options.maxAutoFixAttempts ?? DEFAULT_MAX_AUTO_FIX_ATTEMPTS;
   if (!Number.isInteger(maxAutoFixAttempts) || maxAutoFixAttempts < 0) {
     throw new Error("round executor: maxAutoFixAttempts must be a non-negative integer");
   }
-  const initialAttempts = options.initialAttempts ?? 0;
-  if (!Number.isInteger(initialAttempts) || initialAttempts < 0) {
-    throw new Error("round executor: initialAttempts must be a non-negative integer");
-  }
-  let attempts = initialAttempts;
-  let trigger: Extract<RoundTrigger, "initial" | "verify"> =
-    rounds.length === 0 ? "initial" : "verify";
-
-  const initialFixFindings = options.initialFixFindings ?? [];
-  if (initialFixFindings.length > 0) {
-    const fixHistory = [...rounds];
-    const fixInput: RoundFixInput = {
-      attempt: attempts + 1,
-      findings: [...initialFixFindings],
-      history: fixHistory,
-      historyText: renderRoundsForPrompt(fixHistory),
-    };
-    const fix = await options.fix(fixInput);
-    const commitSha = await commitFix(ctx, options, fixInput, fix);
-    const fixSummary = fix.summary.trim();
-
-    rounds.push({
-      trigger: "user_fix",
-      findings: [...initialFixFindings],
-      selectedFindingIds: initialFixFindings.map((f) => f.id),
-      ...(fixSummary.length > 0 ? { fixSummary } : {}),
-      ...(commitSha !== undefined ? { commitSha } : {}),
-    });
-
-    attempts += 1;
-    trigger = "verify";
-  }
+  let attempts = 0;
+  let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
 
   while (true) {
-    const checkHistory = [...rounds];
     const checkInput: RoundCheckInput = {
       trigger,
       attempt: attempts,
-      history: checkHistory,
-      historyText: renderRoundsForPrompt(checkHistory),
+      history: [...rounds],
+      historyText: renderRoundsForPrompt(rounds),
     };
     const check = await options.check(checkInput);
     const findings = [...check.findings];
@@ -164,40 +133,96 @@ export async function executeRoundLoop(
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
     });
 
-    const stopReason = stopPolicy(options, {
+    let stopReason = stopPolicy(options, {
       check: checkInput,
       findings,
       selectedFindings: selected,
       rounds: [...rounds],
       attempts,
     });
-    if (stopReason !== undefined) return done(stopReason, findings, rounds, attempts);
-    if (attempts >= maxAutoFixAttempts) {
-      return done("auto_fix_limit_hit", findings, rounds, attempts);
+    if (stopReason === undefined && attempts >= maxAutoFixAttempts) {
+      stopReason = "auto_fix_limit_hit";
     }
 
-    const fixHistory = [...rounds];
-    const fixInput: RoundFixInput = {
-      attempt: attempts + 1,
-      findings: selected,
-      history: fixHistory,
-      historyText: renderRoundsForPrompt(fixHistory),
-    };
-    const fix = await options.fix(fixInput);
-    const commitSha = await commitFix(ctx, options, fixInput, fix);
-    const fixSummary = fix.summary.trim();
+    if (stopReason === undefined) {
+      attempts += 1;
+      await applyFix(ctx, options, {
+        trigger: "auto_fix",
+        attempt: attempts,
+        fixFindings: selected,
+        recordFindings: selected,
+        rounds,
+      });
+      trigger = "verify";
+      continue;
+    }
 
-    rounds.push({
-      trigger: "auto_fix",
-      findings: [...selected],
-      selectedFindingIds: selected.map((f) => f.id),
-      ...(fixSummary.length > 0 ? { fixSummary } : {}),
-      ...(commitSha !== undefined ? { commitSha } : {}),
+    if (options.stepName === undefined || !requiresApproval(stopReason)) {
+      return done(stopReason, findings, rounds, attempts);
+    }
+
+    const selectedFindingIds = currentSelectedFindingIds(findings, rounds);
+    const decision = await ctx.approveFindings({
+      prompt: defaultPrompt(options.stepName, stopReason),
+      findings,
+      ...(selectedFindingIds ? { selectedFindingIds } : {}),
+      context: renderRoundsForPrompt(rounds),
     });
 
+    if (decision.action === "abort") throw new Error("approval aborted by operator");
+    if (decision.action === "approve" || decision.action === "skip") {
+      rounds.push(approvalRound(findings, decision));
+      return done(stopReason, findings, rounds, attempts);
+    }
+
+    const decisionFindings = selectDecisionFindings(findings, decision.selectedFindingIds);
+    if (decisionFindings.length === 0) {
+      throw new Error(`${options.stepName}: approval fix selected no current findings`);
+    }
+    const userFindings = decision.userFindings ?? [];
     attempts += 1;
+    await applyFix(ctx, options, {
+      trigger: "user_fix",
+      attempt: attempts,
+      fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
+      recordFindings: [...decisionFindings, ...userFindings],
+      rounds,
+      userNotes: cleanNotes(decision.notes),
+    });
     trigger = "verify";
   }
+}
+
+interface ApplyFixArgs {
+  readonly trigger: Extract<RoundTrigger, "auto_fix" | "user_fix">;
+  readonly attempt: number;
+  /** Findings handed to the fix callback; may carry inline operator notes. */
+  readonly fixFindings: readonly Finding[];
+  /** Findings recorded in the round; the clean, note-free set. */
+  readonly recordFindings: readonly Finding[];
+  readonly rounds: RoundRecordInput[];
+  readonly userNotes?: Record<string, string>;
+}
+
+async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs): Promise<void> {
+  const fixInput: RoundFixInput = {
+    attempt: args.attempt,
+    findings: [...args.fixFindings],
+    history: [...args.rounds],
+    historyText: renderRoundsForPrompt(args.rounds),
+  };
+  const fix = await options.fix(fixInput);
+  const commitSha = await commitFix(ctx, options, fixInput, fix);
+  const fixSummary = fix.summary.trim();
+
+  args.rounds.push({
+    trigger: args.trigger,
+    findings: [...args.recordFindings],
+    selectedFindingIds: args.recordFindings.map((f) => f.id),
+    ...(args.userNotes ? { userNotes: args.userNotes } : {}),
+    ...(fixSummary.length > 0 ? { fixSummary } : {}),
+    ...(commitSha !== undefined ? { commitSha } : {}),
+  });
 }
 
 function selectFindings(
@@ -223,6 +248,70 @@ function stopPolicy(
   if (input.findings.length === 0) return "clean";
   if (input.selectedFindings.length > 0) return undefined;
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
+}
+
+function requiresApproval(stopReason: RoundLoopStopReason): boolean {
+  return stopReason === "needs_user" || stopReason === "auto_fix_limit_hit";
+}
+
+function defaultPrompt(stepName: string, stopReason: RoundLoopStopReason): string {
+  if (stopReason === "needs_user") return `${stepName} has findings that need a user decision`;
+  if (stopReason === "auto_fix_limit_hit") return `${stepName} hit the auto-fix limit`;
+  return `${stepName} has unresolved findings`;
+}
+
+function currentSelectedFindingIds(
+  findings: readonly Finding[],
+  rounds: readonly RoundRecordInput[],
+): readonly string[] | undefined {
+  const selected = rounds.at(-1)?.selectedFindingIds;
+  if (selected === undefined || selected.length === 0) return undefined;
+  const current = new Set(findings.map((finding) => finding.id));
+  const ids = selected.filter((id) => current.has(id));
+  return ids.length > 0 ? ids : undefined;
+}
+
+function approvalRound(findings: readonly Finding[], decision: ApprovalDecision): RoundRecordInput {
+  const userFindings = decision.userFindings ?? [];
+  const userNotes = cleanNotes(decision.notes);
+  const action = decision.action === "skip" ? "skipped" : "approved";
+  return {
+    trigger: "user_fix",
+    findings: [...findings, ...userFindings],
+    ...(userNotes ? { userNotes } : {}),
+    fixSummary: `Operator ${action} unresolved findings.`,
+  };
+}
+
+function cleanNotes(
+  notes: Readonly<Record<string, string>> | undefined,
+): Record<string, string> | undefined {
+  if (notes === undefined) return undefined;
+  const cleaned: Record<string, string> = {};
+  for (const [id, note] of Object.entries(notes)) {
+    const trimmed = note.trim();
+    if (trimmed.length > 0) cleaned[id] = trimmed;
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+}
+
+function selectDecisionFindings(
+  findings: readonly Finding[],
+  selectedFindingIds: readonly string[],
+): Finding[] {
+  const selected = new Set(selectedFindingIds);
+  return findings.filter((finding) => selected.has(finding.id));
+}
+
+function annotateWithNotes(
+  findings: readonly Finding[],
+  notes: Readonly<Record<string, string>> | undefined,
+): Finding[] {
+  return findings.map((finding) => {
+    const note = notes?.[finding.id]?.trim();
+    if (!note) return finding;
+    return { ...finding, detail: `${finding.detail}\n\nOperator note: ${note}` };
+  });
 }
 
 async function commitFix(

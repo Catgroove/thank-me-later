@@ -3,8 +3,7 @@
 // into the single `reviewSummary` markdown. Risk is computed here, in code - the agent never sets
 // the overall risk. No `ctx`, so all of this is unit-testable in isolation.
 
-import { type Finding, renderFindingForPr } from "@tml/core";
-import { parseAgentFindingsOutput } from "../findings.ts";
+import { parseAgentFindingsOutput, type Finding, renderFindingForPr } from "@tml/core";
 
 export type { Finding };
 export type Verdict = "proceed" | "block";
