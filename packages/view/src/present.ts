@@ -98,7 +98,7 @@ export function present(view: ViewState, event: RunEvent): ViewState {
     case "run:finished":
       return { ...view, status: "finished", activeStep: undefined, tool: undefined };
     case "run:cancelled":
-      return { ...view, status: "cancelled", tool: undefined };
+      return { ...view, status: "cancelled", activeStep: undefined, tool: undefined };
     case "run:failed":
       // Mark the failing step (or the active one) failed so renderers can show ✗.
       return {

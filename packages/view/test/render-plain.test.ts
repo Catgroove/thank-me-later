@@ -81,6 +81,19 @@ describe("createPlainRenderer", () => {
     expect(lines).toEqual(["▶ ship", "  x", "  ▸ x", "    abc", "  ✓ x"]);
   });
 
+  test("verbose splits multiline prose into one sink line per output line", () => {
+    const lines = renderLines(
+      [
+        { type: "run:started", pipeline: ["x"] },
+        { type: "step:started", step: "x" },
+        { type: "agent:progress", step: "x", progress: { kind: "text", text: "a\nb" } },
+        { type: "step:finished", step: "x" },
+      ],
+      { verbose: true },
+    );
+    expect(lines).toEqual(["▶ ship", "  x", "  ▸ x", "    a", "    b", "  ✓ x"]);
+  });
+
   test("step:log lines show in both modes (CI progress)", () => {
     const events: RunEvent[] = [
       { type: "run:started", pipeline: ["ci-wait"] },

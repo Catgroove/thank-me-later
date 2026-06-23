@@ -1,28 +1,10 @@
-// Plain (non-TTY) renderer: append-only, no spinner, no cursor codes, no color — the output
-// pipes and CI get. It mirrors the TTY renderer's *content* (the same step results, the same
-// end-of-run results block, the same artifact surfacing); only the mechanism differs — there is
-// no transient live line, so each step announces itself with a `▸` header and resolves to a
-// `✓`/`⤼`/`✗` line. Quiet by default: the agent's prose and `⚙` tool lines are dropped, leaving
-// step structure, `· log` lines, the results, and any escalation prompt. `--verbose` seals the
-// full trail (prose + tool lines), the way every run used to. One line per `writeLine` call.
+// Plain renderer: append-only output for pipes and CI. It mirrors the TTY renderer's content,
+// but has no transient live line, cursor codes, spinner, or color. One line per `writeLine` call.
 
 import type { RunEvent } from "@tml/core";
+import { approvalPrompt, isNarrativeArtifact, narrativeSteps, resultLabelWidth } from "./format.ts";
 import type { ViewState } from "./present.ts";
 import type { Renderer } from "./renderer.ts";
-
-const LABEL_WIDTH = 8; // the results block's left label gutter
-const INLINE_MAX = 56; // a longer (or multi-line) artifact is narrative — it goes to the block
-
-/** A long or multi-line artifact reads as narrative: shown in the results block, not inline. */
-function isNarrative(rendered: string): boolean {
-  return rendered.includes("\n") || rendered.length > INLINE_MAX;
-}
-
-function approvalPrompt(event: Extract<RunEvent, { type: "approval:pending" }>): string {
-  const count = event.input.findings.length;
-  const suffix = count === 1 ? "1 finding" : `${count} findings`;
-  return `${event.input.prompt} (${suffix})`;
-}
 
 /** Build a plain renderer that emits one line per `writeLine` call (the sink adds newlines). */
 export function createPlainRenderer(
@@ -37,7 +19,8 @@ export function createPlainRenderer(
   function flushText(view: ViewState): void {
     const segment = view.text.slice(flushedLen).trim();
     flushedLen = view.text.length;
-    if (verbose && segment !== "") writeLine(`    ${segment}`);
+    if (!verbose || segment === "") return;
+    for (const line of segment.split("\n")) writeLine(`    ${line}`);
   }
 
   // The PR link, appended to a cancelled/failed run-end line (those carry no results block).
@@ -46,16 +29,10 @@ export function createPlainRenderer(
 
   /** The end-of-run results block: narrative artifacts (in full) + the PR URL. */
   function resultsBlock(view: ViewState): void {
-    const narrative = view.steps.filter(
-      (step) => step.rendered !== undefined && isNarrative(step.rendered),
-    );
+    const narrative = narrativeSteps(view);
     if (narrative.length === 0 && view.prUrl === undefined) return;
     writeLine(`  ── results ${"─".repeat(20)}`);
-    const labelWidth = Math.max(
-      LABEL_WIDTH,
-      ...narrative.map((step) => step.name.length + 2),
-      view.prUrl !== undefined ? "pr".length + 2 : 0,
-    );
+    const labelWidth = resultLabelWidth(narrative, view.prUrl !== undefined);
     const cont = " ".repeat(2 + labelWidth);
     for (const step of narrative) {
       const [first, ...rest] = (step.rendered ?? "").split("\n");
@@ -108,7 +85,8 @@ export function createPlainRenderer(
           flushText(view);
           const rendered = view.steps.find((step) => step.name === event.step)?.rendered;
           // Narrative artifacts surface in the results block; only short ones read inline here.
-          const inline = rendered !== undefined && !isNarrative(rendered) ? `  ${rendered}` : "";
+          const inline =
+            rendered !== undefined && !isNarrativeArtifact(rendered) ? `  ${rendered}` : "";
           writeLine(`  ✓ ${event.step}${inline}`);
           return;
         }
