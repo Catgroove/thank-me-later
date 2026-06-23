@@ -1,5 +1,5 @@
-// `branch` — the first Step: make sure the work lands on a feature branch before anything is
-// committed or pushed. tml ship runs in place, so this operates on the live checkout.
+// `branch` - the first Step: make sure the work lands on a feature branch before anything is
+// committed or pushed. tml ship runs inside the isolated workspace created from the source checkout.
 //
 // If you are already on a feature branch, tml ships under it — unless that branch is *spent*: its
 // PR has already merged or closed, so it's the wrong place for new work (you stayed on it instead
