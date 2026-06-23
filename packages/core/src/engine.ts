@@ -197,6 +197,14 @@ async function drive(
 
     await emit(queue, journal, now, { type: "step:started", step: step.name });
     const visibleRounds = runRounds.filter((round) => (stepByName.get(round.step) ?? Infinity) < i);
+    const recordStepRound = async (round: RoundRecordInput): Promise<RoundRecord> => {
+      const [record] = await appendRounds(journal, roundIndexes, step.name, [round]);
+      if (record === undefined) throw new Error("round recorder produced no record");
+      await emit(queue, journal, now, { type: "round:recorded", step: step.name, round: record });
+      runRounds.push(record);
+      return record;
+    };
+
     const ctx = makeContext(
       step,
       store,
@@ -210,6 +218,7 @@ async function drive(
       models,
       journal,
       visibleRounds,
+      recordStepRound,
     );
 
     let result: Awaited<ReturnType<Step["run"]>>;
@@ -445,6 +454,7 @@ function makeContext(
   models: ModelMap | undefined,
   journal: RunJournal | undefined,
   visibleRounds: readonly RoundRecord[],
+  recordRound: (round: RoundRecordInput) => Promise<RoundRecord>,
 ): Ctx {
   const read = (artifact: Artifact<unknown, string>): unknown => {
     if (!store.has(artifact.name)) {
@@ -454,6 +464,8 @@ function makeContext(
     }
     return store.get(artifact.name);
   };
+
+  let nextPhaseId = 0;
 
   // Live events the Step itself triggers (agent progress, PR open, ask/approval, log) go straight
   // onto the queue rather than through `emit` - they're fired from inside provider callbacks, not
@@ -534,13 +546,16 @@ function makeContext(
         ? [...visibleRounds]
         : visibleRounds.filter((round) => round.step === stepName);
     },
+    recordRound,
     log(message: string) {
       pushEvent({ type: "step:log", step: step.name, message });
     },
     async phase(label, fn, opts) {
+      const phaseId = `${step.name}:${++nextPhaseId}`;
       pushEvent({
         type: "phase:started",
         step: step.name,
+        phaseId,
         phase: label,
         ...(opts?.group !== undefined ? { group: opts.group } : {}),
       });
@@ -549,6 +564,7 @@ function makeContext(
         pushEvent({
           type: "phase:finished",
           step: step.name,
+          phaseId,
           phase: label,
           ...(opts?.group !== undefined ? { group: opts.group } : {}),
           findings: opts?.findings ? [...opts.findings(result)] : [],
@@ -559,6 +575,7 @@ function makeContext(
         pushEvent({
           type: "phase:finished",
           step: step.name,
+          phaseId,
           phase: label,
           ...(opts?.group !== undefined ? { group: opts.group } : {}),
           findings: [],

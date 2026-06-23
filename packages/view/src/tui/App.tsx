@@ -12,11 +12,17 @@ import type { ActivityEntry, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import { runElapsed, statusColor } from "./format.ts";
 import { initialNav, navOnKey, type NavState } from "./navigation.ts";
-import { actionOptions, buildDecision, type ApprovalAction } from "./approval.ts";
+import {
+  actionOptions,
+  buildDecision,
+  suggestedSelection,
+  toggleSelection,
+  type ApprovalAction,
+} from "./approval.ts";
 import type { ActivePrompt } from "./interaction.ts";
 import { PipelineRail } from "./PipelineRail.tsx";
 import { StepInspector } from "./StepInspector.tsx";
-import { InteractionDrawer } from "./InteractionDrawer.tsx";
+import { InteractionDrawer, type ApprovalFocusArea } from "./InteractionDrawer.tsx";
 import { KeyHelp } from "./KeyHelp.tsx";
 
 export interface AppProps {
@@ -31,40 +37,74 @@ export interface AppProps {
 
 export function App(props: AppProps) {
   const [nav, setNav] = createSignal<NavState>(initialNav);
-  const [focused, setFocused] = createSignal(0);
+  const [approvalFocusArea, setApprovalFocusArea] = createSignal<ApprovalFocusArea>("findings");
+  const [focusedFinding, setFocusedFinding] = createSignal(0);
+  const [focusedAction, setFocusedAction] = createSignal(0);
+  const [selectedFindingIds, setSelectedFindingIds] = createSignal<readonly string[]>([]);
   const [confirmAbort, setConfirmAbort] = createSignal(false);
 
-  // When a fresh approval prompt opens: reset the action menu to its first option, and pull the
-  // inspector onto the findings tab of the Step under decision so the findings are in view the moment
-  // input is asked for - the drawer carries only a one-line tally, the detail lives in that tab.
+  // Seed a fresh approval prompt with its suggested fix selection, show that selection visibly, and
+  // pull the inspector onto the findings tab so the detailed findings are in view while deciding.
   createEffect(() => {
-    if (props.prompt()?.kind === "approval") {
-      setFocused(0);
-      setNav((n) => ({ ...n, tab: "findings", followActive: true }));
-    }
+    const p = props.prompt();
+    if (p?.kind !== "approval") return;
+    setApprovalFocusArea(p.input.findings.length > 0 ? "findings" : "actions");
+    setFocusedFinding(0);
+    setFocusedAction(0);
+    setSelectedFindingIds(suggestedSelection(p.input));
+    setNav((n) => ({ ...n, tab: "findings", followActive: true }));
+  });
+
+  createEffect(() => {
+    const options = actionOptions(selectedFindingIds());
+    if (focusedAction() >= options.length) setFocusedAction(Math.max(0, options.length - 1));
   });
 
   const handleApproval = (
     p: Extract<ActivePrompt, { kind: "approval" }>,
     key: KeyEvent,
   ): boolean => {
-    const options = actionOptions(p.input);
+    const findings = p.input.findings;
+    const options = actionOptions(selectedFindingIds());
     const submit = (action: ApprovalAction) => {
-      const decision = buildDecision(action, p.input);
+      const decision = buildDecision(action, selectedFindingIds());
       if (decision !== undefined) p.submit(decision);
     };
+    const toggleFocusedFinding = () => {
+      const finding = findings[focusedFinding()];
+      if (finding !== undefined)
+        setSelectedFindingIds(toggleSelection(selectedFindingIds(), finding.id));
+    };
     switch (key.name) {
+      case "tab":
+        setApprovalFocusArea(approvalFocusArea() === "findings" ? "actions" : "findings");
+        return true;
       case "j":
       case "down":
-        setFocused(Math.min(focused() + 1, options.length - 1));
+        if (approvalFocusArea() === "findings") {
+          setFocusedFinding(Math.min(focusedFinding() + 1, Math.max(0, findings.length - 1)));
+        } else {
+          setFocusedAction(Math.min(focusedAction() + 1, options.length - 1));
+        }
         return true;
       case "k":
       case "up":
-        setFocused(Math.max(focused() - 1, 0));
+        if (approvalFocusArea() === "findings") {
+          setFocusedFinding(Math.max(focusedFinding() - 1, 0));
+        } else {
+          setFocusedAction(Math.max(focusedAction() - 1, 0));
+        }
+        return true;
+      case "space":
+        if (approvalFocusArea() === "findings") toggleFocusedFinding();
         return true;
       case "return":
       case "enter": {
-        const option = options[focused()];
+        if (approvalFocusArea() === "findings") {
+          toggleFocusedFinding();
+          return true;
+        }
+        const option = options[focusedAction()];
         if (option !== undefined) submit(option.action);
         return true;
       }
@@ -138,7 +178,14 @@ export function App(props: AppProps) {
         <KeyHelp />
       </Show>
       <Show when={props.prompt() !== undefined}>
-        <InteractionDrawer prompt={props.prompt} focused={focused} onAskSubmit={onAskSubmit} />
+        <InteractionDrawer
+          prompt={props.prompt}
+          approvalFocusArea={approvalFocusArea}
+          focusedFinding={focusedFinding}
+          focusedAction={focusedAction}
+          selectedFindingIds={selectedFindingIds}
+          onAskSubmit={onAskSubmit}
+        />
       </Show>
       <Show when={confirmAbort()}>
         <AbortConfirm />

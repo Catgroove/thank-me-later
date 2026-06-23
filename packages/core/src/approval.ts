@@ -10,8 +10,8 @@ export interface ApproveFindingsInput {
   readonly prompt: string;
   /** Findings awaiting a decision. */
   readonly findings: readonly Finding[];
-  /** Optional suggested selection, usually the auto-fixable findings. */
-  readonly selectedFindingIds?: readonly string[];
+  /** Optional suggested selection, usually the auto-fixable findings. The UI may change it. */
+  readonly suggestedFindingIds?: readonly string[];
   /** Optional context such as previous round history or policy notes. */
   readonly context?: string;
 }

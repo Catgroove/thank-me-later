@@ -226,10 +226,17 @@ describe("present", () => {
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
-      { type: "phase:started", step: "review", phase: "Context & intent", group: "initial" },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "phase-1",
+        phase: "Context & intent",
+        group: "initial",
+      },
       {
         type: "phase:finished",
         step: "review",
+        phaseId: "phase-1",
         phase: "Context & intent",
         group: "initial",
         findings: [finding],
@@ -249,10 +256,17 @@ describe("present", () => {
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
-      { type: "phase:started", step: "review", phase: "Architecture & scope", group: "initial" },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "phase-1",
+        phase: "Architecture & scope",
+        group: "initial",
+      },
       {
         type: "phase:finished",
         step: "review",
+        phaseId: "phase-1",
         phase: "Architecture & scope",
         group: "initial",
         findings: [finding],
@@ -268,10 +282,17 @@ describe("present", () => {
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
-      { type: "phase:started", step: "review", phase: "Structural", group: "initial" },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "phase-1",
+        phase: "Structural",
+        group: "initial",
+      },
       {
         type: "phase:finished",
         step: "review",
+        phaseId: "phase-1",
         phase: "Structural",
         group: "initial",
         findings: [],
@@ -281,32 +302,87 @@ describe("present", () => {
     expect(step(view, "review").phases[0]).toMatchObject({ status: "failed" });
   });
 
-  test("a re-run phase (same label + group) resolves the latest still-active occurrence", () => {
-    const started: RunEventInput = {
+  test("a re-run phase resolves by id", () => {
+    const started = (phaseId: string): RunEventInput => ({
       type: "phase:started",
       step: "review",
+      phaseId,
       phase: "Architecture & scope",
       group: "initial",
-    };
-    const finished: RunEventInput = {
+    });
+    const finished = (phaseId: string): RunEventInput => ({
       type: "phase:finished",
       step: "review",
+      phaseId,
       phase: "Architecture & scope",
       group: "initial",
       findings: [],
       status: "ok",
-    };
+    });
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
-      started,
-      finished,
-      started, // tainted-worktree rerun: a second occurrence
-      finished,
+      started("phase-1"),
+      finished("phase-1"),
+      started("phase-2"), // tainted-worktree rerun: a second occurrence
+      finished("phase-2"),
     ]);
     const phases = step(view, "review").phases;
     expect(phases).toHaveLength(2);
     expect(phases.every((p) => p.status === "done")).toBe(true);
+  });
+
+  test("duplicate concurrent phase labels resolve by id when finishes arrive out of order", () => {
+    const firstFinding = makeFinding("review", {
+      severity: "warning",
+      action: "ask-user",
+      title: "first",
+      detail: "first detail",
+    });
+    const secondFinding = makeFinding("review", {
+      severity: "warning",
+      action: "ask-user",
+      title: "second",
+      detail: "second detail",
+    });
+    const view = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "first",
+        phase: "Duplicate",
+        group: "initial",
+      },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "second",
+        phase: "Duplicate",
+        group: "initial",
+      },
+      {
+        type: "phase:finished",
+        step: "review",
+        phaseId: "first",
+        phase: "Duplicate",
+        group: "initial",
+        findings: [firstFinding],
+        status: "ok",
+      },
+      {
+        type: "phase:finished",
+        step: "review",
+        phaseId: "second",
+        phase: "Duplicate",
+        group: "initial",
+        findings: [secondFinding],
+        status: "ok",
+      },
+    ]);
+    const phases = step(view, "review").phases;
+    expect(phases.map((phase) => phase.findings)).toEqual([[firstFinding], [secondFinding]]);
   });
 
   test("ask:pending sets a pending interaction; the next event clears it", () => {

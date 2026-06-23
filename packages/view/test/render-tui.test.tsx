@@ -45,16 +45,29 @@ describe("TUI App (no real terminal)", () => {
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
-      { type: "phase:started", step: "review", phase: "Context & intent", group: "initial" },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "phase-1",
+        phase: "Context & intent",
+        group: "initial",
+      },
       {
         type: "phase:finished",
         step: "review",
+        phaseId: "phase-1",
         phase: "Context & intent",
         group: "initial",
         findings: [],
         status: "ok",
       },
-      { type: "phase:started", step: "review", phase: "Architecture & scope", group: "initial" },
+      {
+        type: "phase:started",
+        step: "review",
+        phaseId: "phase-2",
+        phase: "Architecture & scope",
+        group: "initial",
+      },
     ]);
     const [getView] = createSignal(view);
     const [now] = createSignal(1000);
@@ -107,8 +120,9 @@ describe("TUI App (no real terminal)", () => {
     await t.flush();
     const frame = t.captureCharFrame();
     expect(frame).toContain("Approve these findings"); // the prompt
-    expect(frame).toContain("1 warning"); // one-line severity summary, not the finding detail
-    expect(frame).toContain("Fix findings"); // the highlighted action menu
+    expect(frame).toContain("1 warning"); // severity summary
+    expect(frame).toContain("0 selected for fix");
+    expect(frame).toContain("Tighten the retry"); // visible finding selection row
     expect(frame).toContain("approval needed"); // the drawer is the primary surface
     t.renderer.destroy();
   });

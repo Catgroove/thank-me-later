@@ -254,6 +254,7 @@ export function reviewStep(): Step {
           );
         },
         commitMessage: "chore: apply fixes from review",
+        recordRounds: "live",
       });
 
       return {
@@ -262,7 +263,7 @@ export function reviewStep(): Step {
             fixedFindingIds: [],
           }),
         },
-        rounds: result.rounds,
+        rounds: [],
       };
     },
   });

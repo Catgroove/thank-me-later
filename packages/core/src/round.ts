@@ -41,7 +41,7 @@ export interface StepRoundSummary {
 export type FindingInput = Omit<Finding, "id">;
 export type RoundRecordInput = Omit<RoundRecord, "step" | "index">;
 
-/** Deterministic ID for a finding within a Step or pass namespace. */
+/** Deterministic ID for a finding within a Step or pass namespace. Detail text is excluded so the same issue keeps a stable id across reworded verification rounds. */
 export function findingId(namespace: string, finding: FindingInput): string {
   const hash = createHash("sha256")
     .update(
@@ -50,7 +50,6 @@ export function findingId(namespace: string, finding: FindingInput): string {
         severity: finding.severity,
         action: finding.action,
         title: finding.title.trim(),
-        detail: finding.detail.trim(),
         location: finding.location?.trim() ?? "",
       }),
     )

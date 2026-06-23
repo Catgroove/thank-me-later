@@ -84,6 +84,8 @@ export interface RoundLoopOptions {
   stopPolicy?(input: RoundStopPolicyInput): RoundLoopStopReason | undefined;
   /** Commit subject for each fix round when using the default commit behavior. */
   commitMessage?: string | ((input: RoundFixInput, result: RoundFixResult) => string);
+  /** Persist and emit rounds as soon as they complete instead of waiting for Step completion. */
+  recordRounds?: "deferred" | "live";
   /** Defaults to stage-all and commit. Set false for no commit, or provide custom behavior. */
   commit?: false | ((input: RoundCommitInput) => Promise<RoundCommitResult>);
   /** Defaults to all `auto-fix` findings. */
@@ -127,7 +129,7 @@ export async function executeRoundLoop(
     const findings = [...check.findings];
     const selected = selectFindings(options, findings, checkInput);
 
-    rounds.push({
+    await appendRound(ctx, options, rounds, {
       trigger,
       findings,
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
@@ -161,17 +163,17 @@ export async function executeRoundLoop(
       return done(stopReason, findings, rounds, attempts);
     }
 
-    const selectedFindingIds = currentSelectedFindingIds(findings, rounds);
+    const suggestedFindingIds = currentSelectedFindingIds(findings, rounds);
     const decision = await ctx.approveFindings({
       prompt: defaultPrompt(options.stepName, stopReason),
       findings,
-      ...(selectedFindingIds ? { selectedFindingIds } : {}),
+      ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
       context: renderRoundsForPrompt(rounds),
     });
 
     if (decision.action === "abort") throw new Error("approval aborted by operator");
     if (decision.action === "approve" || decision.action === "skip") {
-      rounds.push(approvalRound(findings, decision));
+      await appendRound(ctx, options, rounds, approvalRound(findings, decision));
       return done(stopReason, findings, rounds, attempts);
     }
 
@@ -215,7 +217,7 @@ async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs)
   const commitSha = await commitFix(ctx, options, fixInput, fix);
   const fixSummary = fix.summary.trim();
 
-  args.rounds.push({
+  await appendRound(ctx, options, args.rounds, {
     trigger: args.trigger,
     findings: [...args.recordFindings],
     selectedFindingIds: args.recordFindings.map((f) => f.id),
@@ -223,6 +225,16 @@ async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs)
     ...(fixSummary.length > 0 ? { fixSummary } : {}),
     ...(commitSha !== undefined ? { commitSha } : {}),
   });
+}
+
+async function appendRound(
+  ctx: Ctx,
+  options: RoundLoopOptions,
+  rounds: RoundRecordInput[],
+  round: RoundRecordInput,
+): Promise<void> {
+  rounds.push(round);
+  if (options.recordRounds === "live") await ctx.recordRound(round);
 }
 
 function selectFindings(

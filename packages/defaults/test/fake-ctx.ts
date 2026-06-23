@@ -194,6 +194,7 @@ export interface FakeCtxResult {
   asks: string[];
   approvals: ApproveFindingsInput[];
   phases: PhaseCall[];
+  recordedRounds: RoundRecord[];
 }
 
 export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
@@ -201,6 +202,7 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const asks: string[] = [];
   const approvals: ApproveFindingsInput[] = [];
   const phases: PhaseCall[] = [];
+  const recordedRounds: RoundRecord[] = [];
   const reads = parts.reads ?? {};
   const signal = parts.signal ?? new AbortController().signal;
   const ask = parts.ask ?? ((_prompt: string) => Promise.resolve(""));
@@ -231,6 +233,11 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
         ? [...rounds]
         : rounds.filter((round) => round.step === stepName);
     },
+    recordRound(round) {
+      const record = { ...round, step: "review", index: recordedRounds.length };
+      recordedRounds.push(record);
+      return Promise.resolve(record);
+    },
     log(message) {
       logs.push(message);
     },
@@ -240,5 +247,5 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
     },
   };
 
-  return { ctx, logs, asks, approvals, phases };
+  return { ctx, logs, asks, approvals, phases, recordedRounds };
 }

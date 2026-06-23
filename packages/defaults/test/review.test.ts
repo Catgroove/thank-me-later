@@ -25,7 +25,7 @@ describe("review step", () => {
       pass([]),
     );
     const git = new FakeGit();
-    const { ctx, asks } = fakeCtx({
+    const { ctx, asks, recordedRounds } = fakeCtx({
       agent,
       git,
       reads: { prBody: "Adds --json output" },
@@ -41,8 +41,9 @@ describe("review step", () => {
     expect(asks).toHaveLength(0); // the gate never calls ctx.ask
     const stepResult = result as { artifacts?: { reviewSummary?: unknown }; rounds?: unknown[] };
     expect(typeof stepResult.artifacts?.reviewSummary).toBe("string");
-    expect(stepResult.rounds).toHaveLength(1);
-    expect(stepResult.rounds?.[0]).toMatchObject({ trigger: "initial", findings: [] });
+    expect(stepResult.rounds).toHaveLength(0);
+    expect(recordedRounds).toHaveLength(1);
+    expect(recordedRounds[0]).toMatchObject({ trigger: "initial", findings: [] });
     expect(summaryOf(result)).toContain("**Risk: low**");
   });
 
@@ -210,16 +211,15 @@ describe("review step", () => {
   test("a bare block verdict adds an approval finding", async () => {
     const agent = new FakeHarness();
     agent.responses.push(pass([]), pass([], { verdict: "block" }), pass([]), pass([]));
-    const { ctx, approvals } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     const result = await reviewStep().run(ctx);
-    const stepResult = result as { rounds?: { findings?: unknown[] }[] };
 
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.findings).toMatchObject([
       { severity: "error", action: "ask-user", title: "Blocking architecture verdict" },
     ]);
-    expect(stepResult.rounds?.[0]?.findings).toMatchObject([
+    expect(recordedRounds[0]?.findings).toMatchObject([
       { action: "ask-user", title: "Blocking architecture verdict" },
     ]);
     expect(summaryOf(result)).toContain("Blocking architecture verdict");
@@ -262,18 +262,17 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     const result = await reviewStep().run(ctx);
     const summary = summaryOf(result);
-    const stepResult = result as { rounds?: { trigger?: string }[] };
 
     expect(agent.tasks).toHaveLength(9);
     expect(agent.opts[4]?.schema).toBeUndefined(); // the fix pass requests no schema
     expect(agent.tasks[4]).toContain("Prior review round history");
     expect(agent.tasks[4]).toContain("Round 0: initial");
     expect(agent.tasks[5]).toContain("Prior review round history");
-    expect(stepResult.rounds?.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
+    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
     expect(summary).toContain("fixed the off-by-one");
   });
 
@@ -316,14 +315,13 @@ describe("review step", () => {
       pass([]),
       pass([]),
     );
-    const { ctx } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const { ctx, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     const result = await reviewStep().run(ctx);
-    const stepResult = result as { rounds?: { findings?: unknown[] }[] };
 
     const fixList = agent.tasks[4]?.split("\n\nFindings:\n").at(1) ?? "";
     expect(fixList.match(/Guard empty input/g) ?? []).toHaveLength(1);
-    expect(stepResult.rounds?.[0]?.findings).toHaveLength(1);
+    expect(recordedRounds[0]?.findings).toHaveLength(1);
     expect(summaryOf(result)).toContain("fixed the guard");
   });
 

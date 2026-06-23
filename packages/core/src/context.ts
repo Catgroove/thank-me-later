@@ -11,7 +11,7 @@ import type { Pending } from "./pending.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import type { Git } from "./providers/git.ts";
 import type { Harness } from "./providers/harness.ts";
-import type { Finding, RoundRecord } from "./round.ts";
+import type { Finding, RoundRecord, RoundRecordInput } from "./round.ts";
 
 /** Options for a `phase` span: a grouping label and a way to surface the span's findings live. */
 export interface PhaseOptions<T> {
@@ -48,6 +48,9 @@ export interface Ctx<
 
   /** Completed rounds from earlier Steps in this Run, including journal-replayed rounds. */
   rounds(step?: string): readonly RoundRecord[];
+
+  /** Persist and emit a completed round immediately, before the Step itself finishes. */
+  recordRound(round: RoundRecordInput): Promise<RoundRecord>;
 
   /** Emit a progress line into the Run's event stream. */
   log(message: string): void;
