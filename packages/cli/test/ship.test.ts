@@ -9,10 +9,20 @@ import {
   type EngineOptions,
   type RunEvent,
 } from "@tml/core";
-import { createPlainRenderer, type Renderer } from "@tml/view";
+import { createTerminalRenderer, type Renderer } from "@tml/view";
 import { assembleShipConfig } from "../src/config.ts";
 import type { Loaded } from "../src/load.ts";
 import { ship } from "../src/index.ts";
+
+/** A plain (append-only) renderer for tests; forwards each emitted line to `onLine`. */
+function plainRenderer(onLine: (line: string) => void = () => {}): Renderer {
+  return createTerminalRenderer({
+    plain: true,
+    write: (chunk) => {
+      for (const line of chunk.split("\n")) if (line !== "") onLine(line);
+    },
+  });
+}
 
 const tempDirs: string[] = [];
 function pluginFile(source: string): string {
@@ -142,7 +152,7 @@ describe("ship() run lifecycle", () => {
       buildConfig: () => dummyConfig,
       engineFor: () =>
         engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]),
-      renderer: createPlainRenderer((l) => lines.push(l)),
+      renderer: plainRenderer((l) => lines.push(l)),
     });
 
     expect(code).toBe(0);
@@ -153,7 +163,7 @@ describe("ship() run lifecycle", () => {
     const code = await ship({
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:failed", step: "test", error: "boom" }]),
-      renderer: createPlainRenderer(() => {}),
+      renderer: plainRenderer(),
     });
 
     expect(code).toBe(1);
@@ -163,7 +173,7 @@ describe("ship() run lifecycle", () => {
     const code = await ship({
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:cancelled" }]),
-      renderer: createPlainRenderer(() => {}),
+      renderer: plainRenderer(),
     });
 
     expect(code).toBe(130);
@@ -276,7 +286,7 @@ describe("ship() run lifecycle", () => {
         captured = opts;
         return engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]);
       },
-      renderer: createPlainRenderer(() => {}),
+      renderer: plainRenderer(),
     });
 
     expect(code).toBe(0);
@@ -309,7 +319,7 @@ describe("ship() run lifecycle", () => {
       engineFor: () => {
         throw new Error("engine construction failed");
       },
-      renderer: createPlainRenderer(() => {}),
+      renderer: plainRenderer(),
     });
 
     expect(code).toBe(1);
