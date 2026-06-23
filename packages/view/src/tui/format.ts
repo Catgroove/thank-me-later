@@ -2,6 +2,7 @@
 // duration/elapsed strings. Kept generic - no Step-name knowledge, no default-Pipeline assumptions.
 
 import type { PhaseView, StepView, ViewState } from "../present.ts";
+import { sanitize } from "./sanitize.ts";
 
 export type StepStatus = StepView["status"];
 
@@ -48,6 +49,14 @@ export function statusLabel(status: StepStatus): string {
   return status;
 }
 
+/**
+ * Glyph and color for an active Step blocked on a human decision (an `ask`/`approval` gate). Such a
+ * Step is not working - it is waiting on *you* - so it must not wear the busy spinner. The amber
+ * matches the interaction drawer's "input needed"/"approval needed" framing.
+ */
+export const WAITING_GLYPH = "?";
+export const WAITING_COLOR = "#f59e0b";
+
 /** A compact human duration: "0.4s", "12s", "3m 05s". Empty when unknown. */
 export function formatDuration(ms: number | undefined): string {
   if (ms === undefined) return "";
@@ -91,4 +100,33 @@ export function runElapsed(view: ViewState, now: number): string {
   const end = view.finishedAt ?? view.pendingInteraction?.at ?? now;
   const waited = view.steps.reduce((sum, step) => sum + (step.waitedMs ?? 0), 0);
   return formatDuration(Math.max(0, end - view.startedAt - waited));
+}
+
+// Column budget for the pipeline rail, beyond the longest Step name / Phase label:
+const RAIL_MIN_WIDTH = 30; // never shrink below the historical fixed width
+const RAIL_MAX_WIDTH = 56; // cap so the Step inspector keeps room on narrow terminals
+const RAIL_TRAIL = 11; // leading space + widest elapsed ("10m 09s") + a findings count (" 99")
+const RAIL_STEP_LEAD = 2; // status glyph + one-space margin before the name
+const RAIL_PHASE_LEAD = 5; // " └ " tree branch + glyph + one-space margin before the label
+const RAIL_FRAME = 4; // left+right border (2) + left+right row padding (2)
+
+/**
+ * Width (in columns) for the pipeline rail: it grows to fit the longest Step name (and, for an
+ * active Step, its visible Phase labels) so a name and its elapsed time never collide, clamped to a
+ * fixed band so the Step inspector keeps room. The trailing elapsed/count zone is a fixed reserve
+ * rather than measured, so the width holds steady as the clock ticks instead of jiggling each second
+ * when an elapsed string lengthens. Pure: derived from the labels alone, independent of `now`.
+ */
+export function railWidth(view: ViewState): number {
+  let widest = 0;
+  for (const step of view.steps) {
+    widest = Math.max(widest, RAIL_STEP_LEAD + sanitize(step.name).length);
+    if (step.status === "active") {
+      for (const phase of latestGroupPhases(step)) {
+        widest = Math.max(widest, RAIL_PHASE_LEAD + sanitize(phase.label).length);
+      }
+    }
+  }
+  const content = widest + RAIL_TRAIL + RAIL_FRAME;
+  return Math.min(RAIL_MAX_WIDTH, Math.max(RAIL_MIN_WIDTH, content));
 }
