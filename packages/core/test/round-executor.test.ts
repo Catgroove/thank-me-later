@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ApprovalDecision } from "../src/approval.ts";
 import type { Ctx } from "../src/context.ts";
 import {
   type CommitResult,
@@ -80,7 +81,10 @@ class FakeGit implements Git {
   }
 }
 
-function fakeCtx(parts: { git?: Git } = {}): { ctx: Ctx; asks: string[] } {
+function fakeCtx(parts: { git?: Git; approveFindings?: () => Promise<ApprovalDecision> } = {}): {
+  ctx: Ctx;
+  asks: string[];
+} {
   const asks: string[] = [];
   const signal = new AbortController().signal;
   return {
@@ -98,9 +102,7 @@ function fakeCtx(parts: { git?: Git } = {}): { ctx: Ctx; asks: string[] } {
         asks.push(prompt);
         return Promise.resolve("");
       },
-      approveFindings() {
-        return Promise.resolve({ action: "approve" });
-      },
+      approveFindings: parts.approveFindings ?? (() => Promise.resolve({ action: "approve" })),
       rounds() {
         return [];
       },
@@ -202,25 +204,27 @@ describe("executeRoundLoop", () => {
     ]);
   });
 
-  test("can continue with a user-selected fix before fresh verification", async () => {
+  test("continues with an approved user fix before fresh verification", async () => {
     const selected = finding("ask-user", "Needs decision");
-    const priorRounds: RoundRecordInput[] = [
-      { trigger: "initial", findings: [selected], selectedFindingIds: [selected.id] },
-    ];
+    const userFinding = finding("ask-user", "Operator follow-up");
+    const decision: ApprovalDecision = {
+      action: "fix",
+      selectedFindingIds: [selected.id],
+      userFindings: [userFinding],
+      notes: { [selected.id]: "focus here" },
+    };
     const fixes: RoundFixInput[] = [];
     const checks: RoundCheckInput[] = [];
     const git = new FakeGit();
     git.stagedFiles = ["src/a.ts"];
     git.commitSha = "abc";
-    const { ctx } = fakeCtx({ git });
+    const { ctx } = fakeCtx({ git, approveFindings: () => Promise.resolve(decision) });
 
     const result = await executeRoundLoop(ctx, {
-      initialRounds: priorRounds,
-      initialAttempts: 1,
-      initialFixFindings: [selected],
+      stepName: "approval-test",
       check(input) {
         checks.push(input);
-        return Promise.resolve({ findings: [] });
+        return Promise.resolve({ findings: input.trigger === "initial" ? [selected] : [] });
       },
       fix(input) {
         fixes.push(input);
@@ -230,29 +234,76 @@ describe("executeRoundLoop", () => {
     });
 
     expect(fixes).toHaveLength(1);
-    expect(fixes[0]?.attempt).toBe(2);
-    expect(fixes[0]?.history).toEqual(priorRounds);
-    expect(checks.map((check) => check.trigger)).toEqual(["verify"]);
-    expect(checks[0]?.attempt).toBe(2);
+    expect(fixes[0]?.attempt).toBe(1);
+    expect(fixes[0]?.findings.map((f) => f.id)).toEqual([selected.id, userFinding.id]);
+    expect(fixes[0]?.findings[0]?.detail).toContain("Operator note: focus here");
+    expect(checks.map((check) => check.trigger)).toEqual(["initial", "verify"]);
     expect(result).toEqual({
       stopReason: "clean",
       findings: [],
       rounds: [
-        ...priorRounds,
+        { trigger: "initial", findings: [selected] },
         {
           trigger: "user_fix",
-          findings: [selected],
-          selectedFindingIds: [selected.id],
+          findings: [selected, userFinding],
+          selectedFindingIds: [selected.id, userFinding.id],
+          userNotes: { [selected.id]: "focus here" },
           fixSummary: "fixed user selection",
           commitSha: "abc",
         },
         { trigger: "verify", findings: [] },
       ],
-      attempts: 2,
+      attempts: 1,
     });
   });
 
-  test("stops for user decision when no selected finding can be fixed", async () => {
+  test("records an approval round when the operator approves unresolved findings", async () => {
+    const issue = finding("ask-user", "Confirm contract");
+    const { ctx } = fakeCtx({ approveFindings: () => Promise.resolve({ action: "approve" }) });
+
+    const result = await executeRoundLoop(ctx, {
+      stepName: "approval-test",
+      check: () => Promise.resolve({ findings: [issue] }),
+      fix() {
+        throw new Error("fix should not run");
+      },
+      commitMessage: "chore: fix round findings",
+    });
+
+    expect(result.stopReason).toBe("needs_user");
+    expect(result.rounds).toEqual([
+      { trigger: "initial", findings: [issue] },
+      {
+        trigger: "user_fix",
+        findings: [issue],
+        fixSummary: "Operator approved unresolved findings.",
+      },
+    ]);
+  });
+
+  test("throws when the operator aborts approval", async () => {
+    const issue = finding("ask-user", "Confirm contract");
+    const { ctx } = fakeCtx({ approveFindings: () => Promise.resolve({ action: "abort" }) });
+    let caught: unknown;
+
+    try {
+      await executeRoundLoop(ctx, {
+        stepName: "approval-test",
+        check: () => Promise.resolve({ findings: [issue] }),
+        fix() {
+          throw new Error("fix should not run");
+        },
+        commitMessage: "chore: fix round findings",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("approval aborted by operator");
+  });
+
+  test("stops for user decision when no approval gate is configured", async () => {
     const issue = finding("ask-user", "Confirm contract");
     const { ctx, asks } = fakeCtx();
 

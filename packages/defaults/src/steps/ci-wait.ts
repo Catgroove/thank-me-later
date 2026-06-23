@@ -6,6 +6,7 @@
 import {
   TimeoutError,
   defineStep,
+  executeRoundLoop,
   makeFinding,
   type CheckRun,
   type Ctx,
@@ -13,7 +14,6 @@ import {
   type Pending,
   type Step,
 } from "@tml/core";
-import { executeRoundLoopWithApproval } from "../approval-gate.ts";
 import { pullRequest } from "../artifacts.ts";
 import { ciFixPrompt } from "../prompts.ts";
 
@@ -97,7 +97,7 @@ export function ciWaitStep(): Step {
       let latestChecks: CheckRun[] = [];
       let pushedFixCommit = false;
 
-      const result = await executeRoundLoopWithApproval(ctx, {
+      const result = await executeRoundLoop(ctx, {
         stepName: "ci-wait",
         maxAutoFixAttempts: MAX_CI_AUTO_FIX_ATTEMPTS,
         async check(input) {

@@ -10,6 +10,7 @@
 
 import {
   defineStep,
+  executeRoundLoop,
   type Ctx,
   makeFinding,
   renderRoundsForPr,
@@ -19,7 +20,6 @@ import {
   type RoundRecord,
   type Step,
 } from "@tml/core";
-import { executeRoundLoopWithApproval } from "../approval-gate.ts";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
 import {
@@ -215,7 +215,7 @@ export function reviewStep(): Step {
     async run(ctx) {
       let latestPasses: ReviewPass[] = [];
 
-      const result = await executeRoundLoopWithApproval(ctx, {
+      const result = await executeRoundLoop(ctx, {
         stepName: "review",
         async check(input) {
           latestPasses = await runReviewPasses(ctx, input);
