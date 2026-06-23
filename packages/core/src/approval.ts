@@ -5,8 +5,6 @@
 
 import type { Finding } from "./round.ts";
 
-export type ApprovalAction = "approve" | "fix" | "skip" | "abort";
-
 export interface ApproveFindingsInput {
   /** Human prompt shown above the structured findings. */
   readonly prompt: string;
