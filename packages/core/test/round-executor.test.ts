@@ -329,14 +329,16 @@ describe("executeRoundLoop", () => {
   });
 
   test("stops when the auto-fix limit is hit", async () => {
-    const issue = finding();
     const git = new FakeGit();
     git.stagedFiles = ["src/file.ts"];
     const { ctx } = fakeCtx({ git });
     let fixes = 0;
 
     const result = await executeRoundLoop(ctx, {
-      check: () => Promise.resolve({ findings: [issue] }),
+      // A distinct finding each round so the loop keeps making progress and is bounded by the
+      // count, not by stall detection.
+      check: (input) =>
+        Promise.resolve({ findings: [finding("auto-fix", `Fix ${input.attempt}`)] }),
       fix: () => {
         fixes += 1;
         return Promise.resolve({ summary: `fix ${fixes}` });
@@ -358,6 +360,29 @@ describe("executeRoundLoop", () => {
     ]);
   });
 
+  test("stalls when a fix leaves the findings unchanged", async () => {
+    const issue = finding();
+    const git = new FakeGit();
+    git.stagedFiles = ["src/file.ts"];
+    const { ctx } = fakeCtx({ git });
+    let fixes = 0;
+
+    const result = await executeRoundLoop(ctx, {
+      // The same finding every round: the fix never resolves it, so the first verify stalls.
+      check: () => Promise.resolve({ findings: [issue] }),
+      fix: () => {
+        fixes += 1;
+        return Promise.resolve({ summary: `fix ${fixes}` });
+      },
+      commitMessage: "chore: fix round findings",
+    });
+
+    expect(result.stopReason).toBe("stalled");
+    expect(result.attempts).toBe(1);
+    expect(fixes).toBe(1);
+    expect(result.rounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
+  });
+
   test("stops without asking when only informational findings remain", async () => {
     const note = finding("no-op", "FYI");
     const { ctx, asks } = fakeCtx();
@@ -375,14 +400,14 @@ describe("executeRoundLoop", () => {
   });
 
   test("uses the configured auto-fix limit", async () => {
-    const issue = finding();
     const git = new FakeGit();
     git.stagedFiles = ["src/file.ts"];
     const { ctx } = fakeCtx({ git });
     let fixes = 0;
 
     const result = await executeRoundLoop(ctx, {
-      check: () => Promise.resolve({ findings: [issue] }),
+      check: (input) =>
+        Promise.resolve({ findings: [finding("auto-fix", `Fix ${input.attempt}`)] }),
       fix: () => {
         fixes += 1;
         return Promise.resolve({ summary: `fix ${fixes}` });

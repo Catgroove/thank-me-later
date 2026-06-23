@@ -275,12 +275,14 @@ function Findings(props: { step: StepView; focusedId?: string }) {
   );
 }
 
-function RoundLine(props: { round: RoundRecord }) {
+function RoundLine(props: { round: RoundRecord; fixNumber?: number }) {
   const r = props.round;
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg="#cbd5e1">
-        round {r.index} · {r.trigger} · {r.findings.length} finding
+        round {r.index} · {r.trigger}
+        {props.fixNumber !== undefined ? ` · fix ${props.fixNumber}` : ""} · {r.findings.length}{" "}
+        finding
         {r.findings.length === 1 ? "" : "s"}
         {r.commitSha ? ` · ${sanitize(r.commitSha.slice(0, 8))}` : ""}
       </text>
@@ -299,13 +301,25 @@ function RoundLine(props: { round: RoundRecord }) {
 }
 
 function Rounds(props: { step: StepView }) {
+  // The persisted round index counts every pass; operators reason in fix attempts, so number the
+  // fix rounds (auto_fix/user_fix) on their own running counter and surface that alongside.
+  const items = () => {
+    let fixNumber = 0;
+    return props.step.rounds.map((round) => {
+      const isFix = round.trigger === "auto_fix" || round.trigger === "user_fix";
+      if (isFix) fixNumber += 1;
+      return { round, fixNumber: isFix ? fixNumber : undefined };
+    });
+  };
   return (
     <box flexDirection="column">
       <Show
         when={props.step.rounds.length > 0}
         fallback={<text fg="#64748b">No rounds recorded.</text>}
       >
-        <For each={props.step.rounds}>{(round) => <RoundLine round={round} />}</For>
+        <For each={items()}>
+          {(item) => <RoundLine round={item.round} fixNumber={item.fixNumber} />}
+        </For>
       </Show>
     </box>
   );
