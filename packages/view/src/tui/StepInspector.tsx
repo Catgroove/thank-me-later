@@ -125,28 +125,12 @@ function Summary(props: { step: StepView; now: number; pendingAt?: number }) {
           {sanitize(props.step.headline ?? "", { preserveNewlines: true })}
         </text>
       </Show>
-      <Show when={props.step.currentTool !== undefined}>
-        <text fg="#a78bfa">
-          ⚙ {sanitize(props.step.currentTool?.name ?? "")}
-          {props.step.currentTool?.detail ? ` · ${sanitize(props.step.currentTool.detail)}` : ""}
-        </text>
-      </Show>
       <Show when={props.step.error !== undefined}>
         <text fg="#ef4444" wrapMode="word">
           error: {sanitize(props.step.error ?? "", { preserveNewlines: true })}
         </text>
       </Show>
       <Phases step={props.step} now={props.now} />
-      <Show
-        when={
-          props.step.artifacts.length === 0 &&
-          props.step.rounds.length === 0 &&
-          props.step.phases.length === 0 &&
-          props.step.headline === undefined
-        }
-      >
-        <text fg="#64748b">No facts recorded yet.</text>
-      </Show>
     </box>
   );
 }
