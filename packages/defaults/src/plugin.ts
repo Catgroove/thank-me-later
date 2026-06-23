@@ -13,7 +13,7 @@
 
 import type { Plugin } from "@tml/core";
 import { prTitle } from "./artifacts.ts";
-import { type BranchMode, branchStep } from "./steps/branch.ts";
+import { BRANCH_MODES, type BranchMode, branchStep } from "./steps/branch.ts";
 import { ciWaitStep } from "./steps/ci-wait.ts";
 import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
 import { commitStep } from "./steps/commit.ts";
@@ -21,8 +21,6 @@ import { describeStep } from "./steps/describe.ts";
 import { openPrStep } from "./steps/open-pr.ts";
 import { rebaseStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
-
-const BRANCH_MODES: readonly BranchMode[] = ["ai", "auto", "require"];
 
 export const tmlDefaults: Plugin = (tml) => {
   tml.pipeline.append(
