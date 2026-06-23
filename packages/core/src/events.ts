@@ -28,13 +28,13 @@ export type RunEvent =
   // model so presenters can render Findings and Round history without scraping PR Markdown or
   // waiting for an approval gate. The `round` is the fully normalized record (with `step`, `index`).
   | { type: "round:recorded"; at: number; step: string; round: RoundRecord }
-  // A Step opened a named span of work within itself — e.g. one review pass. Purely observational:
+  // A Step opened a named span of work within itself - e.g. one review pass. Purely observational:
   // it lets presenters show what a Step is doing mid-run without the Step decomposing into separate
   // Steps. `group` is an optional caller-supplied label (e.g. a round) so related phases nest.
   | { type: "phase:started"; at: number; step: string; phase: string; group?: string }
   // The matching span closed. `status` is `error` if the span's work threw (then the Step's own
   // failure path takes over). `findings` are the phase's own findings, surfaced live as the phase
-  // resolves — a preview ahead of the deduped, authoritative set carried by `round:recorded`.
+  // resolves - a preview ahead of the deduped, authoritative set carried by `round:recorded`.
   | {
       type: "phase:finished";
       at: number;
