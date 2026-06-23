@@ -1,7 +1,7 @@
 ---
 "@tml/core": patch
 "@tml/defaults": patch
-"@tml/view": patch
+"@tml/view": major
 ---
 
 Simplify internals across packages: collapse the single-pass `ReviewPass` machinery to a flat
