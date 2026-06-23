@@ -200,10 +200,10 @@ describe("review step", () => {
     expect(asks).toHaveLength(0);
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.findings).toContainEqual(
-      expect.objectContaining({ action: "ask-user", title: "Too large" }),
+      expect.objectContaining({ action: "ask-user", title: "Too large", blocking: true }),
     );
-    expect(approvals[0]?.findings).toContainEqual(
-      expect.objectContaining({ action: "ask-user", title: "Blocking architecture verdict" }),
+    expect(approvals[0]?.findings).not.toContainEqual(
+      expect.objectContaining({ title: "Blocking architecture verdict" }),
     );
     expect(agent.tasks).toHaveLength(4); // ask-user is not auto-fix, so no fix pass
   });
@@ -217,10 +217,15 @@ describe("review step", () => {
 
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.findings).toMatchObject([
-      { severity: "error", action: "ask-user", title: "Blocking architecture verdict" },
+      {
+        severity: "error",
+        action: "ask-user",
+        title: "Blocking architecture verdict",
+        blocking: true,
+      },
     ]);
     expect(recordedRounds[0]?.findings).toMatchObject([
-      { action: "ask-user", title: "Blocking architecture verdict" },
+      { action: "ask-user", title: "Blocking architecture verdict", blocking: true },
     ]);
     expect(summaryOf(result)).toContain("Blocking architecture verdict");
   });

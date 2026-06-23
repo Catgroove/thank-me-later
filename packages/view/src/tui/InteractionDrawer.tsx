@@ -105,7 +105,9 @@ function AskBody(props: {
 // redundant `(action)` tag and leads with the severity instead.
 function findingLabel(finding: Finding): string {
   const location = finding.location ? ` - ${finding.location}` : "";
-  return `[${finding.severity}] ${finding.title}${location}`;
+  const marker =
+    finding.blocking === true ? `[blocking] [${finding.severity}]` : `[${finding.severity}]`;
+  return `${marker} ${finding.title}${location}`;
 }
 
 function ApprovalBody(props: {

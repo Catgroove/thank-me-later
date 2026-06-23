@@ -99,15 +99,18 @@ function plural(count: number, word: string): string {
 /** One-line severity tally for the drawer header. */
 export function summaryLine(findings: readonly Finding[]): string {
   if (findings.length === 0) return "No findings.";
+  let blocking = 0;
   let errors = 0;
   let warnings = 0;
   let infos = 0;
   for (const finding of findings) {
+    if (finding.blocking === true) blocking += 1;
     if (finding.severity === "error") errors += 1;
     else if (finding.severity === "warning") warnings += 1;
     else infos += 1;
   }
   const parts: string[] = [];
+  if (blocking > 0) parts.push(`${blocking} blocking`);
   if (errors > 0) parts.push(plural(errors, "error"));
   if (warnings > 0) parts.push(plural(warnings, "warning"));
   if (infos > 0) parts.push(plural(infos, "info"));
