@@ -8,7 +8,8 @@
 // run at OpenTUI's default cadence capped to 30 FPS; animate only live surfaces. There is no custom
 // permanent render loop - Solid's reactivity drives OpenTUI's on-demand rendering.
 
-import { createCliRenderer } from "@opentui/core";
+import { spawnSync } from "node:child_process";
+import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { render } from "@opentui/solid";
 import { createSignal } from "solid-js";
 import type { ApprovalDecision, ApproveFindingsInput, RunEvent } from "@tml/core";
@@ -36,6 +37,36 @@ function isUrgent(event: RunEvent): boolean {
   );
 }
 
+function copySelectedText(cli: CliRenderer): boolean {
+  const selection = cli.getSelection();
+  if (selection === null) return false;
+
+  const text = selection.getSelectedText();
+  if (text.length === 0) return false;
+
+  const copied = cli.copyToClipboardOSC52(text) || writeSystemClipboard(text);
+  if (copied) cli.clearSelection();
+  return true;
+}
+
+function writeSystemClipboard(text: string): boolean {
+  for (const [command, args] of clipboardCommands()) {
+    const result = spawnSync(command, args, { input: text, stdio: ["pipe", "ignore", "ignore"] });
+    if (result.error === undefined && result.status === 0) return true;
+  }
+  return false;
+}
+
+function clipboardCommands(): ReadonlyArray<readonly [string, readonly string[]]> {
+  if (process.platform === "darwin") return [["pbcopy", []]];
+  if (process.platform === "win32") return [["clip.exe", []]];
+  return [
+    ["wl-copy", []],
+    ["xclip", ["-selection", "clipboard"]],
+    ["xsel", ["--clipboard", "--input"]],
+  ];
+}
+
 export async function createTuiRenderer(
   options: TuiRendererOptions = {},
 ): Promise<InteractiveRenderer> {
@@ -58,7 +89,10 @@ export async function createTuiRenderer(
     screenMode: "alternate-screen",
   });
 
-  await render(() => App({ view, now: nowSig, prompt, onAbort }), cli);
+  await render(
+    () => App({ view, now: nowSig, prompt, onCopySelection: () => copySelectedText(cli), onAbort }),
+    cli,
+  );
 
   // A 1s tick drives live elapsed displays only; the spinner animates itself. This is not a render
   // loop - it is a low-frequency state nudge that stops as soon as the renderer closes.

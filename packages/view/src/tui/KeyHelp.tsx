@@ -8,6 +8,7 @@ const KEYS: ReadonlyArray<readonly [string, string]> = [
   [".", "follow the active Step"],
   ["tab / shift-tab", "switch inspector tabs"],
   ["enter", "expand / collapse the focused item"],
+  ["mouse select, y / cmd-c", "copy the selection"],
   ["?", "toggle this help"],
   ["q / ctrl-c", "abort the Run (confirm)"],
 ];
