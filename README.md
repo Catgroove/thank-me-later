@@ -36,8 +36,9 @@ tml ship      # snapshot this checkout and run the pipeline in an isolated works
 local Run Journal, then runs there. You can keep editing the source checkout while the Run
 continues; those later edits are not part of the shipment. The pipeline puts the snapshot on
 a feature branch (AI-named by default), then commits a clean history - your change, then the
-gate's fixes as their own commits - as it formats, lints, type-checks, tests, and reviews
-(the agent applies fixes), before pushing and opening a PR and watching CI.
+gate's fixes as their own commits - as it runs model-backed format, lint, and type-check
+passes, tests, and reviews (the agent applies fixes), before pushing and opening a PR and
+watching CI.
 
 tml is built with tml: every change to this repo ships through `tml ship`.
 
