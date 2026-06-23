@@ -91,6 +91,10 @@ export class FakeGit implements Git {
       unstaged: this.unstagedFiles,
     });
   }
+  diffAgainst(base: string): Promise<string> {
+    this.calls.push(`diffAgainst ${base}`);
+    return Promise.resolve("diff --git a/file.ts b/file.ts\n+changed");
+  }
   push(opts: { branch: string; force?: boolean }): Promise<void> {
     this.calls.push(`push ${opts.force ? "(force) " : ""}${opts.branch}`);
     return Promise.resolve();

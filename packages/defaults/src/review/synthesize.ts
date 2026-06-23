@@ -23,6 +23,34 @@ export interface ReviewPass {
   readonly result: PassResult;
 }
 
+function normalizeFindingKeyPart(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function findingDedupeKey(finding: Finding): string {
+  const title = normalizeFindingKeyPart(finding.title);
+  const location = normalizeFindingKeyPart(finding.location);
+  if (location.length > 0) return `${location}\u0000${title}`;
+  return `${title}\u0000${normalizeFindingKeyPart(finding.detail)}`;
+}
+
+/** Preserve the first report of a finding and drop duplicates from later review passes. */
+export function dedupeReviewPasses(passes: readonly ReviewPass[]): ReviewPass[] {
+  const seen = new Set<string>();
+  return passes.map((pass) => ({
+    title: pass.title,
+    result: {
+      ...pass.result,
+      findings: pass.result.findings.filter((finding) => {
+        const key = findingDedupeKey(finding);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
+    },
+  }));
+}
+
 const SEVERITIES: ReadonlySet<string> = new Set(["error", "warning", "info"]);
 const ACTIONS: ReadonlySet<string> = new Set(["auto-fix", "ask-user", "no-op"]);
 const VERDICTS: ReadonlySet<string> = new Set(["proceed", "block"]);
@@ -50,6 +78,11 @@ export function parsePassResult(output: unknown): PassResult {
   return result;
 }
 
+function isAllowedActionForSeverity(severity: string, action: string): boolean {
+  if (severity === "info") return action === "no-op";
+  return action === "auto-fix" || action === "ask-user";
+}
+
 function parseFinding(raw: unknown, index: number): Finding {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(`review: finding ${index} is not an object`);
@@ -60,6 +93,12 @@ function parseFinding(raw: unknown, index: number): Finding {
   }
   if (typeof f.action !== "string" || !ACTIONS.has(f.action)) {
     throw new Error(`review: finding ${index} has an invalid action`);
+  }
+  if (!isAllowedActionForSeverity(f.severity, f.action)) {
+    throw new Error(
+      `review: finding ${index} has action ${f.action} for severity ${f.severity}; ` +
+        "error and warning findings must be auto-fix or ask-user, and info findings must be no-op",
+    );
   }
   if (typeof f.title !== "string" || f.title.trim().length === 0) {
     throw new Error(`review: finding ${index} is missing a title`);

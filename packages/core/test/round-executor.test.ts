@@ -67,6 +67,9 @@ class FakeGit implements Git {
   status(): Promise<GitStatus> {
     return Promise.resolve({ branch: "HEAD", staged: this.stagedFiles, unstaged: [] });
   }
+  diffAgainst(_base: string): Promise<string> {
+    return Promise.resolve("diff --git a/file.ts b/file.ts\n+changed");
+  }
   discardChanges(): Promise<void> {
     this.calls.push("discardChanges");
     return Promise.resolve();

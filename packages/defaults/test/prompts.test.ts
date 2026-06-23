@@ -10,24 +10,23 @@ import {
   checkPrompt,
   contextPrompt,
   correctnessPrompt,
-  designPrompt,
   findingsSchema,
   fixPrompt,
   formatPrompt,
   lintPrompt,
-  microPrompt,
   prDescriptionPrompt,
   prDescriptionSchema,
+  structuralPrompt,
   testPrompt,
   typecheckPrompt,
 } from "../src/prompts.ts";
 
+const reviewDiff = "diff --git a/src/a.ts b/src/a.ts\n+const marker = true;";
 const reviewPasses = [
-  contextPrompt("a body"),
-  architecturePrompt("intent"),
-  correctnessPrompt("intent"),
-  designPrompt("intent"),
-  microPrompt("intent"),
+  contextPrompt("a body", reviewDiff),
+  architecturePrompt("intent", reviewDiff),
+  correctnessPrompt("intent", reviewDiff),
+  structuralPrompt("intent", reviewDiff),
 ];
 
 describe("default pipeline prompts", () => {
@@ -177,35 +176,44 @@ describe("default pipeline prompts", () => {
     expect(prompt.length).toBeLessThan(13_500);
   });
 
-  test("each review pass computes the diff itself and stays read-only", () => {
+  test("each review pass uses the injected diff, stays read-only, and self-refutes", () => {
     for (const prompt of reviewPasses) {
-      expect(prompt).toContain("diff");
+      expect(prompt).toContain("marker = true");
+      expect(prompt).toContain("do not recompute the full branch diff yourself");
+      expect(prompt).toContain("try to refute");
       expect(prompt.toLowerCase()).toContain("do not modify");
       expect(prompt.toLowerCase()).toContain("do not run");
     }
   });
 
   test("the context pass embeds the description and asks for an understanding", () => {
-    expect(contextPrompt("WHY THIS EXISTS")).toContain("WHY THIS EXISTS");
-    expect(contextPrompt("x")).toContain("understanding");
-    expect(contextPrompt("")).toContain("no description provided");
+    expect(contextPrompt("WHY THIS EXISTS", reviewDiff)).toContain("WHY THIS EXISTS");
+    expect(contextPrompt("x", reviewDiff)).toContain("understanding");
+    expect(contextPrompt("", reviewDiff)).toContain("no description provided");
   });
 
   test("the architecture pass can block on scope or approach", () => {
-    expect(architecturePrompt("")).toContain("block");
-    expect(architecturePrompt("")).toContain("proceed");
+    expect(architecturePrompt("", reviewDiff)).toContain("block");
+    expect(architecturePrompt("", reviewDiff)).toContain("proceed");
   });
 
   test("later passes thread the context understanding when present", () => {
-    expect(correctnessPrompt("MARKER-INTENT")).toContain("MARKER-INTENT");
-    expect(correctnessPrompt("")).not.toContain("context pass");
+    expect(correctnessPrompt("MARKER-INTENT", reviewDiff)).toContain("MARKER-INTENT");
+    expect(correctnessPrompt("", reviewDiff)).not.toContain("context pass");
   });
 
-  test("the micro pass guards safety-critical code from the delete-list", () => {
-    const p = microPrompt("").toLowerCase();
-    expect(p).toContain("security");
-    expect(p).toContain("validation");
-    expect(p).toContain("yagni");
+  test("the correctness pass includes prior test step results", () => {
+    const p = correctnessPrompt("", reviewDiff, "Latest test step status: passed.");
+    expect(p).toContain("Prior test step result");
+    expect(p).toContain("Latest test step status: passed.");
+    expect(p).toContain("do not re-run tests");
+  });
+
+  test("the structural pass rejects nitpicks and demands high-conviction findings", () => {
+    const p = structuralPrompt("", reviewDiff).toLowerCase();
+    expect(p).toContain("high-conviction");
+    expect(p).toContain("do not report nits");
+    expect(p).toContain("at most three findings");
   });
 
   test("the fix prompt lists findings and forbids explanatory comments", () => {
