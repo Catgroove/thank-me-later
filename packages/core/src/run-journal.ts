@@ -65,8 +65,6 @@ export interface RunJournal {
   begin(input: { pipeline: string[]; resumeKey?: string }): Promise<RunJournalSnapshot>;
   /** Advance the Run's resume key as the working branch changes. */
   recordResumeKey(resumeKey: string): Promise<void>;
-  /** Persist the branch checked out by the disposable workspace. */
-  recordWorkspaceBranch(branch: string): Promise<void>;
   /** Atomically persist the source-to-worktree handoff selectors. */
   recordWorktreeHandoff(input: RunWorktreeHandoff): Promise<void>;
   /** Persist an artifact value before its producing Step is marked complete. */
@@ -237,13 +235,6 @@ class FileRunJournal implements RunJournal {
     const metadata = this.requireMetadata();
     if (metadata.resumeKey === resumeKey) return;
     this.metadata = { ...metadata, resumeKey, updatedAt: new Date().toISOString() };
-    await this.writeMetadata();
-  }
-
-  async recordWorkspaceBranch(branch: string): Promise<void> {
-    const metadata = this.requireMetadata();
-    if (metadata.workspaceBranch === branch) return;
-    this.metadata = { ...metadata, workspaceBranch: branch, updatedAt: new Date().toISOString() };
     await this.writeMetadata();
   }
 

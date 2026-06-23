@@ -237,15 +237,16 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     // worktree only), then add the worktree on that branch.
     const sourceGit = createGit(cwd);
     const base = await sourceGit.defaultBranch();
-    let featureBranch = await sourceGit.currentBranch();
-    if (featureBranch === base || featureBranch === "HEAD") {
-      featureBranch = snapshot.metadata.workspaceBranch ?? featureBranch;
-    }
+    const currentBranch = await sourceGit.currentBranch();
+    const featureBranch =
+      snapshot.metadata.worktreeHandoff?.workspaceBranch ??
+      snapshot.metadata.workspaceBranch ??
+      currentBranch;
     if (featureBranch === base || featureBranch === "HEAD") {
       throw new Error("tml ship: could not determine the feature branch to isolate.");
     }
     await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
-    if ((await sourceGit.currentBranch()) === featureBranch) await sourceGit.checkout(base);
+    if (currentBranch === featureBranch) await sourceGit.checkout(base);
     if (!existsSync(join(worktreePath, ".git"))) {
       await createWorktree(cwd, featureBranch, worktreePath);
     }

@@ -212,7 +212,7 @@ async function drive(
         // render the Step empty. Mirrors the normal completion path (artifacts, then rounds).
         for (const artifact of step.produces) {
           const value = snapshot?.artifacts.get(artifact.name);
-          await emit(run, {
+          await emitReplay(run, {
             type: "artifact:written",
             step: step.name,
             artifact: artifact.name,
@@ -221,9 +221,9 @@ async function drive(
         }
         for (const round of snapshot?.rounds ?? []) {
           if (round.step !== step.name) continue;
-          await emit(run, { type: "round:recorded", step: step.name, round });
+          await emitReplay(run, { type: "round:recorded", step: step.name, round });
         }
-        await emit(run, { type: "step:skipped", step: step.name });
+        await emitReplay(run, { type: "step:skipped", step: step.name });
         i += 1;
         continue;
       }
@@ -415,6 +415,20 @@ function stamp(event: RunEventInput, now: () => number): RunEvent {
 
 async function emit(run: EngineRun, event: RunEventInput): Promise<void> {
   if (shouldCoalesce(event, run.coalescing)) return;
+  await emitRecorded(run, event);
+}
+
+type ReplayEventInput = Extract<
+  RunEventInput,
+  { type: "artifact:written" | "round:recorded" | "step:skipped" }
+>;
+
+async function emitReplay(run: EngineRun, event: ReplayEventInput): Promise<void> {
+  if (shouldCoalesceReplay(event, run.coalescing)) return;
+  await emitRecorded(run, event);
+}
+
+async function emitRecorded(run: EngineRun, event: RunEventInput): Promise<void> {
   const stamped = stamp(event, run.now);
   await run.journal?.recordEvent(stamped).catch(() => undefined);
   run.queue.push(stamped);
@@ -444,11 +458,14 @@ function shouldCoalesce(
 ): boolean {
   if (coalescing === undefined) return false;
   if (event.type === "run:started") return coalescing.suppressRunStarted === true;
-  if (event.type === "artifact:written" || event.type === "round:recorded") {
-    return coalescing.replaySteps?.has(event.step) === true;
-  }
-  if (event.type === "step:skipped") return coalescing.replaySteps?.has(event.step) === true;
   return false;
+}
+
+function shouldCoalesceReplay(
+  event: ReplayEventInput,
+  coalescing: EngineEventCoalescing | undefined,
+): boolean {
+  return coalescing?.replaySteps?.has(event.step) === true;
 }
 
 async function failed(
