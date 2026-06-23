@@ -65,7 +65,11 @@ export function PipelineRail(props: RailProps) {
       <For each={props.view().steps}>
         {(step, index) => {
           const isSelected = () => index() === selected();
-          const elapsed = () => stepElapsed(step, props.now());
+          const pendingAt = () => {
+            const pending = props.view().pendingInteraction;
+            return pending?.step === step.name ? pending.at : undefined;
+          };
+          const elapsed = () => stepElapsed(step, props.now(), pendingAt());
           const phases = () => (step.status === "active" ? latestGroupPhases(step) : []);
           return (
             <box flexDirection="column">

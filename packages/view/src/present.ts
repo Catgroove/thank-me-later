@@ -56,7 +56,14 @@ export interface StepView {
   readonly status: "pending" | "active" | "done" | "skipped" | "failed";
   readonly startedAt?: number;
   readonly finishedAt?: number;
+  /** Wall time the Step ran, excluding any spell blocked on a human decision (see `waitedMs`). */
   readonly durationMs?: number;
+  /**
+   * Total time the Step spent blocked on a pending interaction (an `ask`/`approval` gate). It is
+   * excluded from `durationMs` and from live elapsed, so a Step's clock reflects work, not the human
+   * deliberating. Accumulates across multiple gates within one Step.
+   */
+  readonly waitedMs?: number;
   /** Every artifact the Step produced, in declared order. */
   readonly artifacts: ArtifactView[];
   /**
@@ -218,16 +225,31 @@ function recordActivity(view: ViewState, step: string, entry: ActivityEntry): Vi
   };
 }
 
+/** Fold the time a Step spent blocked on a now-resolved interaction into its `waitedMs`. */
+function accumulateWait(view: ViewState, pending: PendingInteraction, at: number): ViewState {
+  const waited = Math.max(0, at - pending.at);
+  if (waited === 0) return view;
+  return {
+    ...view,
+    steps: mapStep(view.steps, pending.step, (s) => ({
+      ...s,
+      waitedMs: (s.waitedMs ?? 0) + waited,
+    })),
+  };
+}
+
 export function present(view: ViewState, event: RunEvent): ViewState {
-  const next = reduce(view, event);
   // The Run is blocked while an interaction is pending, so the next event of any other kind means
-  // that interaction resolved - clear it. Terminal events already clear it in their own branch.
-  if (event.type !== "ask:pending" && event.type !== "approval:pending") {
-    return next.pendingInteraction === undefined
-      ? next
-      : { ...next, pendingInteraction: undefined };
-  }
-  return next;
+  // that interaction resolved. Fold the blocked spell into the waiting Step's `waitedMs` *before*
+  // reducing - so any duration the reducer stamps (e.g. on `step:finished`) already excludes it -
+  // then clear the interaction. Terminal events also clear it in their own branch.
+  const pending = view.pendingInteraction;
+  const resolved =
+    pending !== undefined && event.type !== "ask:pending" && event.type !== "approval:pending";
+  const next = reduce(resolved ? accumulateWait(view, pending, event.at) : view, event);
+  return resolved && next.pendingInteraction !== undefined
+    ? { ...next, pendingInteraction: undefined }
+    : next;
 }
 
 function reduce(view: ViewState, event: RunEvent): ViewState {
@@ -295,7 +317,9 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
           ...s,
           status: "done",
           finishedAt: event.at,
-          ...(s.startedAt !== undefined ? { durationMs: event.at - s.startedAt } : {}),
+          ...(s.startedAt !== undefined
+            ? { durationMs: Math.max(0, event.at - s.startedAt - (s.waitedMs ?? 0)) }
+            : {}),
           currentTool: undefined,
         })),
         activeStep: undefined,
@@ -339,7 +363,9 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
           ...s,
           status: "failed",
           finishedAt: event.at,
-          ...(s.startedAt !== undefined ? { durationMs: event.at - s.startedAt } : {}),
+          ...(s.startedAt !== undefined
+            ? { durationMs: Math.max(0, event.at - s.startedAt - (s.waitedMs ?? 0)) }
+            : {}),
           error: event.error,
           currentTool: undefined,
         })),
