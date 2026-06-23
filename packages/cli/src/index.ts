@@ -44,7 +44,6 @@ export interface ShipDeps {
   renderer?: Renderer;
   /** Build the full-screen TUI renderer. Behind a seam so non-TTY paths never initialize OpenTUI. */
   createTui?: (options: {
-    verbose: boolean;
     onAbort: () => void;
   }) => Promise<InteractiveRenderer> | InteractiveRenderer;
 }
@@ -64,14 +63,11 @@ async function selectRenderer(opts: {
 }): Promise<Renderer> {
   if (!opts.isTTY) return createTerminalRenderer({ plain: true, verbose: opts.verbose });
   if (opts.plain) return createTerminalRenderer({ verbose: opts.verbose });
-  return opts.createTui({ verbose: opts.verbose, onAbort: opts.onAbort });
+  return opts.createTui({ onAbort: opts.onAbort });
 }
 
 /** Default TUI factory: dynamically imports the OpenTUI renderer so non-TTY paths never load it. */
-async function defaultCreateTui(options: {
-  verbose: boolean;
-  onAbort: () => void;
-}): Promise<InteractiveRenderer> {
+async function defaultCreateTui(options: { onAbort: () => void }): Promise<InteractiveRenderer> {
   const { createTuiRenderer } = await import("@tml/view/tui");
   return createTuiRenderer(options);
 }

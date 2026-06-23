@@ -59,10 +59,9 @@ describe("tui navigation", () => {
     expect(nav.tab).toBe(TABS[TABS.length - 1]);
   });
 
-  test("g and ? toggle the global activity and help; enter toggles expansion", () => {
+  test("? toggles help and enter toggles expansion; g is no longer bound", () => {
     let nav = initialNav;
-    nav = navOnKey(nav, { name: "g" }, baseView);
-    expect(nav.showGlobalActivity).toBe(true);
+    expect(navOnKey(nav, { name: "g" }, baseView)).toBe(nav); // activity is always-on now, no toggle
     nav = navOnKey(nav, { name: "?" }, baseView);
     expect(nav.showHelp).toBe(true);
     nav = navOnKey(nav, { name: "return" }, baseView);

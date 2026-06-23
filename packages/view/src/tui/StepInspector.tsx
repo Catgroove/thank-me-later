@@ -1,14 +1,15 @@
 /** @jsxImportSource @opentui/solid */
 // The right pane: a generic per-Step inspector with fixed tabs (Summary, Artifacts, Findings,
-// Rounds, Activity). Every Step - bundled or plugin - renders through the same tabs; nothing here
-// branches on Step names or artifact meanings. Durations and Round/Finding data come straight from
-// the folded ViewState (engine facts), never from scraping rendered Markdown.
+// Rounds). Every Step - bundled or plugin - renders through the same tabs; nothing here branches on
+// Step names or artifact meanings. Durations and Round/Finding data come straight from the folded
+// ViewState (engine facts), never from scraping rendered Markdown. The live activity trail is the
+// App's always-visible bottom panel, not a tab here.
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
 import type { Finding, RoundRecord } from "@tml/core";
-import type { ActivityEntry, StepView, ViewState } from "../present.ts";
+import type { StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import { stepElapsed } from "./format.ts";
 import { TABS, effectiveIndex, type NavState, type Tab } from "./navigation.ts";
@@ -164,39 +165,6 @@ function Rounds(props: { step: StepView }) {
   );
 }
 
-function ActivityLine(props: { entry: ActivityEntry }) {
-  const e = props.entry;
-  const text = () => {
-    if (e.kind === "tool") {
-      const label = `${e.tool?.name ?? ""}${e.tool?.detail ? ` · ${e.tool.detail}` : ""}`;
-      return `⚙ ${sanitize(label)}${e.phase === "end" ? " (done)" : ""}`;
-    }
-    if (e.kind === "log") return `· ${sanitize(e.text ?? "")}`;
-    return sanitize(e.text ?? "");
-  };
-  return (
-    <text
-      fg={e.kind === "tool" ? "#a78bfa" : e.kind === "log" ? "#94a3b8" : "#cbd5e1"}
-      wrapMode="word"
-    >
-      {text()}
-    </text>
-  );
-}
-
-function Activity(props: { step: StepView }) {
-  return (
-    <box flexDirection="column">
-      <Show
-        when={props.step.activity.length > 0}
-        fallback={<text fg="#64748b">No activity yet.</text>}
-      >
-        <For each={props.step.activity}>{(entry) => <ActivityLine entry={entry} />}</For>
-      </Show>
-    </box>
-  );
-}
-
 export function StepInspector(props: InspectorProps) {
   const step = (): StepView | undefined =>
     props.view().steps[effectiveIndex(props.nav(), props.view())];
@@ -224,9 +192,6 @@ export function StepInspector(props: InspectorProps) {
               </Show>
               <Show when={tab() === "rounds"}>
                 <Rounds step={s()} />
-              </Show>
-              <Show when={tab() === "activity"}>
-                <Activity step={s()} />
               </Show>
             </scrollbox>
           </box>

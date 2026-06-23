@@ -1,10 +1,10 @@
 // Pure TUI navigation state: which Step is selected, whether the detail pane auto-follows the active
-// Step, the active inspector tab, and toggles for help / global activity. Kept free of OpenTUI and of
-// any default Step-name knowledge so it can be unit-tested in isolation and stays Pipeline-generic.
+// Step, the active inspector tab, and the help toggle. Kept free of OpenTUI and of any default
+// Step-name knowledge so it can be unit-tested in isolation and stays Pipeline-generic.
 
 import type { ViewState } from "../present.ts";
 
-export const TABS = ["summary", "artifacts", "findings", "rounds", "activity"] as const;
+export const TABS = ["summary", "artifacts", "findings", "rounds"] as const;
 export type Tab = (typeof TABS)[number];
 
 export interface NavState {
@@ -14,7 +14,6 @@ export interface NavState {
   readonly followActive: boolean;
   readonly tab: Tab;
   readonly showHelp: boolean;
-  readonly showGlobalActivity: boolean;
   /** Whether long artifact/finding bodies are expanded in the inspector. */
   readonly expanded: boolean;
 }
@@ -24,7 +23,6 @@ export const initialNav: NavState = {
   followActive: true,
   tab: "summary",
   showHelp: false,
-  showGlobalActivity: false,
   expanded: false,
 };
 
@@ -81,8 +79,6 @@ export function navOnKey(nav: NavState, key: KeyLike, view: ViewState): NavState
       return { ...nav, followActive: true };
     case "tab":
       return { ...nav, tab: nextTab(nav.tab, key.shift ? -1 : 1) };
-    case "g":
-      return { ...nav, showGlobalActivity: !nav.showGlobalActivity };
     case "?":
       return { ...nav, showHelp: !nav.showHelp };
     case "return":

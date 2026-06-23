@@ -1,14 +1,14 @@
 /** @jsxImportSource @opentui/solid */
-// The TUI root: header, the Pipeline rail + Step inspector body, a live activity strip, and the
-// pending-interaction / abort-confirmation drawers. It owns the keyboard: navigation folds through
-// the pure `navOnKey`, approval keys through the pure approval helpers, and abort goes through the
-// injected `onAbort`. Nothing here branches on default Step names - it is generic over the Pipeline.
+// The TUI root: header, the Pipeline rail + Step inspector body, an always-visible activity panel,
+// and the pending-interaction / abort-confirmation drawers. It owns the keyboard: navigation folds
+// through the pure `navOnKey`, approval keys through the pure approval helpers, and abort goes through
+// the injected `onAbort`. Nothing here branches on default Step names - it is generic over the Pipeline.
 
 import { For, Show, createEffect, createSignal } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
-import type { ViewState } from "../present.ts";
+import type { ActivityEntry, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import { runElapsed, statusColor } from "./format.ts";
 import { initialNav, navOnKey, type NavState } from "./navigation.ts";
@@ -119,16 +119,17 @@ export function App(props: AppProps) {
   };
 
   return (
-    <box flexDirection="column" width="100%" height="100%" backgroundColor="#0b1120">
+    <box flexDirection="column" width="100%" height="100%" paddingTop={1} backgroundColor="#0b1120">
       <Header view={props.view} now={props.now} />
-      <box flexGrow={1} flexDirection="row">
+      <box flexGrow={7} flexBasis={0} flexDirection="row">
         <PipelineRail view={props.view} nav={nav} now={props.now} />
         <StepInspector view={props.view} nav={nav} now={props.now} />
       </box>
-      <Show when={nav().showGlobalActivity}>
-        <GlobalActivity view={props.view} />
+      {/* The activity panel yields the lower region to a blocking drawer: the Run is paused on a
+          decision, so no activity is flowing, and the drawer is the surface that needs the room. */}
+      <Show when={props.prompt() === undefined && !confirmAbort()}>
+        <ActivityPanel view={props.view} />
       </Show>
-      <LiveStrip view={props.view} />
       <Show when={nav().showHelp}>
         <KeyHelp />
       </Show>
@@ -178,47 +179,51 @@ function stepStatusOf(status: ViewState["status"]): "active" | "done" | "failed"
   return "active";
 }
 
-function LiveStrip(props: { view: Accessor<ViewState> }) {
-  const latest = () => props.view().globalActivity.at(-1);
+/** One cross-Step activity line: a dim `step:` prefix and the entry, coloured by kind (purple tool). */
+function ActivityLine(props: { entry: ActivityEntry }) {
+  const e = props.entry;
   const line = () => {
-    const entry = latest();
-    if (entry === undefined) return "";
-    if (entry.kind === "tool") {
-      return `${entry.step}: ⚙ ${entry.tool?.name ?? ""}${entry.tool?.detail ? ` · ${entry.tool.detail}` : ""}`;
+    const prefix = `${e.step}: `;
+    if (e.kind === "tool") {
+      const label = `${e.tool?.name ?? ""}${e.tool?.detail ? ` · ${e.tool.detail}` : ""}`;
+      return `${prefix}⚙ ${label}${e.phase === "end" ? " (done)" : ""}`;
     }
-    const text =
-      (entry.text ?? "")
-        .split("\n")
-        .filter((l) => l.trim() !== "")
-        .at(-1) ?? "";
-    return text === "" ? "" : `${entry.step}: ${text}`;
+    const body = (e.text ?? "").replace(/\n+/g, " ");
+    return e.kind === "log" ? `${prefix}· ${body}` : `${prefix}${body}`;
   };
   return (
-    <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
-      <text fg="#94a3b8" truncate>
-        {sanitize(line())}
-      </text>
-    </box>
+    <text
+      fg={e.kind === "tool" ? "#a78bfa" : e.kind === "log" ? "#94a3b8" : "#cbd5e1"}
+      wrapMode="word"
+    >
+      {sanitize(line())}
+    </text>
   );
 }
 
-function GlobalActivity(props: { view: Accessor<ViewState> }) {
+/**
+ * The always-visible activity panel: the full cross-Step trail, sticky-scrolled to the latest line.
+ * It replaces both the old one-line strip and the toggled overlay - one surface, no flag, no tab.
+ * `flexBasis={0}` + the 7:3 grow split with the rail/inspector row gives it ~30% of the body height,
+ * independent of how much either side's content happens to fill.
+ */
+function ActivityPanel(props: { view: Accessor<ViewState> }) {
   return (
-    <box flexDirection="column" border borderColor="#334155" title="activity" height={8}>
-      <scrollbox flexGrow={1} stickyScroll stickyStart="bottom" paddingLeft={1}>
-        <For each={props.view().globalActivity}>
-          {(entry) => (
-            <text fg="#94a3b8" wrapMode="word">
-              {sanitize(
-                `${entry.step}: ${
-                  entry.kind === "tool"
-                    ? `⚙ ${entry.tool?.name ?? ""}`
-                    : (entry.text ?? "").replace(/\n+/g, " ")
-                }`,
-              )}
-            </text>
-          )}
-        </For>
+    <box
+      flexGrow={3}
+      flexBasis={0}
+      flexDirection="column"
+      border
+      borderColor="#a78bfa"
+      title="activity"
+    >
+      <scrollbox flexGrow={1} stickyScroll stickyStart="bottom" paddingLeft={1} paddingRight={1}>
+        <Show
+          when={props.view().globalActivity.length > 0}
+          fallback={<text fg="#64748b">No activity yet.</text>}
+        >
+          <For each={props.view().globalActivity}>{(entry) => <ActivityLine entry={entry} />}</For>
+        </Show>
       </scrollbox>
     </box>
   );
@@ -237,9 +242,7 @@ function AbortConfirm() {
 function FooterKeys() {
   return (
     <box paddingLeft={1} backgroundColor="#0b1120">
-      <text fg="#475569">
-        j/k move · . follow · tab tabs · enter expand · g activity · ? help · q abort
-      </text>
+      <text fg="#475569">j/k move · . follow · tab tabs · enter expand · ? help · q abort</text>
     </box>
   );
 }

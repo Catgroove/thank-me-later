@@ -19,8 +19,6 @@ import { createInteractions, type ActivePrompt } from "./tui/interaction.ts";
 import { epilogueLines } from "./tui/epilogue.ts";
 
 export interface TuiRendererOptions {
-  /** Seal the full per-step trail (the `--verbose` flag); reserved for future verbose surfaces. */
-  readonly verbose?: boolean;
   /** Abort the Run when the user closes the TUI while it is active. */
   readonly onAbort?: () => void;
   /** Clock for live elapsed displays and the epilogue. Defaults to `Date.now`; injectable for tests. */
