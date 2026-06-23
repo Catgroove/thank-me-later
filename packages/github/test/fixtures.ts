@@ -2,19 +2,11 @@
 //
 // Refresh against a real repo with:
 //   gh pr list --head <branch> --state all --json number,state
-//   gh api graphql -F owner=<o> -F repo=<r> -F number=<n> -f query="$SNAPSHOT_QUERY"
-//   gh api graphql -F owner=<o> -F repo=<r> -F number=<n> -f query="$CHECKS_QUERY"
+//   gh pr view <n> --json number,url,headRefName,baseRefName,title,body,state,mergeable,statusCheckRollup
+//   gh pr view <n> --json statusCheckRollup
 //   gh pr create --head <branch> --base main --title t --body b   (prints the PR URL)
-// The query strings live in src/queries.ts.
 
-import type {
-  ChecksData,
-  GhCheckNode,
-  GhGraphQlResponse,
-  GhPrListRow,
-  GhPullRequestNode,
-  SnapshotData,
-} from "../src/map.ts";
+import type { GhCheckNode, GhChecksView, GhPrListRow, GhPullRequestNode } from "../src/map.ts";
 
 // --- Check rollup nodes ---------------------------------------------------------
 
@@ -46,7 +38,7 @@ export const checkQueued: GhCheckNode = {
   conclusion: null,
 };
 
-/** A conclusion outside core's union — must coarsen to `neutral`. */
+/** A conclusion outside core's union - must coarsen to `neutral`. */
 export const checkSkipped: GhCheckNode = {
   __typename: "CheckRun",
   name: "optional",
@@ -70,10 +62,6 @@ export const statusContextPending: GhCheckNode = {
 
 // --- Full PR snapshots ----------------------------------------------------------
 
-function snapshot(node: GhPullRequestNode): GhGraphQlResponse<SnapshotData> {
-  return { data: { repository: { pullRequest: node } } };
-}
-
 export const prOpen: GhPullRequestNode = {
   number: 42,
   url: "https://github.com/acme/widget/pull/42",
@@ -83,15 +71,7 @@ export const prOpen: GhPullRequestNode = {
   body: "Does x.",
   state: "OPEN",
   mergeable: "MERGEABLE",
-  commits: {
-    nodes: [
-      {
-        commit: {
-          statusCheckRollup: { contexts: { nodes: [checkSuccess, statusContextSuccess] } },
-        },
-      },
-    ],
-  },
+  statusCheckRollup: [checkSuccess, statusContextSuccess],
 };
 
 export const prConflicted: GhPullRequestNode = {
@@ -103,7 +83,7 @@ export const prConflicted: GhPullRequestNode = {
   body: "Does y.",
   state: "OPEN",
   mergeable: "CONFLICTING",
-  commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [checkFailure] } } } }] },
+  statusCheckRollup: [checkFailure],
 };
 
 export const prMerged: GhPullRequestNode = {
@@ -115,35 +95,23 @@ export const prMerged: GhPullRequestNode = {
   body: "Does z.",
   state: "MERGED",
   mergeable: "UNKNOWN",
-  commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+  statusCheckRollup: null,
 };
 
-export const snapshotOpenResponse = snapshot(prOpen);
-export const snapshotConflictedResponse = snapshot(prConflicted);
-export const snapshotMergedResponse = snapshot(prMerged);
+export const snapshotOpenResponse = prOpen;
+export const snapshotConflictedResponse = prConflicted;
+export const snapshotMergedResponse = prMerged;
 
-// --- Checks-only query responses (getChecks poll) -------------------------------
+// --- Checks-only `gh pr view` responses (getChecks poll) -------------------------
 
-function checks(nodes: readonly GhCheckNode[]): GhGraphQlResponse<ChecksData> {
-  return {
-    data: {
-      repository: {
-        pullRequest: {
-          commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes } } } }] },
-        },
-      },
-    },
-  };
+function checks(nodes: readonly GhCheckNode[]): GhChecksView {
+  return { statusCheckRollup: nodes };
 }
 
 export const checksAllDone = checks([checkSuccess, statusContextSuccess]);
 export const checksPending = checks([checkSuccess, checkInProgress]);
 export const checksWithFailure = checks([checkSuccess, checkFailure]);
-export const checksEmpty: GhGraphQlResponse<ChecksData> = {
-  data: {
-    repository: { pullRequest: { commits: { nodes: [{ commit: { statusCheckRollup: null } }] } } },
-  },
-};
+export const checksEmpty: GhChecksView = { statusCheckRollup: null };
 
 // --- `gh pr list` rows ----------------------------------------------------------
 

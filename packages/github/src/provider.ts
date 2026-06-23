@@ -1,4 +1,4 @@
-// createGitHubProvider — composes the `gh` runner, the argv/GraphQL builders, and the
+// createGitHubProvider - composes the `gh` runner, the argv builders, and the
 // pure mappers into core's `GitProvider`. The provider stays thin: every method runs a
 // builder through `run`, parses JSON, and hands it to a mapper. The only state is
 // the (injectable) runner.
@@ -7,55 +7,25 @@ import type { CheckRun, GitProvider, OpenPullRequestInput, Pending, PullRequest 
 
 import { defaultRunner, type GhRunner } from "./gh.ts";
 import {
-  type ChecksData,
-  type GhGraphQlResponse,
+  type GhCheckNode,
+  type GhChecksView,
   type GhPrListRow,
   mapChecks,
   mapPullRequest,
-  type SnapshotData,
+  type GhPullRequestNode,
 } from "./map.ts";
 import {
   checksArgs,
-  checkLogLinksArgs,
   prCreateArgs,
   prEditBodyArgs,
   prListArgs,
+  prViewArgs,
   runViewFailedLogArgs,
-  snapshotArgs,
-} from "./queries.ts";
+} from "./args.ts";
 
 export interface GitHubProviderOptions {
   /** Override the `gh` runner; tests inject a fake returning canned JSON. */
   readonly run?: GhRunner;
-}
-
-type GhCheckLogNode =
-  | {
-      readonly __typename: "CheckRun";
-      readonly name: string;
-      readonly status: string;
-      readonly conclusion: string | null;
-      readonly detailsUrl?: string;
-    }
-  | {
-      readonly __typename: "StatusContext";
-      readonly context: string;
-      readonly state: string;
-      readonly targetUrl?: string;
-    };
-
-interface CheckLogLinksData {
-  readonly repository: {
-    readonly pullRequest: { readonly commits: { readonly nodes: readonly GhCommitLinksNode[] } };
-  };
-}
-
-interface GhCommitLinksNode {
-  readonly commit: {
-    readonly statusCheckRollup: {
-      readonly contexts: { readonly nodes: readonly GhCheckLogNode[] };
-    } | null;
-  };
 }
 
 interface CheckLogRow {
@@ -84,7 +54,7 @@ function isFailedRow(row: CheckLogRow): boolean {
   return conclusion === "failure" || state === "failure" || state === "error";
 }
 
-function checkLogRow(node: GhCheckLogNode): CheckLogRow {
+function checkLogRow(node: GhCheckNode): CheckLogRow {
   if (node.__typename === "CheckRun") {
     return {
       name: node.name,
@@ -96,9 +66,8 @@ function checkLogRow(node: GhCheckLogNode): CheckLogRow {
   return { name: node.context, state: node.state, link: node.targetUrl };
 }
 
-function checkLogRows(data: CheckLogLinksData): CheckLogRow[] {
-  const rollup = data.repository.pullRequest.commits.nodes[0]?.commit.statusCheckRollup;
-  return (rollup?.contexts.nodes ?? []).map(checkLogRow);
+function checkLogRows(rollup: readonly GhCheckNode[] | null | undefined): CheckLogRow[] {
+  return (rollup ?? []).map(checkLogRow);
 }
 
 function renderCheckRows(rows: readonly CheckLogRow[]): string {
@@ -115,8 +84,8 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
   const run = opts.run ?? defaultRunner(cwd);
 
   async function getPullRequest(prNumber: number): Promise<PullRequest> {
-    const res = JSON.parse(await run(snapshotArgs(prNumber))) as GhGraphQlResponse<SnapshotData>;
-    return mapPullRequest(res.data.repository.pullRequest);
+    const res = JSON.parse(await run(prViewArgs(prNumber))) as GhPullRequestNode;
+    return mapPullRequest(res);
   }
 
   return {
@@ -144,8 +113,8 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
     getChecks(prNumber: number): Pending<CheckRun[]> {
       return {
         async poll() {
-          const res = JSON.parse(await run(checksArgs(prNumber))) as GhGraphQlResponse<ChecksData>;
-          const checks = mapChecks(res.data.repository.pullRequest.commits);
+          const res = JSON.parse(await run(checksArgs(prNumber))) as GhChecksView;
+          const checks = mapChecks(res.statusCheckRollup);
           const pending = checks.some((c) => c.status === "queued" || c.status === "in_progress");
           return pending ? { done: false } : { done: true, value: checks };
         },
@@ -162,10 +131,8 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
     },
 
     async getFailedCheckLogs(input: { prNumber: number; checkNames?: string[] }): Promise<string> {
-      const res = JSON.parse(
-        await run(checkLogLinksArgs(input.prNumber)),
-      ) as GhGraphQlResponse<CheckLogLinksData>;
-      const rows = checkLogRows(res.data);
+      const res = JSON.parse(await run(checksArgs(input.prNumber))) as GhChecksView;
+      const rows = checkLogRows(res.statusCheckRollup);
       const names = new Set(input.checkNames ?? []);
       const failed = rows.filter(
         (row) => (names.size === 0 || names.has(row.name)) && isFailedRow(row),

@@ -14,8 +14,6 @@ import {
   makeFinding,
   renderRoundsForPr,
   type Finding,
-  type Git,
-  type GitStatus,
   type Harness,
   type RoundCheckInput,
   type RoundRecord,
@@ -23,6 +21,7 @@ import {
 } from "@tml/core";
 import { executeRoundLoopWithApproval } from "../approval-gate.ts";
 import { prBody, reviewSummary } from "../artifacts.ts";
+import { revertIfWorktreeChanged } from "../git-guard.ts";
 import {
   architecturePrompt,
   architectureSchema,
@@ -66,26 +65,8 @@ async function runPass(
   return parsePassResult(result.output);
 }
 
-/** The set of files git reports as changed (staged or unstaged), for before/after comparison. */
-function touched(status: GitStatus): string {
-  return [...status.staged, ...status.unstaged].sort().join("\n");
-}
-
-/** Read-only is prompt-enforced, not sandboxed: the passes call the same edit-capable Harness.
- *  This guard makes read-only a real invariant - if a pass modified the worktree despite the
- *  prompt, those edits are reverted so they can't be misattributed to the fix pass and committed.
- *  The pipeline commits all prior work before review runs, and the round executor commits each
- *  fix before verification, so reverting to HEAD discards exactly the rogue edits. */
-async function revertRogueEdits(
-  git: Git,
-  before: GitStatus,
-  log: (m: string) => void,
-): Promise<boolean> {
-  if (touched(await git.status()) === touched(before)) return false;
-  log("warning: a read-only review pass modified the worktree; reverting before continuing");
-  await git.discardChanges();
-  return true;
-}
+const READ_ONLY_EDIT_WARNING =
+  "warning: a read-only review pass modified the worktree; reverting before continuing";
 
 async function runGuardedPass(
   ctx: Ctx,
@@ -96,7 +77,7 @@ async function runGuardedPass(
   try {
     return await runPass(ctx.agent, prompt, schema);
   } finally {
-    await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+    await revertIfWorktreeChanged(ctx.git, before, (m) => ctx.log(m), READ_ONLY_EDIT_WARNING);
   }
 }
 
@@ -170,7 +151,12 @@ async function runPostContextPasses(
     runPass(ctx.agent, prompts.correctness),
     runPass(ctx.agent, prompts.structural),
   ]);
-  const tainted = await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+  const tainted = await revertIfWorktreeChanged(
+    ctx.git,
+    before,
+    (m) => ctx.log(m),
+    READ_ONLY_EDIT_WARNING,
+  );
   const rejected = settled.find((result) => result.status === "rejected");
   if (rejected !== undefined) throw rejected.reason;
   const results = settled.map((result) => {

@@ -253,9 +253,8 @@ describe("default pipeline prompts", () => {
     expect(architectureSchema.properties.verdict.enum).toEqual(["proceed", "block"]);
   });
 
-  test("prDescriptionPrompt embeds the reviewer notes; schema requires title and body", () => {
-    expect(prDescriptionPrompt("FOUND A BUG")).toContain("FOUND A BUG");
-    expect(prDescriptionPrompt("notes")).toContain("diff");
+  test("prDescriptionPrompt asks for a title and body; schema requires both", () => {
+    expect(prDescriptionPrompt()).toContain("diff");
     expect(prDescriptionSchema.required).toEqual(["title", "body"]);
   });
 
