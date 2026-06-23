@@ -165,6 +165,7 @@ function FindingLine(props: { finding: Finding; focused?: boolean }) {
   const f = props.finding;
   // The focused background matches the approval drawer's focused-finding row so the two surfaces
   // read as pointing at the same finding.
+  const marker = f.blocking === true ? `[blocking] [${f.severity}]` : `[${f.severity}]`;
   return (
     <box
       flexDirection="column"
@@ -174,7 +175,7 @@ function FindingLine(props: { finding: Finding; focused?: boolean }) {
       backgroundColor={props.focused ? "#334155" : undefined}
     >
       <text fg={SEVERITY_COLOR[f.severity]}>
-        [{f.severity}] {sanitize(f.title)}
+        {marker} {sanitize(f.title)}
         {f.location ? ` — ${sanitize(f.location)}` : ""}
       </text>
       <text fg="#94a3b8" wrapMode="word" marginLeft={2}>

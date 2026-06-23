@@ -16,6 +16,7 @@ export interface Finding {
   readonly title: string;
   readonly detail: string;
   readonly location?: string;
+  readonly blocking?: boolean;
 }
 
 export interface RoundRecord {
@@ -123,6 +124,7 @@ function parseAgentFinding(
     ...(typeof f.location === "string" && f.location.trim().length > 0
       ? { location: f.location.trim() }
       : {}),
+    ...(typeof f.blocking === "boolean" ? { blocking: f.blocking } : {}),
   });
 }
 
@@ -148,13 +150,15 @@ function label(severity: FindingSeverity): string {
 /** Pure Markdown rendering for a single PR-summary finding line. */
 export function renderFindingForPr(finding: Finding): string {
   const location = finding.location ? ` \`${finding.location}\`` : "";
+  const prefix =
+    finding.blocking === true ? `Blocking ${label(finding.severity)}` : label(finding.severity);
   const action =
     finding.action === "auto-fix"
       ? " (auto-fix)"
       : finding.action === "ask-user"
         ? " (needs user decision)"
         : "";
-  return `- ${label(finding.severity)}:${location} ${finding.title} - ${finding.detail}${action}`;
+  return `- ${prefix}:${location} ${finding.title} - ${finding.detail}${action}`;
 }
 
 /** Pure Markdown rendering for one completed round in a PR summary. */

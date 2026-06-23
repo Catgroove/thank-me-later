@@ -46,16 +46,27 @@ function actionPriority(action: Finding["action"]): number {
   return 1;
 }
 
-function findingPriority(finding: Finding): readonly [number, number] {
-  return [severityPriority(finding.severity), actionPriority(finding.action)];
+function blockingPriority(finding: Finding): number {
+  return finding.blocking === true ? 2 : 1;
+}
+
+function findingPriority(finding: Finding): readonly [number, number, number] {
+  return [
+    blockingPriority(finding),
+    severityPriority(finding.severity),
+    actionPriority(finding.action),
+  ];
 }
 
 function isHigherPriority(candidate: Finding, current: Finding): boolean {
-  const [candidateSeverity, candidateAction] = findingPriority(candidate);
-  const [currentSeverity, currentAction] = findingPriority(current);
+  const [candidateBlocking, candidateSeverity, candidateAction] = findingPriority(candidate);
+  const [currentBlocking, currentSeverity, currentAction] = findingPriority(current);
   return (
-    candidateSeverity > currentSeverity ||
-    (candidateSeverity === currentSeverity && candidateAction > currentAction)
+    candidateBlocking > currentBlocking ||
+    (candidateBlocking === currentBlocking && candidateSeverity > currentSeverity) ||
+    (candidateBlocking === currentBlocking &&
+      candidateSeverity === currentSeverity &&
+      candidateAction > currentAction)
   );
 }
 

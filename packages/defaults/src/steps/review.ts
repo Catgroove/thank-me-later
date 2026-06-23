@@ -46,13 +46,15 @@ const REVIEW_PASS_TITLES = {
   structural: "Structural maintainability",
 } as const;
 
-const BLOCK_APPROVAL_FINDING = makeFinding("review", {
+const BLOCK_FALLBACK_FINDING = makeFinding("review", {
   severity: "error",
   action: "ask-user",
   title: "Blocking architecture verdict",
   detail:
-    "The architecture pass returned a block verdict, meaning the change was judged fundamentally " +
-    "risky, out of scope, or too large to review safely. Approve explicitly before proceeding.",
+    "The architecture pass returned a block verdict without a specific finding, meaning the " +
+    "change was judged fundamentally risky, out of scope, or too large to review safely. " +
+    "Approve explicitly before proceeding.",
+  blocking: true,
 });
 
 /** Run one read-only review pass: structured reply against the given schema, validated. */
@@ -122,17 +124,31 @@ function hasBlockVerdict(passes: readonly ReviewPass[]): boolean {
   return passes.some((pass) => pass.result.verdict === "block");
 }
 
-function ensureBlockRequiresUser(passes: readonly ReviewPass[]): ReviewPass[] {
+function markBlockingFinding(finding: Finding): Finding {
+  const severity = finding.severity === "info" ? "warning" : finding.severity;
+  return makeFinding("review", {
+    severity,
+    action: "ask-user",
+    title: finding.title,
+    detail: finding.detail,
+    ...(finding.location ? { location: finding.location } : {}),
+    blocking: true,
+  });
+}
+
+function markBlockRequiresUser(result: PassResult): PassResult {
+  if (result.verdict !== "block") return result;
+  if (result.findings.length === 0) return result;
+  return { ...result, findings: result.findings.map(markBlockingFinding) };
+}
+
+function ensureBlockHasFinding(passes: readonly ReviewPass[]): ReviewPass[] {
   if (!hasBlockVerdict(passes)) return [...passes];
   return passes.map((pass) => {
-    if (pass.result.verdict !== "block") return pass;
-    const hasBlockingFinding = pass.result.findings.some(
-      (finding) => finding.id === BLOCK_APPROVAL_FINDING.id,
-    );
-    if (hasBlockingFinding) return pass;
+    if (pass.result.verdict !== "block" || pass.result.findings.length > 0) return pass;
     return {
       ...pass,
-      result: { ...pass.result, findings: [...pass.result.findings, BLOCK_APPROVAL_FINDING] },
+      result: { ...pass.result, findings: [BLOCK_FALLBACK_FINDING] },
     };
   });
 }
@@ -158,8 +174,8 @@ async function runPostContextPasses(
     ctx.phase(label, run, { group, findings: passFindings });
   const before = await ctx.git.status();
   const settled = await Promise.allSettled([
-    phase(REVIEW_PASS_TITLES.architecture, () =>
-      runPass(ctx.agent, prompts.architecture, architectureSchema),
+    phase(REVIEW_PASS_TITLES.architecture, async () =>
+      markBlockRequiresUser(await runPass(ctx.agent, prompts.architecture, architectureSchema)),
     ),
     phase(REVIEW_PASS_TITLES.correctness, () => runPass(ctx.agent, prompts.correctness)),
     phase(REVIEW_PASS_TITLES.structural, () => runPass(ctx.agent, prompts.structural)),
@@ -180,8 +196,8 @@ async function runPostContextPasses(
 
   ctx.log("warning: rerunning read-only review passes serially after reverting rogue edits");
   return [
-    await phase(REVIEW_PASS_TITLES.architecture, () =>
-      runGuardedPass(ctx, prompts.architecture, architectureSchema),
+    await phase(REVIEW_PASS_TITLES.architecture, async () =>
+      markBlockRequiresUser(await runGuardedPass(ctx, prompts.architecture, architectureSchema)),
     ),
     await phase(REVIEW_PASS_TITLES.correctness, () => runGuardedPass(ctx, prompts.correctness)),
     await phase(REVIEW_PASS_TITLES.structural, () => runGuardedPass(ctx, prompts.structural)),
@@ -209,7 +225,7 @@ async function runReviewPasses(
     testResults,
   );
 
-  return ensureBlockRequiresUser(
+  return ensureBlockHasFinding(
     dedupeReviewPasses([
       { title: REVIEW_PASS_TITLES.context, result: context },
       { title: REVIEW_PASS_TITLES.architecture, result: architecture },
