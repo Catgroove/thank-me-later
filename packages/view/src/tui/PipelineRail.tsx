@@ -1,8 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 // The left rail: the assembled Pipeline as one ordered list, exactly as emitted by `run:started`.
 // Generic over the Pipeline - every Step renders identically (glyph, name, elapsed, short headline),
-// with no branching on Step names or semantics. The active Step shows a spinner; the selected Step
-// is highlighted. An active Step that declares phases shows its current-group phases as a sub-tree,
+// with no branching on Step names or semantics. The active Step shows a spinner - or, when it is
+// blocked awaiting a human decision, a static amber glyph so it reads as "waiting on you", not
+// "busy". The selected Step is highlighted. An active Step that declares phases shows its
+// current-group phases as a sub-tree,
 // so a multi-pass Step (e.g. review) is no longer an opaque single spinner.
 
 import { For, Show } from "solid-js";
@@ -15,6 +17,8 @@ import {
   stepElapsed,
   statusColor,
   statusGlyph,
+  WAITING_COLOR,
+  WAITING_GLYPH,
 } from "./format.ts";
 import { effectiveIndex, type NavState } from "./navigation.ts";
 import { ensureSpinner } from "./spinner.ts";
@@ -79,10 +83,12 @@ export function PipelineRail(props: RailProps) {
                 paddingRight={1}
                 backgroundColor={isSelected() ? "#1e293b" : undefined}
               >
-                {step.status === "active" ? (
-                  <spinner name="dots" color={statusColor("active")} />
-                ) : (
+                {step.status !== "active" ? (
                   <text fg={statusColor(step.status)}>{statusGlyph(step.status)}</text>
+                ) : pendingAt() !== undefined ? (
+                  <text fg={WAITING_COLOR}>{WAITING_GLYPH}</text>
+                ) : (
+                  <spinner name="dots" color={statusColor("active")} />
                 )}
                 <text flexGrow={1} marginLeft={1} fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}>
                   {sanitize(step.name)}
