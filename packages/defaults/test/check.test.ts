@@ -317,7 +317,7 @@ describe("checkStep", () => {
       agent,
       git,
       approveFindings: (input) => {
-        suggested.push(input.selectedFindingIds);
+        suggested.push(input.suggestedFindingIds);
         return Promise.resolve({ action: "approve" });
       },
     });

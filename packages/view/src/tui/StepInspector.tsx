@@ -69,8 +69,10 @@ function dedupeById(findings: readonly Finding[]): Finding[] {
  * the round is recorded).
  */
 function visibleFindings(step: StepView): Finding[] {
+  const phaseFindings = dedupeById(latestGroupPhases(step).flatMap((phase) => phase.findings));
+  if (phaseFindings.length > 0 && step.status === "active") return phaseFindings;
   if (step.rounds.length > 0) return step.findings;
-  return dedupeById(latestGroupPhases(step).flatMap((phase) => phase.findings));
+  return phaseFindings;
 }
 
 function PhaseLine(props: { phase: PhaseView; now: number }) {

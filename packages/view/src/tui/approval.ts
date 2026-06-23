@@ -1,8 +1,7 @@
-// Pure helpers for the single-select findings-approval menu. The drawer presents one decision -
-// Fix / Approve / Skip / Abort - as a highlighted vertical list; these helpers decide which actions
-// to offer, what a chosen action resolves to, and the one-line severity summary shown above it.
-// Per-finding selection lives in the inspector's Findings tab, not in the gate: `Fix` sends back the
-// suggested set (or every finding when none was suggested), so the decision stays a single choice.
+// Pure helpers for the structured findings-approval drawer. The drawer has two independent ideas:
+// which findings are selected for a fix, and which terminal action resolves the prompt. A `fix`
+// decision must use the visible selection the operator can change; suggested ids are only an initial
+// default, never a hidden replacement for user intent.
 
 import type { ApprovalDecision, ApproveFindingsInput, Finding } from "@tml/core";
 
@@ -16,28 +15,35 @@ export interface ActionOption {
   readonly key: string;
 }
 
-const OPTIONS: readonly ActionOption[] = [
-  { action: "fix", label: "Fix findings", key: "f" },
+const TERMINAL_OPTIONS: readonly ActionOption[] = [
   { action: "approve", label: "Approve as-is", key: "a" },
   { action: "skip", label: "Skip this step", key: "s" },
   { action: "abort", label: "Abort the run", key: "x" },
 ];
 
-/** Actions offered for an approval: `fix` only when there are findings to send back. */
-export function actionOptions(input: ApproveFindingsInput): readonly ActionOption[] {
-  return input.findings.length > 0 ? OPTIONS : OPTIONS.filter((option) => option.action !== "fix");
+export function suggestedSelection(input: ApproveFindingsInput): readonly string[] {
+  const known = new Set(input.findings.map((finding) => finding.id));
+  return (input.suggestedFindingIds ?? []).filter((id) => known.has(id));
 }
 
-/** Findings a `fix` sends back: the suggested selection, or every finding when none was suggested. */
-export function fixSelection(input: ApproveFindingsInput): readonly string[] {
-  const suggested = input.selectedFindingIds ?? [];
-  return suggested.length > 0 ? suggested : input.findings.map((finding) => finding.id);
+/** Actions offered for an approval. `fix` is available only for an explicit visible selection. */
+export function actionOptions(selectedFindingIds: readonly string[]): readonly ActionOption[] {
+  return selectedFindingIds.length > 0
+    ? [
+        {
+          action: "fix",
+          label: `Fix selected findings (${selectedFindingIds.length})`,
+          key: "f",
+        },
+        ...TERMINAL_OPTIONS,
+      ]
+    : TERMINAL_OPTIONS;
 }
 
-/** Build the decision for a chosen action. `fix` with no findings is a no-op (returns undefined). */
+/** Build the decision for a chosen action. `fix` with no selected findings is a no-op. */
 export function buildDecision(
   action: ApprovalAction,
-  input: ApproveFindingsInput,
+  selectedFindingIds: readonly string[],
 ): ApprovalDecision | undefined {
   switch (action) {
     case "approve":
@@ -47,21 +53,26 @@ export function buildDecision(
     case "abort":
       return { action: "abort" };
     case "fix": {
-      const ids = [...fixSelection(input)];
+      const ids = [...selectedFindingIds];
       return ids.length > 0 ? { action: "fix", selectedFindingIds: ids } : undefined;
     }
   }
+}
+
+export function toggleSelection(
+  selectedFindingIds: readonly string[],
+  findingId: string,
+): readonly string[] {
+  return selectedFindingIds.includes(findingId)
+    ? selectedFindingIds.filter((id) => id !== findingId)
+    : [...selectedFindingIds, findingId];
 }
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-/**
- * One-line severity tally for the drawer header, e.g. "2 errors · 1 warning · 3 findings". The total
- * is dropped when a single severity bucket already conveys it (so "3 errors", not "3 errors · 3
- * findings"). Full per-finding detail lives in the inspector's Findings tab, never here.
- */
+/** One-line severity tally for the drawer header. */
 export function summaryLine(findings: readonly Finding[]): string {
   if (findings.length === 0) return "No findings.";
   let errors = 0;

@@ -100,12 +100,14 @@ describe("engine - happy path", () => {
     expect(events).toContainEqual({
       type: "phase:started",
       step: "review",
+      phaseId: "review:1",
       phase: "Context & intent",
       group: "initial",
     });
     expect(events).toContainEqual({
       type: "phase:finished",
       step: "review",
+      phaseId: "review:1",
       phase: "Context & intent",
       group: "initial",
       findings: [finding],
@@ -127,6 +129,7 @@ describe("engine - happy path", () => {
     expect(events).toContainEqual({
       type: "phase:finished",
       step: "review",
+      phaseId: "review:1",
       phase: "Architecture & scope",
       findings: [],
       status: "error",
@@ -332,7 +335,7 @@ describe("engine - flow signals, ask, and failure", () => {
         const decision = await ctx.approveFindings({
           prompt: "Review findings",
           findings: [finding],
-          selectedFindingIds: [finding.id],
+          suggestedFindingIds: [finding.id],
           context: "round history",
         });
         ctx.log(`decision=${decision.action}`);
@@ -357,7 +360,7 @@ describe("engine - flow signals, ask, and failure", () => {
       input: {
         prompt: "Review findings",
         findings: [finding],
-        selectedFindingIds: [finding.id],
+        suggestedFindingIds: [finding.id],
         context: "round history",
       },
     });

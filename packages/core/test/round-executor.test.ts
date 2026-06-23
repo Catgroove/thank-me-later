@@ -106,6 +106,9 @@ function fakeCtx(parts: { git?: Git; approveFindings?: () => Promise<ApprovalDec
       rounds() {
         return [];
       },
+      recordRound(round) {
+        return Promise.resolve({ ...round, step: "fake", index: 0 });
+      },
       log() {},
       phase(_label, fn) {
         return fn();

@@ -33,6 +33,7 @@ export interface ArtifactView {
  * `group` (e.g. a round label) lets a presenter show only the current group.
  */
 export interface PhaseView {
+  readonly phaseId?: string;
   readonly label: string;
   readonly group?: string;
   readonly status: "active" | "done" | "failed";
@@ -187,19 +188,18 @@ function latestFindings(rounds: readonly RoundRecord[]): Finding[] {
  */
 function resolvePhase(
   phases: readonly PhaseView[],
+  phaseId: string | undefined,
   label: string,
   group: string | undefined,
   status: "ok" | "error",
   findings: Finding[],
   at: number,
 ): PhaseView[] {
-  const index = phases.reduceRight(
-    (found, phase, i) =>
-      found === -1 && phase.status === "active" && phase.label === label && phase.group === group
-        ? i
-        : found,
-    -1,
-  );
+  const index = phases.reduceRight((found, phase, i) => {
+    if (found !== -1 || phase.status !== "active") return found;
+    if (phaseId !== undefined) return phase.phaseId === phaseId ? i : found;
+    return phase.label === label && phase.group === group ? i : found;
+  }, -1);
   if (index === -1) return [...phases];
   return phases.map((phase, i) =>
     i === index
@@ -418,6 +418,7 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
     case "phase:started": {
       // Append a new active phase. Phases accumulate across rounds; `group` distinguishes them.
       const phase: PhaseView = {
+        phaseId: event.phaseId,
         label: event.phase,
         ...(event.group !== undefined ? { group: event.group } : {}),
         status: "active",
@@ -437,6 +438,7 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
           ...s,
           phases: resolvePhase(
             s.phases,
+            event.phaseId,
             event.phase,
             event.group,
             event.status,
