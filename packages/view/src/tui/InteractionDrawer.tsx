@@ -5,12 +5,31 @@
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { Finding } from "@tml/core";
+import type { Finding, FindingAction, FindingSeverity } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
-import { actionOptions, summaryLine } from "./approval.ts";
+import { actionOptions, findingSections, summaryLine } from "./approval.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
 export type ApprovalFocusArea = "findings" | "actions";
+
+// Each action category gets a recognizable icon, header label, and accent color so the operator can
+// tell at a glance what a finding will do: a decision only they can make, a fix the next round
+// applies on its own, or a note that changes nothing. The icon repeats the meaning the color carries
+// so it survives in a monochrome terminal.
+const SECTION_META: Record<
+  FindingAction,
+  { readonly icon: string; readonly label: string; readonly color: string }
+> = {
+  "ask-user": { icon: "◆", label: "Needs your decision", color: "#f59e0b" },
+  "auto-fix": { icon: "↻", label: "Auto-fix next round", color: "#38bdf8" },
+  "no-op": { icon: "▪", label: "Informational", color: "#94a3b8" },
+};
+
+const SEVERITY_COLOR: Record<FindingSeverity, string> = {
+  error: "#ef4444",
+  warning: "#f59e0b",
+  info: "#38bdf8",
+};
 
 export interface DrawerProps {
   readonly prompt: Accessor<ActivePrompt | undefined>;
@@ -82,9 +101,11 @@ function AskBody(props: {
   );
 }
 
+// The action category is carried by the section header now, so the per-row label drops the
+// redundant `(action)` tag and leads with the severity instead.
 function findingLabel(finding: Finding): string {
   const location = finding.location ? ` - ${finding.location}` : "";
-  return `[${finding.severity}] ${finding.title} (${finding.action})${location}`;
+  return `[${finding.severity}] ${finding.title}${location}`;
 }
 
 function ApprovalBody(props: {
@@ -97,6 +118,7 @@ function ApprovalBody(props: {
   const input = () => props.prompt.input;
   const options = () => actionOptions(props.selectedFindingIds());
   const selected = (id: string) => props.selectedFindingIds().includes(id);
+  const sections = () => findingSections(input().findings);
   return (
     <box flexDirection="column">
       <text fg="#fde68a" wrapMode="word">
@@ -105,28 +127,46 @@ function ApprovalBody(props: {
       <text fg="#a8a29e" marginTop={1}>
         {summaryLine(input().findings)} · {props.selectedFindingIds().length} selected for fix
       </text>
-      <Show when={input().findings.length > 0}>
-        <box flexDirection="column" marginTop={1}>
-          <For each={input().findings}>
-            {(finding, index) => {
-              const focused = () =>
-                props.focusArea() === "findings" && index() === props.focusedFinding();
-              return (
-                <box
-                  backgroundColor={focused() ? "#334155" : "#1c1917"}
-                  paddingLeft={1}
-                  paddingRight={1}
-                >
-                  <text fg={focused() ? "#e2e8f0" : "#a8a29e"} wrapMode="word">
-                    {selected(finding.id) ? "[x] " : "[ ] "}
-                    {sanitize(findingLabel(finding))}
-                  </text>
-                </box>
-              );
-            }}
-          </For>
-        </box>
-      </Show>
+      <For each={sections()}>
+        {(section, sectionIndex) => {
+          const meta = SECTION_META[section.action];
+          // Findings keep one flat index across every section so the focus highlight lines up with
+          // the navigation index, which walks the same section order (orderedFindings).
+          const offset = () =>
+            sections()
+              .slice(0, sectionIndex())
+              .reduce((total, prior) => total + prior.findings.length, 0);
+          return (
+            <box flexDirection="column" marginTop={1}>
+              <text fg={meta.color} attributes={1}>
+                {meta.icon} {meta.label} ({section.findings.length})
+              </text>
+              <For each={section.findings}>
+                {(finding, findingIndex) => {
+                  const focused = () =>
+                    props.focusArea() === "findings" &&
+                    offset() + findingIndex() === props.focusedFinding();
+                  return (
+                    <box
+                      backgroundColor={focused() ? "#334155" : "#1c1917"}
+                      paddingLeft={1}
+                      paddingRight={1}
+                    >
+                      <text
+                        fg={focused() ? "#e2e8f0" : SEVERITY_COLOR[finding.severity]}
+                        wrapMode="word"
+                      >
+                        {selected(finding.id) ? "[x] " : "[ ] "}
+                        {sanitize(findingLabel(finding))}
+                      </text>
+                    </box>
+                  );
+                }}
+              </For>
+            </box>
+          );
+        }}
+      </For>
       <box flexDirection="column" marginTop={1}>
         <For each={options()}>
           {(option, index) => {

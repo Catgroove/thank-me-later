@@ -15,6 +15,7 @@ import { initialNav, navOnKey, type NavState } from "./navigation.ts";
 import {
   actionOptions,
   buildDecision,
+  orderedFindings,
   suggestedSelection,
   toggleSelection,
   type ApprovalAction,
@@ -72,7 +73,9 @@ export function App(props: AppProps) {
     p: Extract<ActivePrompt, { kind: "approval" }>,
     key: KeyEvent,
   ): boolean => {
-    const findings = p.input.findings;
+    // Traverse findings in the same section order the drawer renders, so j/k moves top-to-bottom
+    // through the visible groups rather than the prompt's raw arrival order.
+    const findings = orderedFindings(p.input.findings);
     const options = actionOptions(selectedFindingIds());
     const submit = (action: ApprovalAction) => {
       const decision = buildDecision(action, selectedFindingIds());
