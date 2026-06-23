@@ -62,9 +62,12 @@ export function formatDuration(ms: number | undefined): string {
   if (ms === undefined) return "";
   const secs = ms / 1000;
   if (secs < 10) return `${secs.toFixed(1)}s`;
-  if (secs < 60) return `${Math.round(secs)}s`;
-  const m = Math.floor(secs / 60);
-  const s = Math.round(secs % 60);
+  // Round to whole seconds *before* splitting into minutes/seconds, so a value that rounds up to a
+  // full minute carries into the minutes field instead of producing "1m 60s" or a bare "60s".
+  const whole = Math.round(secs);
+  if (whole < 60) return `${whole}s`;
+  const m = Math.floor(whole / 60);
+  const s = whole % 60;
   return `${m}m ${s.toString().padStart(2, "0")}s`;
 }
 
