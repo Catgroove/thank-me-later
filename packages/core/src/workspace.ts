@@ -1,6 +1,5 @@
-// Isolated ship workspace creation. A `tml ship` run snapshots the live checkout once, then runs
-// the pipeline in this disposable clone so user edits, generated files, and review resets never
-// touch or race with the source checkout.
+// Legacy isolated workspace helpers. Production `tml ship` now runs directly in the source
+// checkout so branch and commit Steps leave one source of truth for the work being shipped.
 
 import { copyFile, lstat, mkdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -54,7 +53,7 @@ export async function removeIsolatedWorkspace(workspacePath: string): Promise<vo
   await rm(target, { recursive: true, force: true });
 }
 
-/** Create `workspacePath` as a clone of `sourcePath`, overlaid with non-ignored local changes. */
+/** Legacy helper: create `workspacePath` as a clone overlaid with non-ignored local changes. */
 export async function createIsolatedWorkspace(
   sourcePath: string,
   workspacePath: string,

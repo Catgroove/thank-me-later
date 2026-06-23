@@ -27,7 +27,7 @@ export interface RunMetadata {
   readonly startedAt: string;
   readonly updatedAt: string;
   readonly completedSteps: string[];
-  /** Disposable checkout where the Run executes. It lives under this Run's private state dir. */
+  /** Legacy field from isolated Run workspaces. Kept so older journals still deserialize. */
   readonly workspacePath?: string;
   /**
    * The git branch this Run is shipping, used to scope `auto` resume. Set to the branch at start and
@@ -151,7 +151,6 @@ class FileRunJournal implements RunJournal {
     const { runId, metadata } = await this.selectRun(pipeline, input.resumeKey);
     const runsDir = join(this.root, "runs");
     this.runDir = join(runsDir, runId);
-    const workspacePath = join(this.runDir, "workspace");
     await ensurePrivateDir(dirname(this.root));
     await ensurePrivateDir(this.root);
     await ensurePrivateDir(runsDir);
@@ -169,14 +168,13 @@ class FileRunJournal implements RunJournal {
         startedAt: now,
         updatedAt: now,
         completedSteps: [],
-        workspacePath,
         ...(input.resumeKey !== undefined ? { resumeKey: input.resumeKey } : {}),
       };
       await this.writeMetadata();
     } else {
       const resumed: RunMetadata =
         metadata.status === "running" ? metadata : { ...metadata, status: "running" };
-      this.metadata = { ...resumed, runId, workspacePath: resumed.workspacePath ?? workspacePath };
+      this.metadata = { ...resumed, runId };
       await this.writeMetadata();
     }
 

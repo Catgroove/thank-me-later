@@ -1,16 +1,11 @@
 #!/usr/bin/env bun
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   type Config,
   createEngine,
   type Engine,
   type EngineOptions,
-  createIsolatedWorkspace,
   createRunJournal,
-  currentWorkspaceSourceBranch,
-  removeIsolatedWorkspace,
   type RunJournal,
   type RunJournalResumeMode,
 } from "@tml/core";
@@ -27,7 +22,7 @@ import { assembleShipConfig } from "./config.ts";
 import { init } from "./init.ts";
 import { loadTmlConfig } from "./load.ts";
 
-/** Seams, injected by tests; production snapshots the checkout into an isolated run workspace. */
+/** Seams, injected by tests; production runs directly in the checkout. */
 export interface ShipDeps {
   cwd?: string;
   /** Build the Config for `cwd`. Async in production (it imports local plugins). */
@@ -124,21 +119,18 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   };
   for (const signal of signals) process.on(signal, onSignal);
 
-  // Production `tml ship` runs in an isolated snapshot workspace. Test seams that inject an Engine
-  // keep the old direct cwd path, so unit tests can stay small and avoid creating git fixtures.
+  // Production `tml ship` runs in the checkout the work already lives in. The branch and commit
+  // Steps move dirty work onto a ship branch instead of leaving a second dirty source copy behind.
   let view = initialView;
-  let workspaceToClean: string | undefined;
-  let setupJournal: RunJournal | undefined;
   try {
-    let runCwd = cwd;
     let config: Config;
     let journal: RunJournal | undefined;
 
     if (deps.engineFor === undefined) {
       if (deps.journal === false) {
-        throw new Error("tml ship: isolated runs require the Run Journal.");
+        throw new Error("tml ship: production runs require the Run Journal.");
       }
-      const sourceConfig = await buildConfig(cwd);
+      config = await buildConfig(cwd);
       journal =
         deps.journal ??
         createRunJournal({
@@ -146,42 +138,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
           resume: deps.journalResume ?? "auto",
           ...(deps.runId ? { runId: deps.runId } : {}),
         });
-      setupJournal = journal;
-      const resumeKey = await currentWorkspaceSourceBranch(cwd);
-      const snapshot = await journal.begin({
-        pipeline: sourceConfig.pipeline.map((s) => s.name),
-        ...(resumeKey !== undefined ? { resumeKey } : {}),
-      });
-      const workspacePath = snapshot.metadata.workspacePath;
-      if (workspacePath === undefined) throw new Error("tml ship: Run Journal has no workspace.");
-      const workspaceExists = existsSync(join(workspacePath, ".git"));
-      const hasRunProgress =
-        snapshot.completedSteps.size > 0 ||
-        snapshot.rounds.length > 0 ||
-        snapshot.artifacts.size > 0;
-      if (!workspaceExists) {
-        if (hasRunProgress) {
-          throw new Error(
-            `tml ship: cannot resume run ${snapshot.metadata.runId}; its workspace is missing. ` +
-              "Use `tml ship --fresh` to start a new isolated run.",
-          );
-        }
-        await createIsolatedWorkspace(cwd, workspacePath);
-      }
-      runCwd = workspacePath;
-      workspaceToClean = workspacePath;
-      config = await buildConfig(runCwd);
-      const names = config.pipeline.map((s) => s.name);
-      if (names.join("\0") !== snapshot.metadata.pipeline.join("\0")) {
-        throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
-      }
     } else {
       journal = deps.journal === false ? undefined : deps.journal;
       config = await buildConfig(cwd);
     }
 
     const engine = engineFor(config, {
-      cwd: runCwd,
+      cwd,
       ask,
       approveFindings,
       signal: abortController.signal,
@@ -189,23 +152,16 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     });
     let failed = false;
     let cancelled = false;
-    let finished = false;
     // Fold each event into the shared ViewState, then let the renderer draw it.
     for await (const event of engine.run()) {
       view = present(view, event);
       renderer.render(view, event);
       if (event.type === "run:failed") failed = true;
       if (event.type === "run:cancelled") cancelled = true;
-      if (event.type === "run:finished") finished = true;
-    }
-    if (finished && workspaceToClean !== undefined) {
-      await removeIsolatedWorkspace(workspaceToClean);
-      workspaceToClean = undefined;
     }
     // 130 = the conventional SIGINT exit code; an Abort is not a failure.
     return cancelled ? 130 : failed ? 1 : 0;
   } catch (error) {
-    await setupJournal?.finish("failed").catch(() => undefined);
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   } finally {
