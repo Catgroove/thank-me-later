@@ -27,15 +27,15 @@ export function parsePassResult(output: unknown): PassResult {
     findings: parseAgentFindingsOutput(output, {
       namespace: "review",
       sourceName: "review",
-      enforceActionForSeverity: true,
+      enforceActionForDisposition: true,
     }),
   };
 }
 
-/** Highest severity wins. */
+/** Strongest disposition wins. */
 export function riskOf(findings: readonly Finding[]): Risk {
-  if (findings.some((f) => f.severity === "error")) return "high";
-  if (findings.some((f) => f.severity === "warning")) return "medium";
+  if (findings.some((f) => f.disposition === "blocker")) return "high";
+  if (findings.some((f) => f.disposition === "should-fix")) return "medium";
   return "low";
 }
 

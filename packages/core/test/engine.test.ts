@@ -79,7 +79,7 @@ describe("engine - happy path", () => {
 
   test("ctx.phase brackets work with phase:started/phase:finished carrying its findings", async () => {
     const finding = makeFinding("review", {
-      severity: "info",
+      disposition: "nit",
       action: "no-op",
       title: "Noted",
       detail: "A note.",
@@ -139,7 +139,7 @@ describe("engine - happy path", () => {
 
   test("exposes completed rounds to later Steps", async () => {
     const finding = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "ask-user",
       title: "Confirm",
       detail: "Needs a decision.",
@@ -195,7 +195,7 @@ describe("engine - happy path", () => {
       finish: () => Promise.resolve(),
     };
     const finding = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "ask-user",
       title: "Confirm",
       detail: "Needs a decision.",
@@ -324,7 +324,7 @@ describe("engine - flow signals, ask, and failure", () => {
 
   test("ctx.approveFindings emits approval:pending and resolves via the injected responder", async () => {
     const finding = makeFinding("approval", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "auto-fix",
       title: "Fix me",
       detail: "Needs a fix.",
@@ -508,7 +508,7 @@ describe("engine - pr:opened", () => {
 describe("engine — event timestamps and round events", () => {
   test("every emitted event carries a numeric `at`", async () => {
     const finding = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "ask-user",
       title: "Confirm",
       detail: "Needs a decision.",
@@ -551,7 +551,7 @@ describe("engine — event timestamps and round events", () => {
 
   test("emits a round:recorded event per completed Round, in order, before step:finished", async () => {
     const finding = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "ask-user",
       title: "Confirm",
       detail: "Needs a decision.",

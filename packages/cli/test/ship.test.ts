@@ -335,7 +335,7 @@ describe("ship() run lifecycle", () => {
       prompt: "Review findings",
       findings: [
         makeFinding("test", {
-          severity: "warning",
+          disposition: "should-fix",
           action: "ask-user",
           title: "Needs input",
           detail: "decide locally",

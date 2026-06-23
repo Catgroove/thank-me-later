@@ -39,10 +39,11 @@ export interface InspectorProps {
   readonly focusedFindingId?: Accessor<string | undefined>;
 }
 
-const SEVERITY_COLOR: Record<Finding["severity"], string> = {
-  error: "#ef4444",
-  warning: "#f59e0b",
-  info: "#38bdf8",
+const DISPOSITION_COLOR: Record<Finding["disposition"], string> = {
+  blocker: "#ef4444",
+  "should-fix": "#f59e0b",
+  consider: "#38bdf8",
+  nit: "#94a3b8",
 };
 
 function TabBar(props: { active: Tab }) {
@@ -209,10 +210,10 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const meta = () => STATUS_META[props.entry.status];
   // The focused background matches the approval drawer's focused-finding row so the two surfaces
   // read as pointing at the same finding.
-  const marker = () =>
-    f().blocking === true ? `[blocking] [${f().severity}]` : `[${f().severity}]`;
-  // Resolved findings dim so the eye lands on what still needs work; open/pending keep severity color.
-  const titleColor = () => (meta().resolved ? "#64748b" : SEVERITY_COLOR[f().severity]);
+  const marker = () => `[${f().disposition}]`;
+  // Resolved findings dim so the eye lands on what still needs work; open/pending keep the finding's
+  // disposition color.
+  const titleColor = () => (meta().resolved ? "#64748b" : DISPOSITION_COLOR[f().disposition]);
   return (
     <box
       flexDirection="column"

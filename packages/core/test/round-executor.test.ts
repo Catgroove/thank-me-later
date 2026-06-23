@@ -119,7 +119,7 @@ function fakeCtx(parts: { git?: Git; approveFindings?: () => Promise<ApprovalDec
 
 function finding(action: Finding["action"] = "auto-fix", title = "Fix me"): Finding {
   return makeFinding("round-executor", {
-    severity: action === "ask-user" ? "error" : "warning",
+    disposition: action === "ask-user" ? "blocker" : "should-fix",
     action,
     title,
     detail: `${title} detail`,

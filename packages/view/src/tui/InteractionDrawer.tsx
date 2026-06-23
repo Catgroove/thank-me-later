@@ -5,7 +5,7 @@
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { Finding, FindingAction, FindingSeverity } from "@tml/core";
+import type { Finding, FindingAction, FindingDisposition } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
 import { actionOptions, findingSections, summaryLine } from "./approval.ts";
 import type { ActivePrompt } from "./interaction.ts";
@@ -25,10 +25,11 @@ const SECTION_META: Record<
   "no-op": { icon: "▪", label: "Informational", color: "#94a3b8" },
 };
 
-const SEVERITY_COLOR: Record<FindingSeverity, string> = {
-  error: "#ef4444",
-  warning: "#f59e0b",
-  info: "#38bdf8",
+const DISPOSITION_COLOR: Record<FindingDisposition, string> = {
+  blocker: "#ef4444",
+  "should-fix": "#f59e0b",
+  consider: "#38bdf8",
+  nit: "#94a3b8",
 };
 
 export interface DrawerProps {
@@ -102,12 +103,10 @@ function AskBody(props: {
 }
 
 // The action category is carried by the section header now, so the per-row label drops the
-// redundant `(action)` tag and leads with the severity instead.
+// redundant `(action)` tag and leads with the disposition instead.
 function findingLabel(finding: Finding): string {
   const location = finding.location ? ` - ${finding.location}` : "";
-  const marker =
-    finding.blocking === true ? `[blocking] [${finding.severity}]` : `[${finding.severity}]`;
-  return `${marker} ${finding.title}${location}`;
+  return `[${finding.disposition}] ${finding.title}${location}`;
 }
 
 function ApprovalBody(props: {
@@ -155,7 +154,7 @@ function ApprovalBody(props: {
                       paddingRight={1}
                     >
                       <text
-                        fg={focused() ? "#e2e8f0" : SEVERITY_COLOR[finding.severity]}
+                        fg={focused() ? "#e2e8f0" : DISPOSITION_COLOR[finding.disposition]}
                         wrapMode="word"
                       >
                         {selected(finding.id) ? "[x] " : "[ ] "}

@@ -17,9 +17,9 @@ export type { Ctx, PhaseOptions } from "./context.ts";
 export {
   type Finding,
   type FindingAction,
+  type FindingDisposition,
   type FindingInput,
   type FindingLifecycle,
-  type FindingSeverity,
   type FindingStatus,
   type ParseAgentFindingsOptions,
   type RoundRecord,

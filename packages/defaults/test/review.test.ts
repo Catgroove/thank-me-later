@@ -57,7 +57,7 @@ describe("review step", () => {
   test("runs the fix pass for auto-fix findings, then verifies with a fresh review", async () => {
     const agent = new FakeHarness();
     const auto = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "auto-fix",
       title: "Tidy",
       detail: "Small cleanup.",
@@ -86,7 +86,12 @@ describe("review step", () => {
     const agent = new FakeHarness();
     agent.responses.push(
       pass([
-        { severity: "warning", action: "ask-user", title: "Confirm contract", detail: "intent?" },
+        {
+          disposition: "should-fix",
+          action: "ask-user",
+          title: "Confirm contract",
+          detail: "intent?",
+        },
       ]),
     );
     const { ctx, approvals } = fakeCtx({ agent, reads: { prBody: "body" } });

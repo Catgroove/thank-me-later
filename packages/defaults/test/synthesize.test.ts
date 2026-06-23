@@ -8,14 +8,20 @@ import {
 } from "../src/review/synthesize.ts";
 
 function finding(over: Partial<Finding> = {}): Finding {
-  return { id: "finding:1", severity: "info", action: "no-op", title: "T", detail: "D", ...over };
+  return { id: "finding:1", disposition: "nit", action: "no-op", title: "T", detail: "D", ...over };
 }
 
 describe("parsePassResult", () => {
   test("parses a well-formed result", () => {
     const r = parsePassResult({
       findings: [
-        { severity: "warning", action: "auto-fix", title: "x", detail: "y", location: "a.ts:1" },
+        {
+          disposition: "should-fix",
+          action: "auto-fix",
+          title: "x",
+          detail: "y",
+          location: "a.ts:1",
+        },
       ],
     });
     expect(r.findings).toHaveLength(1);
@@ -24,7 +30,7 @@ describe("parsePassResult", () => {
 
   test("omits an empty location", () => {
     const r = parsePassResult({
-      findings: [{ severity: "info", action: "no-op", title: "t", detail: "d", location: "  " }],
+      findings: [{ disposition: "nit", action: "no-op", title: "t", detail: "d", location: "  " }],
     });
     expect(r.findings[0]?.location).toBeUndefined();
   });
@@ -34,46 +40,47 @@ describe("parsePassResult", () => {
     expect(() => parsePassResult({})).toThrow();
     expect(() =>
       parsePassResult({
-        findings: [{ severity: "bogus", action: "no-op", title: "t", detail: "d" }],
+        findings: [{ disposition: "bogus", action: "no-op", title: "t", detail: "d" }],
       }),
     ).toThrow();
     expect(() =>
       parsePassResult({
-        findings: [{ severity: "info", action: "no-op", title: "", detail: "d" }],
+        findings: [{ disposition: "nit", action: "no-op", title: "", detail: "d" }],
       }),
     ).toThrow();
   });
 
-  test("constrains actions by severity", () => {
+  test("constrains actions by disposition", () => {
     expect(() =>
       parsePassResult({
-        findings: [{ severity: "error", action: "no-op", title: "t", detail: "d" }],
+        findings: [{ disposition: "blocker", action: "no-op", title: "t", detail: "d" }],
       }),
-    ).toThrow(/error and warning findings must be auto-fix or ask-user/);
+    ).toThrow(/blocker and should-fix findings must be auto-fix or ask-user/);
     expect(() =>
       parsePassResult({
-        findings: [{ severity: "info", action: "auto-fix", title: "t", detail: "d" }],
+        findings: [{ disposition: "should-fix", action: "no-op", title: "t", detail: "d" }],
       }),
-    ).toThrow(/info findings must be no-op/);
+    ).toThrow(/blocker and should-fix findings must be auto-fix or ask-user/);
   });
 });
 
 describe("riskOf", () => {
   test("empty findings are low", () => expect(riskOf([])).toBe("low"));
-  test("a warning is medium", () =>
-    expect(riskOf([finding({ severity: "warning" })])).toBe("medium"));
-  test("an error is high", () => expect(riskOf([finding({ severity: "error" })])).toBe("high"));
+  test("a should-fix is medium", () =>
+    expect(riskOf([finding({ disposition: "should-fix" })])).toBe("medium"));
+  test("a blocker is high", () =>
+    expect(riskOf([finding({ disposition: "blocker" })])).toBe("high"));
 });
 
 describe("summarize", () => {
-  test("renders risk, non-empty sections, severity labels, and fixes; omits empty sections", () => {
+  test("renders risk, non-empty sections, disposition labels, and fixes; omits empty sections", () => {
     const passes: ReviewPass[] = [
       { title: "Empty review", result: { findings: [] } },
       {
         title: "Thermo-nuclear code quality review",
         result: {
           findings: [
-            finding({ severity: "warning", title: "Scope creep", detail: "two features" }),
+            finding({ disposition: "should-fix", title: "Scope creep", detail: "two features" }),
           ],
         },
       },
@@ -82,7 +89,7 @@ describe("summarize", () => {
         result: {
           findings: [
             finding({
-              severity: "error",
+              disposition: "blocker",
               action: "auto-fix",
               title: "NPE",
               detail: "null deref",
@@ -92,13 +99,13 @@ describe("summarize", () => {
       },
     ];
     const out = summarize(passes, "fixed the NPE");
-    expect(out).toContain("**Risk: high**"); // error present
+    expect(out).toContain("**Risk: high**"); // blocker present
     expect(out).toContain("<details>"); // full breakdown is collapsible
     expect(out).toContain("### Thermo-nuclear code quality review");
-    expect(out).toContain("Warning:");
-    expect(out).toContain("Error:");
+    expect(out).toContain("Should fix:");
+    expect(out).toContain("Blocker:");
     expect(out).toContain("1 fixed"); // headline tally
-    expect(out).toContain("~~"); // the auto-fixed error is struck through
+    expect(out).toContain("~~"); // the auto-fixed blocker is struck through
     expect(out).toContain("(fixed)");
     expect(out).toContain("**Fixes applied:** fixed the NPE");
     expect(out).not.toContain("### Empty review"); // empty section omitted

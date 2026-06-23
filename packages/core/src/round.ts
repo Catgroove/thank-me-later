@@ -6,7 +6,10 @@
 import { createHash } from "node:crypto";
 
 export type FindingAction = "auto-fix" | "ask-user" | "no-op";
-export type FindingSeverity = "error" | "warning" | "info";
+// How strongly tml recommends acting on a finding. `blocker` gates the ship; `should-fix` is a
+// clear improvement the author should make; `consider` is an optional suggestion; `nit` is a
+// trivial take-it-or-leave-it remark.
+export type FindingDisposition = "blocker" | "should-fix" | "consider" | "nit";
 export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify";
 
 /**
@@ -37,12 +40,11 @@ export interface FindingLifecycle {
 
 export interface Finding {
   readonly id: string;
-  readonly severity: FindingSeverity;
+  readonly disposition: FindingDisposition;
   readonly action: FindingAction;
   readonly title: string;
   readonly detail: string;
   readonly location?: string;
-  readonly blocking?: boolean;
 }
 
 export interface RoundRecord {
@@ -76,7 +78,7 @@ export function findingId(namespace: string, finding: FindingInput): string {
     .update(
       JSON.stringify({
         namespace,
-        severity: finding.severity,
+        disposition: finding.disposition,
         action: finding.action,
         title: finding.title.trim(),
         location: finding.location?.trim() ?? "",
@@ -91,13 +93,18 @@ export function makeFinding(namespace: string, finding: FindingInput): Finding {
   return { ...finding, id: findingId(namespace, finding) };
 }
 
-const SEVERITIES: ReadonlySet<string> = new Set<FindingSeverity>(["error", "warning", "info"]);
+const DISPOSITIONS: ReadonlySet<string> = new Set<FindingDisposition>([
+  "blocker",
+  "should-fix",
+  "consider",
+  "nit",
+]);
 const ACTIONS: ReadonlySet<string> = new Set<FindingAction>(["auto-fix", "ask-user", "no-op"]);
 
 export interface ParseAgentFindingsOptions {
   readonly namespace: string;
   readonly sourceName?: string;
-  readonly enforceActionForSeverity?: boolean;
+  readonly enforceActionForDisposition?: boolean;
 }
 
 /** Validate an agent's structured `{ findings }` reply into core Findings. */
@@ -126,16 +133,19 @@ function parseAgentFinding(
     throw new Error(`${sourceName}: finding ${index} is not an object`);
   }
   const f = raw as Record<string, unknown>;
-  if (typeof f.severity !== "string" || !SEVERITIES.has(f.severity)) {
-    throw new Error(`${sourceName}: finding ${index} has an invalid severity`);
+  if (typeof f.disposition !== "string" || !DISPOSITIONS.has(f.disposition)) {
+    throw new Error(`${sourceName}: finding ${index} has an invalid disposition`);
   }
   if (typeof f.action !== "string" || !ACTIONS.has(f.action)) {
     throw new Error(`${sourceName}: finding ${index} has an invalid action`);
   }
-  if (options.enforceActionForSeverity && !isAllowedActionForSeverity(f.severity, f.action)) {
+  if (
+    options.enforceActionForDisposition &&
+    !isAllowedActionForDisposition(f.disposition, f.action)
+  ) {
     throw new Error(
-      `${sourceName}: finding ${index} has action ${f.action} for severity ${f.severity}; ` +
-        "error and warning findings must be auto-fix or ask-user, and info findings must be no-op",
+      `${sourceName}: finding ${index} has action ${f.action} for disposition ${f.disposition}; ` +
+        "blocker and should-fix findings must be auto-fix or ask-user",
     );
   }
   if (typeof f.title !== "string" || f.title.trim().length === 0) {
@@ -145,20 +155,23 @@ function parseAgentFinding(
     throw new Error(`${sourceName}: finding ${index} is missing a detail`);
   }
   return makeFinding(options.namespace, {
-    severity: f.severity as Finding["severity"],
+    disposition: f.disposition as Finding["disposition"],
     action: f.action as Finding["action"],
     title: f.title.trim(),
     detail: f.detail.trim(),
     ...(typeof f.location === "string" && f.location.trim().length > 0
       ? { location: f.location.trim() }
       : {}),
-    ...(typeof f.blocking === "boolean" ? { blocking: f.blocking } : {}),
   });
 }
 
-function isAllowedActionForSeverity(severity: string, action: string): boolean {
-  if (severity === "info") return action === "no-op";
-  return action === "auto-fix" || action === "ask-user";
+// A finding that recommends action cannot also do nothing: blocker and should-fix must carry a
+// real action. consider and nit may use any action, including no-op for one tml is merely noting.
+function isAllowedActionForDisposition(disposition: string, action: string): boolean {
+  if (disposition === "blocker" || disposition === "should-fix") {
+    return action === "auto-fix" || action === "ask-user";
+  }
+  return true;
 }
 
 function slug(value: string): string {
@@ -169,17 +182,17 @@ function slug(value: string): string {
   return s.length > 0 ? s : "finding";
 }
 
-function label(severity: FindingSeverity): string {
-  if (severity === "error") return "Error";
-  if (severity === "warning") return "Warning";
-  return "Info";
+function label(disposition: FindingDisposition): string {
+  if (disposition === "blocker") return "Blocker";
+  if (disposition === "should-fix") return "Should fix";
+  if (disposition === "consider") return "Consider";
+  return "Nit";
 }
 
 /** Pure Markdown rendering for a single PR-summary finding line. */
 export function renderFindingForPr(finding: Finding): string {
   const location = finding.location ? ` \`${finding.location}\`` : "";
-  const prefix =
-    finding.blocking === true ? `Blocking ${label(finding.severity)}` : label(finding.severity);
+  const prefix = label(finding.disposition);
   const action =
     finding.action === "auto-fix"
       ? " (auto-fix)"

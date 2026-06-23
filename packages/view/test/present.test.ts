@@ -16,7 +16,7 @@ const step = (view: ViewState, name: string): StepView => {
 };
 
 const finding = makeFinding("review", {
-  severity: "warning",
+  disposition: "should-fix",
   action: "ask-user",
   title: "Confirm",
   detail: "Needs a decision.",
@@ -334,13 +334,13 @@ describe("present", () => {
 
   test("duplicate concurrent phase labels resolve by id when finishes arrive out of order", () => {
     const firstFinding = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "ask-user",
       title: "first",
       detail: "first detail",
     });
     const secondFinding = makeFinding("review", {
-      severity: "warning",
+      disposition: "should-fix",
       action: "ask-user",
       title: "second",
       detail: "second detail",

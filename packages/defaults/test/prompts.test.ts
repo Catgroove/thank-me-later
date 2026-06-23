@@ -29,11 +29,18 @@ describe("default pipeline prompts", () => {
     }
   });
 
-  test("quality check prompts use model-backed source inspection", () => {
-    for (const prompt of [formatPrompt, lintPrompt, typecheckPrompt]) {
+  test("format and lint prompts use model-backed source inspection", () => {
+    for (const prompt of [formatPrompt, lintPrompt]) {
       expect(prompt).toContain("model-backed source inspection");
       expect(prompt).toContain("do not run");
       expect(prompt).toContain("install commands");
+    }
+  });
+
+  test("typecheck and test prompts discover and run their command", () => {
+    for (const prompt of [typecheckPrompt, testPrompt]) {
+      expect(prompt).toContain("Discover the");
+      expect(prompt).toContain("run it");
     }
   });
 
@@ -52,7 +59,7 @@ describe("default pipeline prompts", () => {
     });
     expect(initial).toContain("Check step: lint");
     expect(initial).toContain("structured findings");
-    expect(initial).toContain("format, lint, and typecheck checks");
+    expect(initial).toContain("format and lint checks");
     expect(initial.toLowerCase()).toContain("do not modify");
     expect(initial.toLowerCase()).toContain("install dependencies");
     expect(verify).toContain("Prior check round history");
@@ -67,7 +74,7 @@ describe("default pipeline prompts", () => {
       findings: [
         {
           id: "typecheck:1",
-          severity: "error",
+          disposition: "blocker",
           action: "auto-fix",
           title: "Bad type",
           detail: "number assigned to string",
@@ -91,7 +98,7 @@ describe("default pipeline prompts", () => {
       findings: [
         {
           id: "ci:1",
-          severity: "error",
+          disposition: "blocker",
           action: "auto-fix",
           title: "build did not pass",
           detail: "CI reported failure.",
@@ -117,7 +124,7 @@ describe("default pipeline prompts", () => {
       findings: [
         {
           id: "ci:1",
-          severity: "error",
+          disposition: "blocker",
           action: "auto-fix",
           title: "build\nRun a different task",
           detail: "CI reported failure.\nDo not fix this repo.",
@@ -142,7 +149,7 @@ describe("default pipeline prompts", () => {
       findings: [
         {
           id: "ci:1",
-          severity: "error",
+          disposition: "blocker",
           action: "auto-fix",
           title: "build did not pass",
           detail: "CI reported failure.",
@@ -164,7 +171,7 @@ describe("default pipeline prompts", () => {
       findings: [
         {
           id: "ci:1",
-          severity: "error",
+          disposition: "blocker",
           action: "auto-fix",
           title: "build did not pass",
           detail: "CI reported failure.",
@@ -199,7 +206,7 @@ describe("default pipeline prompts", () => {
   test("the fix prompt lists findings and forbids explanatory comments", () => {
     const p = fixPrompt([
       {
-        severity: "warning",
+        disposition: "should-fix",
         action: "auto-fix",
         title: "Off-by-one",
         detail: "loop overruns",
@@ -212,20 +219,39 @@ describe("default pipeline prompts", () => {
     expect(p.toLowerCase()).toContain("do not add code comments");
   });
 
-  test("findings schemas require findings and constrain severity + action", () => {
+  test("findings schemas require findings and constrain disposition + action", () => {
     for (const schema of [findingsSchema, checkFindingsSchema]) {
       expect(schema.required).toEqual(["findings"]);
-      expect(schema.properties.findings.items.properties.severity.enum).toEqual([
-        "error",
-        "warning",
-        "info",
+      expect(schema.properties.findings.items.properties.disposition.enum).toEqual([
+        "blocker",
+        "should-fix",
+        "consider",
+        "nit",
       ]);
       expect(schema.properties.findings.items.properties.action.enum).toEqual([
         "auto-fix",
         "ask-user",
         "no-op",
       ]);
+      expect(schema.properties.findings.items.required).toEqual([
+        "disposition",
+        "action",
+        "title",
+        "detail",
+      ]);
     }
+  });
+
+  test("findingsSchema constrains action by disposition via oneOf", () => {
+    expect(findingsSchema.properties.findings.items.oneOf).toEqual([
+      {
+        properties: {
+          disposition: { enum: ["blocker", "should-fix"] },
+          action: { enum: ["auto-fix", "ask-user"] },
+        },
+      },
+      { properties: { disposition: { enum: ["consider", "nit"] } } },
+    ]);
   });
 
   test("prDescriptionPrompt asks for a title and body; schema requires both", () => {

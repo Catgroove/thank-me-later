@@ -73,7 +73,7 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
       ? []
       : [
           makeFinding(name, {
-            severity: "error",
+            disposition: "blocker",
             action: "ask-user",
             title: `${name} check did not return structured findings`,
             detail: summary,

@@ -16,7 +16,7 @@ import {
 } from "../src/round.ts";
 
 const input: FindingInput = {
-  severity: "warning",
+  disposition: "should-fix",
   action: "ask-user",
   title: "Confirm contract",
   detail: "The new behavior changes the public surface.",
@@ -37,7 +37,7 @@ describe("shared finding records", () => {
 describe("PR summary rendering", () => {
   test("renders findings and rounds without side effects", () => {
     const finding = makeFinding("review", input);
-    expect(renderFindingForPr(finding)).toContain("Warning: `src/api.ts:12` Confirm contract");
+    expect(renderFindingForPr(finding)).toContain("Should fix: `src/api.ts:12` Confirm contract");
 
     const round = {
       step: "review",
@@ -59,7 +59,7 @@ describe("PR summary rendering", () => {
   test("summarizes current unresolved findings from the latest round per Step", () => {
     const reviewFinding = makeFinding("review", input);
     const lintFinding = makeFinding("lint", {
-      severity: "error",
+      disposition: "blocker",
       action: "auto-fix",
       title: "Lint failed",
       detail: "Run the formatter.",
@@ -98,11 +98,11 @@ describe("PR summary rendering", () => {
 
 describe("finding lifecycle", () => {
   const autoFix = (title: string): Finding =>
-    makeFinding("review", { severity: "warning", action: "auto-fix", title, detail: "" });
+    makeFinding("review", { disposition: "should-fix", action: "auto-fix", title, detail: "" });
   const askUser = (title: string): Finding =>
-    makeFinding("review", { severity: "error", action: "ask-user", title, detail: "" });
+    makeFinding("review", { disposition: "blocker", action: "ask-user", title, detail: "" });
   const info = (title: string): Finding =>
-    makeFinding("review", { severity: "info", action: "no-op", title, detail: "" });
+    makeFinding("review", { disposition: "nit", action: "no-op", title, detail: "" });
 
   const round = (
     index: number,
