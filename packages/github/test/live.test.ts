@@ -4,7 +4,7 @@
 // fixtures can't:  TML_GH_LIVE=1 bun test github
 //
 // It exercises the read path only (no PR is opened): findPullRequest threads real
-// `gh pr list` + the GraphQL snapshot through the mappers.
+// `gh pr list` + `gh pr view --json` through the mappers.
 
 import { describe, expect, test } from "bun:test";
 
@@ -14,7 +14,7 @@ const LIVE = process.env.TML_GH_LIVE === "1";
 
 if (!LIVE) {
   console.log(
-    "[live.test] skipped — set TML_GH_LIVE=1 (authenticated gh, inside a GitHub repo) to exercise the real findPullRequest read path (gh pr list + GraphQL snapshot + mapping).",
+    "[live.test] skipped - set TML_GH_LIVE=1 (authenticated gh, inside a GitHub repo) to exercise the real findPullRequest read path (gh pr list + gh pr view JSON + mapping).",
   );
 }
 

@@ -34,7 +34,11 @@ const isPrList = (args: string[]) => args[0] === "pr" && args[1] === "list";
 const isPrCreate = (args: string[]) => args[0] === "pr" && args[1] === "create";
 const isSnapshot = (args: string[]) => args.some((a) => a.includes("headRefName"));
 const isPrEdit = (args: string[]) => args[0] === "pr" && args[1] === "edit";
-const isCheckLogLinks = (args: string[]) => args.some((a) => a.includes("detailsUrl"));
+const isCheckLogLinks = (args: string[]) =>
+  args[0] === "pr" &&
+  args[1] === "view" &&
+  args.includes("--json") &&
+  args.includes("statusCheckRollup");
 const isRunView = (args: string[]) => args[0] === "run" && args[1] === "view";
 
 function gitProviderWith(handler: (args: string[]) => string): {
@@ -77,8 +81,7 @@ describe("findPullRequest", () => {
           { number: 42, state: "OPEN" },
         ]);
       }
-      if (isSnapshot(args) && args.includes("number=42"))
-        return JSON.stringify(snapshotOpenResponse);
+      if (isSnapshot(args) && args.includes("42")) return JSON.stringify(snapshotOpenResponse);
       throw new Error(`unexpected args: ${args.join(" ")}`);
     });
 
@@ -170,40 +173,22 @@ describe("getFailedCheckLogs", () => {
     const { gitProvider, calls } = gitProviderWith((args) => {
       if (isCheckLogLinks(args)) {
         return JSON.stringify({
-          data: {
-            repository: {
-              pullRequest: {
-                commits: {
-                  nodes: [
-                    {
-                      commit: {
-                        statusCheckRollup: {
-                          contexts: {
-                            nodes: [
-                              {
-                                __typename: "CheckRun",
-                                name: "build",
-                                status: "COMPLETED",
-                                conclusion: "FAILURE",
-                                detailsUrl: "https://github.com/o/r/actions/runs/123/job/9",
-                              },
-                              {
-                                __typename: "CheckRun",
-                                name: "lint",
-                                status: "COMPLETED",
-                                conclusion: "SUCCESS",
-                                detailsUrl: "https://github.com/o/r/actions/runs/124/job/10",
-                              },
-                            ],
-                          },
-                        },
-                      },
-                    },
-                  ],
-                },
-              },
+          statusCheckRollup: [
+            {
+              __typename: "CheckRun",
+              name: "build",
+              status: "COMPLETED",
+              conclusion: "FAILURE",
+              detailsUrl: "https://github.com/o/r/actions/runs/123/job/9",
             },
-          },
+            {
+              __typename: "CheckRun",
+              name: "lint",
+              status: "COMPLETED",
+              conclusion: "SUCCESS",
+              detailsUrl: "https://github.com/o/r/actions/runs/124/job/10",
+            },
+          ],
         });
       }
       if (isRunView(args)) return "build log";
@@ -215,8 +200,7 @@ describe("getFailedCheckLogs", () => {
     expect(logs).toContain("GitHub Actions run 123");
     expect(logs).toContain("build log");
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toContain("api");
-    expect(calls[0]?.some((arg) => arg.includes("detailsUrl"))).toBe(true);
+    expect(calls[0]).toEqual(["pr", "view", "42", "--json", "statusCheckRollup"]);
     expect(calls[1]).toEqual(["run", "view", "123", "--log-failed"]);
   });
 
@@ -224,31 +208,7 @@ describe("getFailedCheckLogs", () => {
     const { gitProvider } = gitProviderWith((args) => {
       if (isCheckLogLinks(args)) {
         return JSON.stringify({
-          data: {
-            repository: {
-              pullRequest: {
-                commits: {
-                  nodes: [
-                    {
-                      commit: {
-                        statusCheckRollup: {
-                          contexts: {
-                            nodes: [
-                              {
-                                __typename: "StatusContext",
-                                context: "external",
-                                state: "ERROR",
-                              },
-                            ],
-                          },
-                        },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          },
+          statusCheckRollup: [{ __typename: "StatusContext", context: "external", state: "ERROR" }],
         });
       }
       throw new Error(`unexpected args: ${args.join(" ")}`);
@@ -310,7 +270,7 @@ describe("getChecks polling", () => {
     expect(result).toEqual({ done: true, value: [] });
   });
 
-  test("settles even when a completed check failed — the step decides pass/fail", async () => {
+  test("settles even when a completed check failed - the step decides pass/fail", async () => {
     const run: GhRunner = () => Promise.resolve(JSON.stringify(checksWithFailure));
     const result = await createGitHubProvider("/repo", { run }).getChecks(42).poll();
     expect(result.done).toBe(true);

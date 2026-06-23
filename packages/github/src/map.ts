@@ -1,22 +1,24 @@
-// Pure mapping layer: GitHub `gh` JSON → core GitProvider entities. No `gh`, no `cwd`,
-// no I/O — every function takes already-parsed JSON and returns a core entity, so
+// Pure mapping layer: GitHub `gh` JSON -> core GitProvider entities. No `gh`, no `cwd`,
+// no I/O - every function takes already-parsed JSON and returns a core entity, so
 // the enum tables here are the unit of correctness (see test/map.test.ts).
 //
-// This file owns the *input contract*: the raw shapes of `gh api graphql` /
+// This file owns the input contract: the raw shapes of `gh pr view --json ...` and
 // `gh pr list` output that the provider feeds in.
 
 import type { CheckRun, Mergeable, PullRequest } from "@tml/core";
 
 // --- Raw `gh` response shapes (pre-mapping) -------------------------------------
 
-/** A check from the GraphQL Checks API. */
+/** A check from the PR status-check rollup. */
 export interface GhCheckRunNode {
   readonly __typename: "CheckRun";
   readonly name: string;
   /** QUEUED | IN_PROGRESS | COMPLETED | WAITING | PENDING | REQUESTED */
   readonly status: string;
-  /** SUCCESS | FAILURE | NEUTRAL | CANCELLED | SKIPPED | TIMED_OUT | … | null */
+  /** SUCCESS | FAILURE | NEUTRAL | CANCELLED | SKIPPED | TIMED_OUT | ... | null */
   readonly conclusion: string | null;
+  /** GitHub Actions job URL, when available. */
+  readonly detailsUrl?: string;
 }
 
 /** A legacy commit status surfaced in the same rollup. */
@@ -25,18 +27,11 @@ export interface GhStatusContextNode {
   readonly context: string;
   /** EXPECTED | ERROR | FAILURE | PENDING | SUCCESS */
   readonly state: string;
+  /** External status URL, when available. */
+  readonly targetUrl?: string;
 }
 
 export type GhCheckNode = GhCheckRunNode | GhStatusContextNode;
-
-/** The last commit on the PR carries the status-check rollup. */
-export interface GhCommitNode {
-  readonly commit: {
-    readonly statusCheckRollup: {
-      readonly contexts: { readonly nodes: readonly GhCheckNode[] };
-    } | null;
-  };
-}
 
 export interface GhPullRequestNode {
   readonly number: number;
@@ -49,24 +44,12 @@ export interface GhPullRequestNode {
   readonly state: string;
   /** MERGEABLE | CONFLICTING | UNKNOWN */
   readonly mergeable: string;
-  readonly commits: { readonly nodes: readonly GhCommitNode[] };
+  readonly statusCheckRollup: readonly GhCheckNode[] | null;
 }
 
-/** `gh api graphql` wraps the selection under `data`. */
-export interface GhGraphQlResponse<T> {
-  readonly data: T;
-}
-
-/** `data` shape of the full-snapshot query (getPullRequest / findPullRequest). */
-export interface SnapshotData {
-  readonly repository: { readonly pullRequest: GhPullRequestNode };
-}
-
-/** `data` shape of the lighter checks-only query (getChecks poll). */
-export interface ChecksData {
-  readonly repository: {
-    readonly pullRequest: { readonly commits: { readonly nodes: readonly GhCommitNode[] } };
-  };
+/** `gh pr view --json statusCheckRollup` response for cheap check polling. */
+export interface GhChecksView {
+  readonly statusCheckRollup: readonly GhCheckNode[] | null;
 }
 
 /** A row of `gh pr list --json number,state`. */
@@ -76,9 +59,9 @@ export interface GhPrListRow {
   readonly state: string;
 }
 
-// --- Mappers (raw JSON → core entities) -----------------------------------------
+// --- Mappers (raw JSON -> core entities) -----------------------------------------
 
-/** GraphQL PR state → core. Unknown states coarsen to `open` (never observed live). */
+/** GitHub PR state -> core. Unknown states coarsen to `open` (never observed live). */
 export function mapState(raw: string): PullRequest["state"] {
   switch (raw) {
     case "CLOSED":
@@ -101,7 +84,7 @@ export function mapMergeable(raw: string): Mergeable {
   }
 }
 
-/** CheckRun.status enum → core. Unknown statuses coarsen to `queued` (keep polling). */
+/** CheckRun.status enum -> core. Unknown statuses coarsen to `queued` (keep polling). */
 export function mapCheckStatus(raw: string): CheckRun["status"] {
   switch (raw) {
     case "COMPLETED":
@@ -113,7 +96,7 @@ export function mapCheckStatus(raw: string): CheckRun["status"] {
   }
 }
 
-/** CheckRun.conclusion enum → core. Anything outside the core union coarsens to `neutral`. */
+/** CheckRun.conclusion enum -> core. Anything outside the core union coarsens to `neutral`. */
 export function mapConclusion(raw: string | null): CheckRun["conclusion"] {
   switch (raw) {
     case null:
@@ -127,11 +110,11 @@ export function mapConclusion(raw: string | null): CheckRun["conclusion"] {
     case "NEUTRAL":
       return "neutral";
     default:
-      return "neutral"; // ACTION_REQUIRED | TIMED_OUT | STALE | SKIPPED | STARTUP_FAILURE | …
+      return "neutral"; // ACTION_REQUIRED | TIMED_OUT | STALE | SKIPPED | STARTUP_FAILURE | ...
   }
 }
 
-/** A legacy StatusContext `state` → a CheckRun status. */
+/** A legacy StatusContext `state` -> a CheckRun status. */
 function contextStatus(state: string): CheckRun["status"] {
   switch (state) {
     case "SUCCESS":
@@ -145,7 +128,7 @@ function contextStatus(state: string): CheckRun["status"] {
   }
 }
 
-/** A legacy StatusContext `state` → a CheckRun conclusion. */
+/** A legacy StatusContext `state` -> a CheckRun conclusion. */
 function contextConclusion(state: string): CheckRun["conclusion"] {
   switch (state) {
     case "SUCCESS":
@@ -173,10 +156,9 @@ export function mapCheckNode(node: GhCheckNode): CheckRun {
   };
 }
 
-/** Pull the rollup contexts off the PR's last commit; empty when there is no rollup. */
-export function mapChecks(commits: { readonly nodes: readonly GhCommitNode[] }): CheckRun[] {
-  const rollup = commits.nodes[0]?.commit.statusCheckRollup;
-  return (rollup?.contexts.nodes ?? []).map(mapCheckNode);
+/** Map a PR status-check rollup; empty when `gh` returns no rollup. */
+export function mapChecks(rollup: readonly GhCheckNode[] | null | undefined): CheckRun[] {
+  return (rollup ?? []).map(mapCheckNode);
 }
 
 export function mapPullRequest(node: GhPullRequestNode): PullRequest {
@@ -189,6 +171,6 @@ export function mapPullRequest(node: GhPullRequestNode): PullRequest {
     body: node.body,
     state: mapState(node.state),
     mergeable: mapMergeable(node.mergeable),
-    checks: mapChecks(node.commits),
+    checks: mapChecks(node.statusCheckRollup),
   };
 }
