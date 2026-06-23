@@ -119,6 +119,7 @@ describe("present", () => {
       { type: "run:cancelled", step: "lint" },
     ]);
     expect(view.status).toBe("cancelled");
+    expect(view.activeStep).toBeUndefined();
     expect(view.error).toBeUndefined();
   });
 

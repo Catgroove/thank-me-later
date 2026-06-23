@@ -1,35 +1,14 @@
-// TTY renderer: a scroll-safe live region over `ViewState`, results-forward by default.
+// TTY renderer: scroll-safe, results-forward output over `ViewState`.
 //
-// Quiet mode (the default) separates signal from noise. While a step runs, its agent chatter,
-// tool calls, and log lines ride the *transient* live line — a spinner + the active step name +
-// whatever is happening right now — and are then discarded. Only durable content seals into
-// scrollback: each step's result line (`✓ <step>  <artifact>  (<elapsed>)`), an end-of-run
-// results block (the narrative artifacts + the PR URL), and — on failure — the failing step's
-// retained trail so the user can see what broke. Verbose mode (`--verbose`) instead seals the
-// full trail as it happens (a `▸ <step>` header, prose, `⚙` tool lines, `· log` lines), which is
-// what every run used to do.
-//
-// The hard rule that keeps this correct under `tmux` scroll and terminal resize: the only mutable
-// surface is the *single bottom line* the cursor sits on. We never move the cursor up (`\x1b[A`).
-// A live region that floats above committed content needs relative cursor movement, and that math
-// desyncs the instant the viewport scrolls under us — smearing frames into scrollback. So instead:
-//   1. Permanent lines are *appended* (`<line>\n`) and scroll into history untouched, the way any
-//      normal program's output does — inherently scroll- and resize-safe.
-//   2. The live line is rewritten in place with `\r` (column 0) + `\x1b[2K` (clear *that* line)
-//      only — no vertical movement, so scrolling can't desync it.
-//   3. Quiet mode never seals mid-stream, so the live line is the sole churn. Verbose mode seals
-//      completed wrapped prose lines as they fill (greedy wrap makes every line but the last
-//      final) and keeps only the volatile last line live, with the spinner trailing it.
-//   4. Every frame is wrapped in synchronized output (DEC 2026, `?2026h`/`l`) so it paints
-//      atomically; the cursor is hidden while a live line is up and shown on close.
-//
-// Color (dim for transient/structural lines, bold/green/red/cyan for results and outcomes) is an
-// SGR overlay gated on `color`; `clip` measures visible width so codes never break the single-line
-// math. `ship()` only constructs this when `process.stdout.isTTY`; a dumb terminal (no `TERM`)
-// still gets the ASCII glyph set and no color.
+// Quiet mode keeps agent chatter on one transient bottom line; durable content is appended to
+// scrollback. Verbose mode seals the full per-step trail. The live region never moves the cursor
+// up: permanent lines append with `\n`, and the single live line is rewritten with `\r` + clear
+// line. That avoids tmux scroll and resize desync. SGR color is optional; `clip` measures visible
+// width so ANSI codes do not break single-line math.
 
 import type { RunEvent } from "@tml/core";
-import type { StepView, ViewState } from "./present.ts";
+import { approvalPrompt, isNarrativeArtifact, narrativeSteps, resultLabelWidth } from "./format.ts";
+import type { ViewState } from "./present.ts";
 import type { Renderer } from "./renderer.ts";
 
 const SYNC_ON = "\x1b[?2026h";
@@ -85,21 +64,8 @@ export interface CliRendererOptions {
 const MAX_WIDTH = 100;
 const STEP_INDENT = "  "; // step headers / results / the results block
 const BODY_INDENT = "    "; // a step's commands, prose, and failure dump
-const LABEL_WIDTH = 8; // the results block's left label gutter
 const SPINNER_RESERVE = 2; // room the trailing " <spinner>" needs on the live line
 const RESULTS_HEAD = "results "; // after the two leading rule glyphs
-const INLINE_MAX = 56; // a longer (or multi-line) artifact is narrative — it goes to the block
-
-/** A long or multi-line artifact reads as narrative: shown in the results block, not inline. */
-function isNarrative(rendered: string): boolean {
-  return rendered.includes("\n") || rendered.length > INLINE_MAX;
-}
-
-function approvalPrompt(event: Extract<RunEvent, { type: "approval:pending" }>): string {
-  const count = event.input.findings.length;
-  const suffix = count === 1 ? "1 finding" : `${count} findings`;
-  return `${event.input.prompt} (${suffix})`;
-}
 
 const ESC = "\x1b";
 
@@ -318,26 +284,19 @@ export function createCliRenderer(options: CliRendererOptions = {}): Renderer {
       return dim(`${STEP_INDENT}${glyphs.done} ${name}${elapsed()}`);
     }
     // Narrative artifacts go to the results block in full; only short ones read inline here.
-    const inline = isNarrative(rendered) ? "" : `  ${rendered}`;
+    const inline = isNarrativeArtifact(rendered) ? "" : `  ${rendered}`;
     return `${STEP_INDENT}${green(glyphs.done)} ${name}${inline}${dim(elapsed())}`;
   }
 
   /** The end-of-run results block: narrative artifacts (in full) + the PR URL. */
   function resultsBlock(view: ViewState): string[] {
-    const narrative = view.steps.filter(
-      (step): step is StepView & { rendered: string } =>
-        step.rendered !== undefined && isNarrative(step.rendered),
-    );
+    const narrative = narrativeSteps(view);
     if (narrative.length === 0 && view.prUrl === undefined) return [];
     const lines: string[] = [];
     const head = `${glyphs.rule}${glyphs.rule} ${RESULTS_HEAD}`;
     const fill = Math.max(0, Math.min(termColumns(), MAX_WIDTH) - STEP_INDENT.length - head.length);
     lines.push(dim(`${STEP_INDENT}${head}${glyphs.rule.repeat(fill)}`));
-    const labelWidth = Math.max(
-      LABEL_WIDTH,
-      ...narrative.map((step) => step.name.length + 2),
-      view.prUrl !== undefined ? "pr".length + 2 : 0,
-    );
+    const labelWidth = resultLabelWidth(narrative, view.prUrl !== undefined);
     const gutter = STEP_INDENT.length + labelWidth;
     const cont = " ".repeat(gutter);
     const width = Math.max(1, Math.min(termColumns(), MAX_WIDTH) - gutter);
