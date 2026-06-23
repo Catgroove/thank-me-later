@@ -3,8 +3,7 @@
 // verification pass confirms the result. Toolchain discovery stays inside the prompts - tml never
 // hardcodes repo-specific commands.
 
-import { defineStep, makeFinding, type Finding, type Step } from "@tml/core";
-import { executeRoundLoopWithApproval } from "../approval-gate.ts";
+import { defineStep, executeRoundLoop, makeFinding, type Finding, type Step } from "@tml/core";
 import { parseAgentFindingsOutput } from "../findings.ts";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
 import {
@@ -21,7 +20,7 @@ export function checkStep(name: string, goal: string): Step {
   return defineStep({
     name,
     async run(ctx) {
-      const result = await executeRoundLoopWithApproval(ctx, {
+      const result = await executeRoundLoop(ctx, {
         stepName: name,
         async check(input) {
           const before = await ctx.git.status();
