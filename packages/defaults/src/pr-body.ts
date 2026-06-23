@@ -6,6 +6,7 @@ import {
   currentFindings,
   renderPipelineSummaryForPr,
   renderUnresolvedFindingsForPr,
+  summarizeStepRounds,
   type RoundRecord,
 } from "@tml/core";
 
@@ -83,16 +84,11 @@ function riskAssessment(
 
 function testingSummary(rounds: readonly RoundRecord[]): string {
   const checkSteps = new Set(["format", "lint", "typecheck", "test"]);
-  const latest = new Map<string, RoundRecord>();
-  for (const round of rounds) {
-    if (!checkSteps.has(round.step)) continue;
-    const prior = latest.get(round.step);
-    if (prior === undefined || round.index > prior.index) latest.set(round.step, round);
-  }
-  if (latest.size === 0) return "No local check rounds recorded.";
-  return [...latest.entries()]
+  const summaries = summarizeStepRounds(rounds).filter((summary) => checkSteps.has(summary.step));
+  if (summaries.length === 0) return "No local check rounds recorded.";
+  return summaries
     .map(
-      ([step, round]) => `- ${step}: ${round.findings.length === 0 ? "clean" : "findings remain"}`,
+      (summary) => `- ${summary.step}: ${summary.status === "clean" ? "clean" : "findings remain"}`,
     )
     .join("\n");
 }
