@@ -6,6 +6,7 @@
 // not here.
 
 import type { ModelMap, Pipeline } from "./pipeline.ts";
+import type { Step } from "./step.ts";
 
 export class AssemblyError extends Error {
   constructor(message: string) {
@@ -14,9 +15,30 @@ export class AssemblyError extends Error {
   }
 }
 
+export interface IsolationBoundary {
+  readonly step: Step;
+  readonly index: number;
+  readonly sourceSteps: readonly Step[];
+}
+
+export function isolationBoundaryFor(pipeline: Pipeline): IsolationBoundary | undefined {
+  const boundaries = pipeline
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => step.isolate);
+  if (boundaries.length > 1) {
+    throw new AssemblyError(
+      `Multiple Steps are marked isolate (${boundaries.map(({ step }) => `"${step.name}"`).join(", ")}); mark exactly one isolation boundary.`,
+    );
+  }
+  const boundary = boundaries[0];
+  if (boundary === undefined) return undefined;
+  return { ...boundary, sourceSteps: pipeline.slice(0, boundary.index + 1) };
+}
+
 export function validatePipeline(pipeline: Pipeline, models?: ModelMap): void {
   const seenSteps = new Set<string>();
   const producedBy = new Map<string, string>();
+  isolationBoundaryFor(pipeline);
 
   for (const step of pipeline) {
     if (step.name === "default") {

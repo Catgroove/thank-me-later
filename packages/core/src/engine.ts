@@ -30,10 +30,16 @@ const MAX_RETRIES = 3;
 
 /** The cross-cutting dependencies every event-emitting helper needs, bundled so they thread through
  *  `emit`/`failed`/`cancelled`/`makeContext` as one value instead of three positional args. */
+interface EngineEventCoalescing {
+  readonly suppressRunStarted?: boolean;
+  readonly replaySteps?: ReadonlySet<string>;
+}
+
 interface EngineRun {
   readonly queue: EventQueue<RunEvent>;
   readonly journal: RunJournal | undefined;
   readonly now: () => number;
+  readonly coalescing?: EngineEventCoalescing;
 }
 
 export interface EngineOptions {
@@ -58,6 +64,11 @@ export interface EngineOptions {
    * Run executes to completion as usual.
    */
   stopAfter?: string;
+  /** Suppress host-coalesced resume events before they reach either the journal or consumers. */
+  coalesceEvents?: {
+    readonly suppressRunStarted?: boolean;
+    readonly replaySteps?: ReadonlySet<string> | readonly string[];
+  };
 }
 
 export interface Engine {
@@ -113,7 +124,8 @@ async function drive(
   const git = opts.git ?? createGit(cwd);
   const journal =
     opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
-  const run: EngineRun = { queue, journal, now };
+  const coalescing = eventCoalescing(opts.coalesceEvents);
+  const run: EngineRun = { queue, journal, now, ...(coalescing ? { coalescing } : {}) };
   // The branch you're on scopes `auto` resume: a parked Run only resumes on the branch it was
   // shipping. We seed it at start and advance it as Steps move HEAD onto a feature branch.
   let resumeKey = await currentBranchOrUndefined(git);
@@ -401,10 +413,42 @@ function stamp(event: RunEventInput, now: () => number): RunEvent {
   return { ...event, at: now() } as RunEvent;
 }
 
-async function emit({ queue, journal, now }: EngineRun, event: RunEventInput): Promise<void> {
-  const stamped = stamp(event, now);
-  await journal?.recordEvent(stamped).catch(() => undefined);
-  queue.push(stamped);
+async function emit(run: EngineRun, event: RunEventInput): Promise<void> {
+  if (shouldCoalesce(event, run.coalescing)) return;
+  const stamped = stamp(event, run.now);
+  await run.journal?.recordEvent(stamped).catch(() => undefined);
+  run.queue.push(stamped);
+}
+
+function eventCoalescing(
+  input: EngineOptions["coalesceEvents"],
+): EngineEventCoalescing | undefined {
+  if (input === undefined) return undefined;
+  const replaySteps =
+    input.replaySteps === undefined
+      ? undefined
+      : input.replaySteps instanceof Set
+        ? input.replaySteps
+        : new Set(input.replaySteps);
+  return {
+    ...(input.suppressRunStarted !== undefined
+      ? { suppressRunStarted: input.suppressRunStarted }
+      : {}),
+    ...(replaySteps !== undefined ? { replaySteps } : {}),
+  };
+}
+
+function shouldCoalesce(
+  event: RunEventInput,
+  coalescing: EngineEventCoalescing | undefined,
+): boolean {
+  if (coalescing === undefined) return false;
+  if (event.type === "run:started") return coalescing.suppressRunStarted === true;
+  if (event.type === "artifact:written" || event.type === "round:recorded") {
+    return coalescing.replaySteps?.has(event.step) === true;
+  }
+  if (event.type === "step:skipped") return coalescing.replaySteps?.has(event.step) === true;
+  return false;
 }
 
 async function failed(

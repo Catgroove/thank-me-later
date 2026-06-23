@@ -11,8 +11,8 @@ import {
   createRunJournal,
   createWorktree,
   currentWorkspaceSourceBranch,
+  isolationBoundaryFor,
   removeWorktree,
-  type RunEvent,
   type RunJournal,
   type RunJournalResumeMode,
 } from "@tml/core";
@@ -83,20 +83,6 @@ async function defaultCreateTui(options: { onAbort: () => void }): Promise<Inter
 // 128 + signal number: the conventional exit code for a signal-terminated process.
 const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
 
-/**
- * Phase-2 events that must not reach the view, so the two engine passes read as one continuous Run:
- * the duplicate `run:started`, and the journal-replay of the source-phase Steps the first pass
- * already presented (their `artifact:written` / `round:recorded` / `step:skipped`).
- */
-function isCoalescedAwayEvent(event: RunEvent, sourcePhase: ReadonlySet<string>): boolean {
-  if (event.type === "run:started") return true;
-  if (event.type === "step:skipped" || event.type === "artifact:written") {
-    return sourcePhase.has(event.step);
-  }
-  if (event.type === "round:recorded") return sourcePhase.has(event.step);
-  return false;
-}
-
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const buildConfig =
@@ -149,25 +135,26 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   let setupJournal: RunJournal | undefined;
 
   // Outcome of one engine pass. Two passes (source phase, worktree phase) fold into the same `view`
-  // and the same journaled Run; `suppressReplayOf` drops the second pass's `run:started` and its
-  // journal-replay of the already-presented source-phase Steps, so the user sees one continuous Run.
+  // and the same journaled Run; the engine coalesces phase-2 replay-only events before they reach
+  // either this live stream or the durable journal.
   interface PassOutcome {
     failed: boolean;
     cancelled: boolean;
     finished: boolean;
     paused: boolean;
   }
-  const runPass = async (
-    engine: Engine,
-    suppressReplayOf?: ReadonlySet<string>,
-  ): Promise<PassOutcome> => {
-    const outcome: PassOutcome = { failed: false, cancelled: false, finished: false, paused: false };
+  const runPass = async (engine: Engine): Promise<PassOutcome> => {
+    const outcome: PassOutcome = {
+      failed: false,
+      cancelled: false,
+      finished: false,
+      paused: false,
+    };
     for await (const event of engine.run()) {
       if (event.type === "run:paused") {
         outcome.paused = true;
         continue;
       }
-      if (suppressReplayOf !== undefined && isCoalescedAwayEvent(event, suppressReplayOf)) continue;
       view = present(view, event);
       renderer.render(view, event);
       if (event.type === "run:failed") outcome.failed = true;
@@ -214,14 +201,8 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     const worktreePath = snapshot.metadata.workspacePath;
     if (worktreePath === undefined) throw new Error("tml ship: Run Journal has no workspace.");
 
-    // The isolation boundary is the last Step carrying `isolate`. Steps up to and including it run
-    // in the source checkout (phase 1); the rest run in the worktree (phase 2). With no boundary
-    // (a custom pipeline dropped it), the whole pipeline runs in place - no worktree.
-    const boundaryIndex = sourceConfig.pipeline.reduce(
-      (last, step, i) => (step.isolate ? i : last),
-      -1,
-    );
-    if (boundaryIndex < 0) {
+    const boundary = isolationBoundaryFor(sourceConfig.pipeline);
+    if (boundary === undefined) {
       const engine = engineFor(sourceConfig, {
         cwd,
         ask,
@@ -231,23 +212,24 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       });
       return exitCode(await runPass(engine));
     }
-    const boundary = pipelineNames[boundaryIndex] as string;
-    const sourcePhase = new Set(pipelineNames.slice(0, boundaryIndex + 1));
+    const boundaryName = boundary.step.name;
+    const sourcePhase = new Set(boundary.sourceSteps.map((step) => step.name));
 
     // Phase 1: branch/describe/commit-change in the source checkout, pausing at the boundary. Skip
     // it when a resumed Run already finished the boundary (the branch + commit are durable in git).
-    if (!snapshot.completedSteps.has(boundary)) {
+    if (!snapshot.completedSteps.has(boundaryName)) {
       const phase1 = engineFor(sourceConfig, {
         cwd,
         ask,
         approveFindings,
         signal: abortController.signal,
         journal,
-        stopAfter: boundary,
+        stopAfter: boundaryName,
       });
       const outcome = await runPass(phase1);
       if (outcome.finished || outcome.failed || outcome.cancelled) return exitCode(outcome);
-      if (!outcome.paused) throw new Error("tml ship: engine stopped before the isolation handoff.");
+      if (!outcome.paused)
+        throw new Error("tml ship: engine stopped before the isolation handoff.");
     }
 
     // Handoff: the source checkout is on the feature branch with the work committed. Switch it back
@@ -262,16 +244,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     if (featureBranch === base || featureBranch === "HEAD") {
       throw new Error("tml ship: could not determine the feature branch to isolate.");
     }
-    await journal.recordWorkspaceBranch(featureBranch);
+    await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
     if ((await sourceGit.currentBranch()) === featureBranch) await sourceGit.checkout(base);
-    await journal.recordResumeKey(base);
     if (!existsSync(join(worktreePath, ".git"))) {
       await createWorktree(cwd, featureBranch, worktreePath);
     }
     workspaceToClean = worktreePath;
 
-    // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run (which
-    // replays the source-phase Steps from the journal - suppressed here so the Run reads as one).
+    // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
+    // engine coalesces the source-phase replay so the Run reads as one continuous stream.
     const worktreeConfig = await buildConfig(worktreePath);
     if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
       throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
@@ -282,8 +263,9 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       approveFindings,
       signal: abortController.signal,
       journal,
+      coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
     });
-    const outcome = await runPass(phase2, sourcePhase);
+    const outcome = await runPass(phase2);
     if (outcome.finished && workspaceToClean !== undefined) {
       await removeWorktree(cwd, workspaceToClean);
       workspaceToClean = undefined;

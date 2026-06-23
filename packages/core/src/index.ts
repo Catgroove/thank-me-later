@@ -88,6 +88,8 @@ export {
   type RunJournalSnapshot,
   type RunMetadata,
   type RunStatus,
+  type RunWorktreeHandoff,
 } from "./run-journal.ts";
 export { createWorktree, currentWorkspaceSourceBranch, removeWorktree } from "./workspace.ts";
-export { AssemblyError, validatePipeline } from "./validate.ts";
+export { AssemblyError, isolationBoundaryFor, validatePipeline } from "./validate.ts";
+export type { IsolationBoundary } from "./validate.ts";
