@@ -1,23 +1,30 @@
-// The agent task strings for the default pipeline. Checks are agent-driven: each prompt
-// tells the agent *what* to achieve and lets it discover the toolchain via shell access -
-// no tml-side detection, so the pipeline works in any language (ARCHITECTURE). Kept pure
-// and snapshot-tested; the Steps compose them into fresh check/fix/review agent rounds.
+// The agent task strings for the default pipeline. Quality checks are model-backed: each
+// prompt tells the agent what to verify by reading the repo and reasoning from source, instead
+// of hardcoding or invoking language-specific local toolchains. Kept pure and snapshot-tested;
+// the Steps compose them into fresh check/fix/review agent rounds.
 
 import type { CheckRun, Finding, RoundTrigger } from "@tml/core";
 
 export const formatPrompt =
-  "Verify repository formatting. Discover the formatter from project config. Prefer a " +
-  "non-mutating check mode when one exists; if the formatter only supports writing changes, " +
-  "report one auto-fix finding instead of modifying files. If no formatter is configured, " +
-  "report no findings.";
+  "Verify repository formatting by model-backed source inspection. Read relevant project " +
+  "formatting config and changed files, but do not run formatters, package managers, or " +
+  "install commands. Report only high-confidence formatting drift that is obvious from the " +
+  "source text, with auto-fix when a later fix round can safely reformat the affected file. " +
+  "If formatting cannot be judged confidently from source inspection, report no findings.";
 
 export const lintPrompt =
-  "Verify repository lint. Discover the linter from project config and run it without applying " +
-  "fixes. Report each real issue that remains. If no linter is configured, report no findings.";
+  "Verify repository lint by model-backed source inspection. Read relevant lint config and " +
+  "changed files, but do not run linters, package managers, or install commands. Report only " +
+  "high-confidence lint issues visible in source, with auto-fix when a later fix round can " +
+  "safely repair the issue. If lint cleanliness cannot be judged confidently from source " +
+  "inspection, report no findings.";
 
 export const typecheckPrompt =
-  "Verify repository type-checking. Discover the type checker from project config and run it. " +
-  "Report each real type error that remains. If no type checker is configured, report no " +
+  "Verify repository type-checking by model-backed source inspection. Read relevant type " +
+  "configuration, declarations, and changed files, but do not run compilers, type checkers, " +
+  "package managers, or install commands. Report only high-confidence type or API contract " +
+  "errors visible from source, with auto-fix when a later fix round can safely repair the " +
+  "issue. If type correctness cannot be judged confidently from source inspection, report no " +
   "findings.";
 
 export const testPrompt =
@@ -45,9 +52,11 @@ export function checkPrompt(input: CheckPromptInput): string {
     `Check step: ${input.name}.\n\n` +
     input.goal +
     "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
-    "changes, commit, or run a mutating auto-fix command. If a tool can only prove or repair " +
-    "the problem by changing files, return an auto-fix finding for the later fix round. Return " +
-    "structured findings. Use action auto-fix only for issues a future fix round can safely " +
+    "changes, commit, install dependencies, or run a mutating auto-fix command. For " +
+    "format, lint, and typecheck checks, inspect files directly instead of invoking local " +
+    "quality tools. If a tool can only prove or repair the problem by changing files, return an " +
+    "auto-fix finding for the later fix round. Return structured findings. Use action " +
+    "auto-fix only for issues a future fix round can safely " +
     "repair without changing product intent; use ask-user when human judgement is required; " +
     "use no-op only for informational observations. Report no findings when the check is clean " +
     "or not configured." +
@@ -77,11 +86,12 @@ export function checkFixPrompt(input: CheckFixPromptInput): string {
   return (
     `Fix step: ${input.name}.\n\n` +
     input.goal +
-    "\n\nApply fixes in place for the selected findings below. Discover and use the " +
-    "repository's own toolchain; do not add repo-specific command detection to tml. Start by " +
-    "double-checking that each finding is legitimate, skip any that are not, and prefer the " +
-    "smallest correct root-cause fix. After editing, run the most relevant verification command " +
-    "when practical. Do not commit. Summarise what you changed in one short line." +
+    "\n\nApply fixes in place for the selected findings below. Use repository context and the " +
+    "selected finding details; do not add repo-specific command detection to tml and do not " +
+    "install dependencies. Start by double-checking that each finding is legitimate, skip any " +
+    "that are not, and prefer the smallest correct root-cause fix. After editing, run the most " +
+    "relevant verification command only when it is already available without setup. Do not " +
+    "commit. Summarise what you changed in one short line." +
     prior +
     "\n\nSelected findings:\n" +
     list
