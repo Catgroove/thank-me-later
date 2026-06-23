@@ -48,10 +48,12 @@ export async function createTuiRenderer(
   const interactions = createInteractions(setPrompt);
 
   // ctrl-c is handled by the TUI (delivered as a keypress in raw mode), not by an automatic process
-  // exit; mouse is off; cap the cadence at 30 FPS and use the alternate screen.
+  // exit. Mouse is on so the activity panel and inspector scrollboxes take the wheel directly (the
+  // scrollbox consumes scroll events itself - no per-element wiring); this is the cost of giving up
+  // the terminal's native click-drag text selection. Cap the cadence at 30 FPS, alternate screen.
   const cli = await createCliRenderer({
     exitOnCtrlC: false,
-    useMouse: false,
+    useMouse: true,
     targetFps: 30,
     screenMode: "alternate-screen",
   });
