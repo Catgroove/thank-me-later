@@ -7,7 +7,7 @@ import {
   type Finding,
   type RoundRecordInput,
   type RoundTrigger,
-  renderFindingForPr,
+  renderRoundsForPrompt,
 } from "./round.ts";
 
 const DEFAULT_MAX_AUTO_FIX_ATTEMPTS = 3;
@@ -128,7 +128,7 @@ export async function executeRoundLoop(
       attempt: attempts + 1,
       findings: [...initialFixFindings],
       history: fixHistory,
-      historyText: renderHistory(fixHistory),
+      historyText: renderRoundsForPrompt(fixHistory),
     };
     const fix = await options.fix(fixInput);
     const commitSha = await commitFix(ctx, options, fixInput, fix);
@@ -152,7 +152,7 @@ export async function executeRoundLoop(
       trigger,
       attempt: attempts,
       history: checkHistory,
-      historyText: renderHistory(checkHistory),
+      historyText: renderRoundsForPrompt(checkHistory),
     };
     const check = await options.check(checkInput);
     const findings = [...check.findings];
@@ -181,7 +181,7 @@ export async function executeRoundLoop(
       attempt: attempts + 1,
       findings: selected,
       history: fixHistory,
-      historyText: renderHistory(fixHistory),
+      historyText: renderRoundsForPrompt(fixHistory),
     };
     const fix = await options.fix(fixInput);
     const commitSha = await commitFix(ctx, options, fixInput, fix);
@@ -198,23 +198,6 @@ export async function executeRoundLoop(
     attempts += 1;
     trigger = "verify";
   }
-}
-
-function renderHistory(rounds: readonly RoundRecordInput[]): string {
-  if (rounds.length === 0) return "No prior rounds.";
-  return rounds
-    .map((round, index) => {
-      const lines = [`Round ${index}: ${round.trigger}`];
-      if (round.findings.length === 0) lines.push("No findings.");
-      else lines.push(...round.findings.map(renderFindingForPr));
-      if (round.selectedFindingIds && round.selectedFindingIds.length > 0) {
-        lines.push(`Selected: ${round.selectedFindingIds.join(", ")}`);
-      }
-      if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
-      if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
-      return lines.join("\n");
-    })
-    .join("\n\n");
 }
 
 function selectFindings(

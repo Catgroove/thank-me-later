@@ -1,6 +1,6 @@
 import {
   executeRoundLoop,
-  renderFindingForPr,
+  renderRoundsForPrompt,
   type ApprovalDecision,
   type Ctx,
   type Finding,
@@ -53,7 +53,7 @@ export async function executeRoundLoopWithApproval(
       prompt: defaultPrompt(options.stepName, result.stopReason),
       findings: result.findings,
       selectedFindingIds: currentSelectedFindingIds(result.findings, result.rounds),
-      context: renderRoundContext(result.rounds),
+      context: renderRoundsForPrompt(result.rounds),
     });
 
     if (decision.action === "abort") throw new Error("approval aborted by operator");
@@ -170,25 +170,4 @@ function stripDecisionNote(
   const suffix = `\n\nOperator note: ${note}`;
   if (!finding.detail.endsWith(suffix)) return finding;
   return { ...finding, detail: finding.detail.slice(0, -suffix.length) };
-}
-
-function renderRoundContext(rounds: readonly RoundRecordInput[]): string {
-  if (rounds.length === 0) return "No prior rounds.";
-  return rounds
-    .map((round, index) => {
-      const lines = [`Round ${index}: ${round.trigger}`];
-      if (round.findings.length === 0) lines.push("No findings.");
-      else lines.push(...round.findings.map(renderFindingForPr));
-      if (round.selectedFindingIds && round.selectedFindingIds.length > 0) {
-        lines.push(`Selected: ${round.selectedFindingIds.join(", ")}`);
-      }
-      if (round.userNotes && Object.keys(round.userNotes).length > 0) {
-        lines.push("User notes:");
-        for (const [id, note] of Object.entries(round.userNotes)) lines.push(`- ${id}: ${note}`);
-      }
-      if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
-      if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
-      return lines.join("\n");
-    })
-    .join("\n\n");
 }
