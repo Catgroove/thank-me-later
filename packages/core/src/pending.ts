@@ -8,6 +8,8 @@
 // `until` is abort-aware: an `AbortSignal` stops it promptly —
 // mid-sleep, not just between polls — so a long ci-wait can be cancelled.
 
+import { setTimeout as delay } from "node:timers/promises";
+
 export type PollResult<T> = { done: true; value: T } | { done: false };
 
 export interface Pending<T> {
@@ -58,20 +60,11 @@ export async function until<T>(
   }
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new AbortError());
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new AbortError());
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  try {
+    await delay(ms, undefined, { signal });
+  } catch (error) {
+    if (signal?.aborted) throw new AbortError();
+    throw error;
+  }
 }

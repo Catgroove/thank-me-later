@@ -21,7 +21,7 @@ describe("public surface (@tml/core)", () => {
     for (const name of fns) {
       expect(typeof surface[name]).toBe("function");
     }
-    for (const errorClass of ["AssemblyError", "TimeoutError", "NotImplementedError"]) {
+    for (const errorClass of ["AssemblyError", "TimeoutError"]) {
       expect(typeof surface[errorClass]).toBe("function");
     }
   });

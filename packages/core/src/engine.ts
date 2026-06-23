@@ -28,13 +28,6 @@ import { validatePipeline } from "./validate.ts";
 
 const MAX_RETRIES = 3;
 
-export class NotImplementedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "NotImplementedError";
-  }
-}
-
 export interface EngineOptions {
   /** Working dir for the native Git capability. Defaults to process.cwd(). */
   cwd?: string;
@@ -105,15 +98,13 @@ async function drive(
     opts.ask ??
     (() =>
       Promise.reject(
-        new NotImplementedError(
-          "headless ask (suspend to Git provider) is not implemented in this release",
-        ),
+        new Error("headless ask (suspend to Git provider) is not implemented in this release"),
       ));
   const approveFindings =
     opts.approveFindings ??
     (() =>
       Promise.reject(
-        new NotImplementedError(
+        new Error(
           "headless structured approval (suspend to Git provider) is not implemented in this release",
         ),
       ));

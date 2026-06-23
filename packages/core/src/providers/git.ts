@@ -229,17 +229,21 @@ export function createGit(cwd: string): Git {
     },
 
     async status() {
-      const out = await git(cwd, ["status", "--porcelain"]);
+      const out = await git(cwd, ["status", "--porcelain=v1", "-z"]);
       const staged: string[] = [];
       const unstaged: string[] = [];
-      for (const line of out.split("\n")) {
-        if (line.length === 0) continue;
-        const index = line[0];
-        const worktree = line[1];
-        const file = line.slice(3);
+      const entries = out.split("\0").filter((entry) => entry.length > 0);
+      for (let i = 0; i < entries.length; i += 1) {
+        const entry = entries[i];
+        if (entry === undefined || entry.length < 3) continue;
+        const index = entry[0];
+        const worktree = entry[1];
+        const file = entry.slice(3);
         // Untracked files report as "??" — count them as unstaged (new work).
         if (index !== " " && index !== "?") staged.push(file);
         if (worktree !== " ") unstaged.push(file);
+        // Renames and copies include the source path as the next NUL-separated field.
+        if (index === "R" || index === "C") i += 1;
       }
       return { branch: await branch(), staged, unstaged };
     },

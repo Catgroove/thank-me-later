@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { defineArtifact } from "../src/artifact.ts";
-import { createEngine, type Engine, NotImplementedError } from "../src/engine.ts";
+import { createEngine, type Engine } from "../src/engine.ts";
 import type { RunEvent } from "../src/events.ts";
 import { makeFinding, type RoundRecord } from "../src/round.ts";
 import type { Pipeline } from "../src/pipeline.ts";
@@ -236,7 +236,7 @@ describe("engine - flow signals, ask, and failure", () => {
     expect(events).toContainEqual({ type: "step:log", step: "asks", message: "answer=yes" });
   });
 
-  test("the default headless ask is NotImplemented", async () => {
+  test("the default headless ask reports an unimplemented headless path", async () => {
     const asks = defineStep({
       name: "asks",
       run: (ctx) => ctx.ask("?").then(() => ({})),
@@ -245,7 +245,6 @@ describe("engine - flow signals, ask, and failure", () => {
     const last = events.at(-1);
     expect(last?.type).toBe("run:failed");
     expect(last && "error" in last ? last.error : "").toContain("not implemented");
-    expect(new NotImplementedError("x")).toBeInstanceOf(Error);
   });
 
   test("ctx.approveFindings emits approval:pending and resolves via the injected responder", async () => {
@@ -293,7 +292,7 @@ describe("engine - flow signals, ask, and failure", () => {
     expect(events).toContainEqual({ type: "step:log", step: "approval", message: "decision=fix" });
   });
 
-  test("the default headless structured approval is NotImplemented", async () => {
+  test("the default headless structured approval reports an unimplemented headless path", async () => {
     const approvals = defineStep({
       name: "approvals",
       run: (ctx) =>

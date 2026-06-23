@@ -85,6 +85,14 @@ describe("createAssembly", () => {
     expect(() => missing.build()).toThrow(/harness "nope" is not registered/);
   });
 
+  test("flow signal constructors are available on the injected Plugin API", () => {
+    const a = seeded({});
+    expect(a.tml.skip().kind).toBe("skip");
+    expect(a.tml.cancel("done").kind).toBe("cancel");
+    expect(a.tml.goto("review").kind).toBe("goto");
+    expect(a.tml.retry("again").kind).toBe("retry");
+  });
+
   test("models flow into the Config; branch flows into tml.config for plugins to read", () => {
     const a = seeded({ models: { default: "haiku", review: "opus" }, branch: "require" });
     expect(a.tml.config.branch).toBe("require");
