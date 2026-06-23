@@ -12,6 +12,8 @@ import {
 import {
   actionOptions,
   buildDecision,
+  findingSections,
+  orderedFindings,
   suggestedSelection,
   summaryLine,
   toggleSelection,
@@ -122,6 +124,22 @@ describe("tui approval helpers", () => {
     expect(summaryLine([f1, f2])).toBe("1 error · 1 warning · 2 findings");
     expect(summaryLine([f1])).toBe("1 error");
     expect(summaryLine([])).toBe("No findings.");
+  });
+
+  test("findingSections groups by action, most-actionable first, dropping empty sections", () => {
+    const noop = makeFinding("x", { severity: "info", action: "no-op", title: "c", detail: "f" });
+    // Input arrives auto-fix, ask-user, no-op; sections come back ask-user, auto-fix, no-op.
+    const sections = findingSections([f1, f2, noop]);
+    expect(sections.map((s) => s.action)).toEqual(["ask-user", "auto-fix", "no-op"]);
+    expect(sections.map((s) => s.findings)).toEqual([[f2], [f1], [noop]]);
+    // Sections with no findings are omitted entirely.
+    expect(findingSections([f1]).map((s) => s.action)).toEqual(["auto-fix"]);
+    expect(findingSections([])).toEqual([]);
+  });
+
+  test("orderedFindings flattens sections into the navigation order the drawer renders", () => {
+    const noop = makeFinding("x", { severity: "info", action: "no-op", title: "c", detail: "f" });
+    expect(orderedFindings([f1, noop, f2])).toEqual([f2, f1, noop]);
   });
 });
 

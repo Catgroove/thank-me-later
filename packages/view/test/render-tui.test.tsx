@@ -105,6 +105,12 @@ describe("TUI App (no real terminal)", () => {
             title: "Tighten the retry",
             detail: "consider a backoff",
           }),
+          makeFinding("x", {
+            severity: "info",
+            action: "auto-fix",
+            title: "Reformat the import",
+            detail: "oxfmt will handle it",
+          }),
         ],
       },
       submit: () => {},
@@ -124,6 +130,11 @@ describe("TUI App (no real terminal)", () => {
     expect(frame).toContain("0 selected for fix");
     expect(frame).toContain("Tighten the retry"); // visible finding selection row
     expect(frame).toContain("approval needed"); // the drawer is the primary surface
+    // Findings are split into action sections instead of one flat list.
+    expect(frame).toContain("Needs your decision");
+    expect(frame).toContain("Auto-fix next round");
+    // The per-row action tag is gone now that the section header carries it.
+    expect(frame).not.toContain("(ask-user)");
     t.renderer.destroy();
   });
 });
