@@ -71,6 +71,8 @@ export interface RoundStopPolicyInput {
   readonly selectedFindings: readonly Finding[];
   readonly rounds: readonly RoundRecordInput[];
   readonly attempts: number;
+  /** The current verify round reproduced the previous check's findings exactly. */
+  readonly stalled: boolean;
 }
 
 export interface RoundLoopOptions {
@@ -154,10 +156,8 @@ export async function executeRoundLoop(
       selectedFindings: selected,
       rounds: [...rounds],
       attempts,
+      stalled,
     });
-    if (stalled && (stopReason === undefined || stopReason === "needs_user")) {
-      stopReason = "stalled";
-    }
     if (stopReason === undefined && attempts >= maxAutoFixAttempts) {
       stopReason = "auto_fix_limit_hit";
     }
@@ -274,6 +274,7 @@ function stopPolicy(
   const custom = options.stopPolicy?.(input);
   if (custom !== undefined) return custom;
   if (input.findings.length === 0) return "clean";
+  if (input.stalled) return "stalled";
   if (input.selectedFindings.length > 0) return undefined;
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
 }
