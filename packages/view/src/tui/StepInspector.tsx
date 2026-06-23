@@ -103,14 +103,14 @@ function Phases(props: { step: StepView; now: number }) {
   );
 }
 
-function Summary(props: { step: StepView; now: number }) {
+function Summary(props: { step: StepView; now: number; pendingAt?: number }) {
   // Read `props.step` inside JSX (never hoisted into a const) so the panel stays reactive when the
   // selected Step changes under j/k - hoisting captures a stale StepView and freezes the tab.
   return (
     <box flexDirection="column">
       <text fg="#cbd5e1">status: {props.step.status}</text>
-      <Show when={stepElapsed(props.step, props.now) !== ""}>
-        <text fg="#94a3b8">elapsed: {stepElapsed(props.step, props.now)}</text>
+      <Show when={stepElapsed(props.step, props.now, props.pendingAt) !== ""}>
+        <text fg="#94a3b8">elapsed: {stepElapsed(props.step, props.now, props.pendingAt)}</text>
       </Show>
       <Show when={props.step.headline !== undefined}>
         <text fg="#e2e8f0" wrapMode="word">
@@ -278,7 +278,15 @@ export function StepInspector(props: InspectorProps) {
             <TabBar active={tab()} />
             <scrollbox flexGrow={1} paddingLeft={1} paddingRight={1}>
               <Show when={tab() === "summary"}>
-                <Summary step={s()} now={props.now()} />
+                <Summary
+                  step={s()}
+                  now={props.now()}
+                  pendingAt={
+                    props.view().pendingInteraction?.step === s().name
+                      ? props.view().pendingInteraction?.at
+                      : undefined
+                  }
+                />
               </Show>
               <Show when={tab() === "artifacts"}>
                 <Artifacts step={s()} expanded={props.nav().expanded} />

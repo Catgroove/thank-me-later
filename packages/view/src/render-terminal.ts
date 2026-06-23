@@ -136,6 +136,9 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
   let cursorHidden = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   let pausedForInput = false;
+  // Time the active step spent blocked on a human decision, excluded from its sealed elapsed.
+  let stepWaited = 0;
+  let waitStartedAt: number | undefined;
 
   function visibleLen(line: string): number {
     let n = 0;
@@ -299,7 +302,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
 
   function elapsed(): string {
     if (plain || stepStart === undefined) return ""; // append-only output omits timings
-    const secs = Math.max(0, Math.round((now() - stepStart) / 1000));
+    const secs = Math.max(0, Math.round((now() - stepStart - stepWaited) / 1000));
     return `  (${secs}s)`;
   }
 
@@ -389,6 +392,12 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
       const sealed = (): string[] => (verbose ? commitPendingProse(view) : []);
       if (event.type !== "ask:pending" && event.type !== "approval:pending") {
         pausedForInput = false;
+        // The blocking interaction just resolved - bank the time spent waiting so it does not
+        // count toward the step's elapsed.
+        if (waitStartedAt !== undefined) {
+          stepWaited += Math.max(0, now() - waitStartedAt);
+          waitStartedAt = undefined;
+        }
       }
       switch (event.type) {
         case "run:started": {
@@ -403,6 +412,8 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
         }
         case "step:started": {
           stepStart = now();
+          stepWaited = 0;
+          waitStartedAt = undefined;
           proseCommittedLen = 0;
           if (trail) {
             const header = `${STEP_INDENT}${glyphs.started} ${event.step}`;
@@ -466,6 +477,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           // The prompt blocks the Run awaiting input, so it must seal - it can't be transient.
           // Leave no spinner/live line behind: readline owns the terminal until input resolves.
           pausedForInput = true;
+          waitStartedAt = now();
           commit([...sealed(), `${STEP_INDENT}? ${event.step}: ${event.prompt}`], "");
           showCursor();
           return;
@@ -473,6 +485,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           // Structured approval blocks the Run the same way, but carries findings for a UI.
           // Leave no spinner/live line behind: readline owns the terminal until input resolves.
           pausedForInput = true;
+          waitStartedAt = now();
           commit([...sealed(), `${STEP_INDENT}? ${event.step}: ${approvalPrompt(event)}`], "");
           showCursor();
           return;

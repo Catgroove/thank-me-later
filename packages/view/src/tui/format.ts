@@ -60,13 +60,16 @@ export function formatDuration(ms: number | undefined): string {
 }
 
 /**
- * Elapsed time for a Step: its recorded duration once finished, else a live `now - startedAt`.
- * `now` is supplied by the caller (the renderer's local clock) so this stays pure.
+ * Elapsed time for a Step: its recorded duration once finished, else a live `now - startedAt` with
+ * time already spent waiting excluded. `now` is supplied by the caller (the renderer's local clock)
+ * so this stays pure. `pendingAt` is the timestamp the Step blocked on a human decision, if it is
+ * blocked right now: the clock freezes there, so deliberation does not inflate the elapsed.
  */
-export function stepElapsed(step: StepView, now: number): string {
+export function stepElapsed(step: StepView, now: number, pendingAt?: number): string {
   if (step.durationMs !== undefined) return formatDuration(step.durationMs);
   if (step.status === "active" && step.startedAt !== undefined) {
-    return formatDuration(Math.max(0, now - step.startedAt));
+    const end = pendingAt ?? now;
+    return formatDuration(Math.max(0, end - step.startedAt - (step.waitedMs ?? 0)));
   }
   return "";
 }
@@ -78,9 +81,14 @@ export function phaseElapsed(phase: PhaseView, now: number): string {
   return formatDuration(Math.max(0, end - phase.startedAt));
 }
 
-/** Elapsed time for the whole Run: end-to-end once finished, else live from start. */
+/**
+ * Elapsed time for the whole Run: end-to-end once finished, else live from start. Time spent
+ * blocked on a human decision is excluded - already-resolved waits via the Steps' `waitedMs`, and
+ * the current one (if any) by freezing the clock at the interaction's timestamp.
+ */
 export function runElapsed(view: ViewState, now: number): string {
   if (view.startedAt === undefined) return "";
-  const end = view.finishedAt ?? now;
-  return formatDuration(Math.max(0, end - view.startedAt));
+  const end = view.finishedAt ?? view.pendingInteraction?.at ?? now;
+  const waited = view.steps.reduce((sum, step) => sum + (step.waitedMs ?? 0), 0);
+  return formatDuration(Math.max(0, end - view.startedAt - waited));
 }
