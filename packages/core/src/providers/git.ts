@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { spawnGit } from "../git-spawn.ts";
 
 export interface CommitResult {
   readonly sha: string;
@@ -70,25 +71,8 @@ export interface Git {
   push(opts: { branch: string; force?: boolean }): Promise<void>;
 }
 
-interface GitRun {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-/** Run git, capturing the exit code instead of throwing — for commands whose failure is a result. */
-async function tryGit(cwd: string, args: string[]): Promise<GitRun> {
-  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { exitCode, stdout, stderr };
-}
-
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { exitCode, stdout, stderr } = await tryGit(cwd, args);
+  const { exitCode, stdout, stderr } = await spawnGit(cwd, args);
   if (exitCode !== 0) {
     throw new Error(`git ${args.join(" ")} failed (exit ${exitCode}): ${stderr.trim()}`);
   }
@@ -105,13 +89,11 @@ async function conflictedFiles(cwd: string): Promise<string[]> {
 }
 
 async function refExists(cwd: string, ref: string): Promise<boolean> {
-  return (await tryGit(cwd, ["rev-parse", "--verify", "--quiet", ref])).exitCode === 0;
+  return (await spawnGit(cwd, ["rev-parse", "--verify", "--quiet", ref])).exitCode === 0;
 }
 
 async function comparisonRef(cwd: string, base: string): Promise<string> {
-  if (await refExists(cwd, `refs/remotes/origin/${base}`)) return `origin/${base}`;
-  if (await refExists(cwd, `refs/heads/${base}`)) return base;
-  return base;
+  return (await refExists(cwd, `refs/remotes/origin/${base}`)) ? `origin/${base}` : base;
 }
 
 async function untrackedDiff(cwd: string): Promise<string> {
@@ -122,7 +104,7 @@ async function untrackedDiff(cwd: string): Promise<string> {
     .filter((line) => line.length > 0);
   const diffs: string[] = [];
   for (const file of files) {
-    const result = await tryGit(cwd, ["diff", "--no-index", "--", "/dev/null", file]);
+    const result = await spawnGit(cwd, ["diff", "--no-index", "--", "/dev/null", file]);
     if (result.exitCode !== 0 && result.exitCode !== 1) {
       throw new Error(`git diff --no-index /dev/null ${file} failed: ${result.stderr.trim()}`);
     }
@@ -168,7 +150,7 @@ export function createGit(cwd: string): Git {
 
     async isAncestor(ancestor, ref) {
       // `--is-ancestor` exits 0 (true) / 1 (false); any other code is a real error.
-      const { exitCode, stderr } = await tryGit(cwd, [
+      const { exitCode, stderr } = await spawnGit(cwd, [
         "merge-base",
         "--is-ancestor",
         ancestor,
@@ -180,14 +162,14 @@ export function createGit(cwd: string): Git {
     },
 
     async rebase(onto) {
-      const { exitCode, stderr } = await tryGit(cwd, ["rebase", onto]);
+      const { exitCode, stderr } = await spawnGit(cwd, ["rebase", onto]);
       if (exitCode === 0) return { status: "clean" };
 
       const files = await conflictedFiles(cwd);
       if (files.length > 0) return { status: "conflict", files };
 
       // Failed for some other reason (not conflicts): don't leave a half-rebase behind.
-      await tryGit(cwd, ["rebase", "--abort"]);
+      await spawnGit(cwd, ["rebase", "--abort"]);
       throw new Error(`git rebase ${onto} failed (exit ${exitCode}): ${stderr.trim()}`);
     },
 
@@ -199,7 +181,7 @@ export function createGit(cwd: string): Git {
       // `git rev-parse --git-path` resolves these for plain repos and worktrees alike; the state
       // dir's presence is what marks a rebase as still underway.
       for (const dir of ["rebase-merge", "rebase-apply"]) {
-        const { exitCode, stdout } = await tryGit(cwd, ["rev-parse", "--git-path", dir]);
+        const { exitCode, stdout } = await spawnGit(cwd, ["rev-parse", "--git-path", dir]);
         if (exitCode !== 0) continue;
         const path = stdout.trim();
         if (path.length === 0) continue;

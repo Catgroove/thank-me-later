@@ -8,16 +8,19 @@
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
-import type { Finding, FindingAction, RoundRecord } from "@tml/core";
+import type { Finding, RoundRecord } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
+  findingMarker,
   latestGroupPhases,
   phaseElapsed,
+  SEVERITY_COLOR,
   statusColor,
   statusGlyph,
   stepElapsed,
 } from "./format.ts";
+import { findingSections, SECTION_LABEL } from "./approval.ts";
 import { TABS, effectiveIndex, type NavState, type Tab } from "./navigation.ts";
 
 export interface InspectorProps {
@@ -31,12 +34,6 @@ export interface InspectorProps {
    */
   readonly focusedFindingId?: Accessor<string | undefined>;
 }
-
-const SEVERITY_COLOR: Record<Finding["severity"], string> = {
-  error: "#ef4444",
-  warning: "#f59e0b",
-  info: "#38bdf8",
-};
 
 function TabBar(props: { active: Tab }) {
   return (
@@ -165,7 +162,7 @@ function FindingLine(props: { finding: Finding; focused?: boolean }) {
   const f = props.finding;
   // The focused background matches the approval drawer's focused-finding row so the two surfaces
   // read as pointing at the same finding.
-  const marker = f.blocking === true ? `[blocking] [${f.severity}]` : `[${f.severity}]`;
+  const marker = findingMarker(f);
   return (
     <box
       flexDirection="column"
@@ -186,16 +183,14 @@ function FindingLine(props: { finding: Finding; focused?: boolean }) {
 }
 
 // Findings split by what happens to them, most-actionable first: a decision the user must make, then
-// the set the next round will fix on its own, then purely informational notes. Grouping replaces the
-// per-line `(action)` tag - the section header now carries it - so the user sees at a glance what
-// needs them versus what the pipeline handles.
-const FINDING_SECTIONS: readonly { action: FindingAction; label: string }[] = [
-  { action: "ask-user", label: "Needs your decision" },
-  { action: "auto-fix", label: "Auto-fix" },
-  { action: "no-op", label: "Informational" },
-];
-
-function FindingSection(props: { label: string; findings: Finding[]; focusedId?: string }) {
+// the set the next round will fix on its own, then purely informational notes. The grouping and its
+// canonical order are shared with the approval drawer (findingSections), so the section header
+// carries the action and the per-line `(action)` tag drops away.
+function FindingSection(props: {
+  label: string;
+  findings: readonly Finding[];
+  focusedId?: string;
+}) {
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg="#64748b" attributes={1}>
@@ -209,23 +204,18 @@ function FindingSection(props: { label: string; findings: Finding[]; focusedId?:
 }
 
 function Findings(props: { step: StepView; focusedId?: string }) {
-  const findings = () => visibleFindings(props.step);
+  const sections = () => findingSections(visibleFindings(props.step));
   return (
     <box flexDirection="column">
-      <Show when={findings().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
-        <For each={FINDING_SECTIONS}>
-          {(section) => {
-            const items = () => findings().filter((f) => f.action === section.action);
-            return (
-              <Show when={items().length > 0}>
-                <FindingSection
-                  label={section.label}
-                  findings={items()}
-                  focusedId={props.focusedId}
-                />
-              </Show>
-            );
-          }}
+      <Show when={sections().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
+        <For each={sections()}>
+          {(section) => (
+            <FindingSection
+              label={SECTION_LABEL[section.action]}
+              findings={section.findings}
+              focusedId={props.focusedId}
+            />
+          )}
         </For>
       </Show>
     </box>

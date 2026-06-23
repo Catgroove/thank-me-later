@@ -37,26 +37,44 @@ describe("default pipeline prompts", () => {
     }
   });
 
-  test("checkPrompt creates structured read-only check and verification prompts", () => {
+  test("inspect-mode checkPrompt stays read-only and forbids invoking toolchains", () => {
     const initial = checkPrompt({
       name: "lint",
       goal: lintPrompt,
+      mode: "inspect",
       trigger: "initial",
       historyText: "No prior rounds.",
     });
     const verify = checkPrompt({
       name: "lint",
       goal: lintPrompt,
+      mode: "inspect",
       trigger: "verify",
       historyText: "Round 0: initial",
     });
     expect(initial).toContain("Check step: lint");
     expect(initial).toContain("structured findings");
-    expect(initial).toContain("format, lint, and typecheck checks");
-    expect(initial.toLowerCase()).toContain("do not modify");
+    expect(initial).toContain("Inspect files directly instead of invoking local quality tools");
+    expect(initial.toLowerCase()).toContain("do not modify files");
     expect(initial.toLowerCase()).toContain("install dependencies");
     expect(verify).toContain("Prior check round history");
     expect(verify).toContain("Round 0: initial");
+  });
+
+  test("run-mode checkPrompt runs the command and may install deps, but never commits", () => {
+    const initial = checkPrompt({
+      name: "test",
+      goal: testPrompt,
+      mode: "run",
+      trigger: "initial",
+      historyText: "No prior rounds.",
+    });
+    expect(initial).toContain("Check step: test");
+    expect(initial).toContain("Run the check's command");
+    expect(initial).toContain("building or installing whatever it needs to run");
+    expect(initial).not.toContain("Inspect files directly instead of invoking local quality tools");
+    expect(initial.toLowerCase()).toContain("do not edit source files");
+    expect(initial.toLowerCase()).toContain("commit");
   });
 
   test("checkFixPrompt lists selected findings and avoids tml-side command detection", () => {

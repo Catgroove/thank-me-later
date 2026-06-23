@@ -198,7 +198,7 @@ export function renderRoundsForPr(rounds: readonly RoundRecord[]): string {
  * history) and to the approval gate (decision context), so both surfaces give
  * an identical account of every prior round - user notes included.
  */
-export function renderRoundForPrompt(round: RoundRecordInput, index: number): string {
+function renderRoundForPrompt(round: RoundRecordInput, index: number): string {
   const lines = [`Round ${index}: ${round.trigger}`];
   if (round.findings.length === 0) lines.push("No findings.");
   else lines.push(...round.findings.map(renderFindingForPr));
@@ -214,10 +214,19 @@ export function renderRoundForPrompt(round: RoundRecordInput, index: number): st
   return lines.join("\n");
 }
 
+/** The sentinel `renderRoundsForPrompt` emits when there is no prior round history. */
+export const NO_PRIOR_ROUNDS = "No prior rounds.";
+
 /** Compact rendering of completed rounds for a fresh-agent prompt. */
 export function renderRoundsForPrompt(rounds: readonly RoundRecordInput[]): string {
-  if (rounds.length === 0) return "No prior rounds.";
+  if (rounds.length === 0) return NO_PRIOR_ROUNDS;
   return rounds.map(renderRoundForPrompt).join("\n\n");
+}
+
+/** Whether round-history text holds real prior rounds, not the empty-history sentinel. */
+export function hasPriorRounds(historyText: string): boolean {
+  const trimmed = historyText.trim();
+  return trimmed.length > 0 && trimmed !== NO_PRIOR_ROUNDS;
 }
 
 /** Current findings are the findings from the latest recorded round per Step. */

@@ -45,11 +45,6 @@ export function effectiveIndex(nav: NavState, view: ViewState): number {
   return Math.max(0, Math.min(base, view.steps.length - 1));
 }
 
-/** The currently selected Step's name, or undefined for an empty Pipeline. */
-export function selectedStepName(nav: NavState, view: ViewState): string | undefined {
-  return view.steps[effectiveIndex(nav, view)]?.name;
-}
-
 function nextTab(tab: Tab, dir: 1 | -1): Tab {
   const i = TABS.indexOf(tab);
   const n = (i + dir + TABS.length) % TABS.length;

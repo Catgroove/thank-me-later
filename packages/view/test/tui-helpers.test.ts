@@ -2,13 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { makeFinding, type ApprovalDecision } from "@tml/core";
 import { initialView, present, type ViewState } from "../src/present.ts";
 import type { RunEvent, RunEventInput } from "@tml/core";
-import {
-  effectiveIndex,
-  initialNav,
-  navOnKey,
-  selectedStepName,
-  TABS,
-} from "../src/tui/navigation.ts";
+import { effectiveIndex, initialNav, navOnKey, TABS } from "../src/tui/navigation.ts";
 import {
   actionOptions,
   buildDecision,
@@ -53,7 +47,7 @@ describe("tui navigation", () => {
       { type: "run:started", pipeline: PLUGIN_PIPELINE },
       { type: "step:started", step: "custom-thing" },
     ]);
-    expect(selectedStepName(initialNav, view)).toBe("custom-thing");
+    expect(view.steps[effectiveIndex(initialNav, view)]?.name).toBe("custom-thing");
   });
 
   test("tab / shift-tab cycle the inspector tabs", () => {

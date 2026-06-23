@@ -35,6 +35,13 @@ export interface Step<C extends Artifacts = Artifacts, P extends Artifacts = Art
   readonly produces: P;
   readonly run: StepRun<C, P>;
   readonly resume?: StepResumePolicy;
+  /**
+   * Marks the isolation boundary. After the last Step carrying this flag completes, the host hands
+   * the work off from the source checkout to a disposable worktree and runs the remaining Steps
+   * there. The engine itself is unaware of *where* it runs; this is purely metadata the host reads
+   * to split the run into a source phase and a worktree phase.
+   */
+  readonly isolate?: boolean;
 }
 
 export function defineStep<
@@ -46,6 +53,7 @@ export function defineStep<
   produces?: P;
   run: StepRun<C, P>;
   resume?: StepResumePolicy;
+  isolate?: boolean;
 }): Step<C, P> {
   return {
     name: def.name,
@@ -53,5 +61,6 @@ export function defineStep<
     produces: def.produces ?? ([] as unknown as P),
     run: def.run,
     resume: def.resume ?? "replay",
+    ...(def.isolate ? { isolate: true } : {}),
   };
 }

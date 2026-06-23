@@ -5,30 +5,22 @@
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { Finding, FindingAction, FindingSeverity } from "@tml/core";
+import type { Finding, FindingAction } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
-import { actionOptions, findingSections, summaryLine } from "./approval.ts";
+import { actionOptions, findingSections, SECTION_LABEL, summaryLine } from "./approval.ts";
+import { findingMarker, SEVERITY_COLOR } from "./format.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
 export type ApprovalFocusArea = "findings" | "actions";
 
-// Each action category gets a recognizable icon, header label, and accent color so the operator can
-// tell at a glance what a finding will do: a decision only they can make, a fix the next round
-// applies on its own, or a note that changes nothing. The icon repeats the meaning the color carries
-// so it survives in a monochrome terminal.
-const SECTION_META: Record<
-  FindingAction,
-  { readonly icon: string; readonly label: string; readonly color: string }
-> = {
-  "ask-user": { icon: "◆", label: "Needs your decision", color: "#f59e0b" },
-  "auto-fix": { icon: "↻", label: "Auto-fix next round", color: "#38bdf8" },
-  "no-op": { icon: "▪", label: "Informational", color: "#94a3b8" },
-};
-
-const SEVERITY_COLOR: Record<FindingSeverity, string> = {
-  error: "#ef4444",
-  warning: "#f59e0b",
-  info: "#38bdf8",
+// Each action category gets a recognizable icon and accent color so the operator can tell at a
+// glance what a finding will do: a decision only they can make, a fix the next round applies on its
+// own, or a note that changes nothing. The icon repeats the meaning the color carries so it survives
+// in a monochrome terminal; the header label is shared with the findings inspector (SECTION_LABEL).
+const SECTION_STYLE: Record<FindingAction, { readonly icon: string; readonly color: string }> = {
+  "ask-user": { icon: "◆", color: "#f59e0b" },
+  "auto-fix": { icon: "↻", color: "#38bdf8" },
+  "no-op": { icon: "▪", color: "#94a3b8" },
 };
 
 export interface DrawerProps {
@@ -105,9 +97,7 @@ function AskBody(props: {
 // redundant `(action)` tag and leads with the severity instead.
 function findingLabel(finding: Finding): string {
   const location = finding.location ? ` - ${finding.location}` : "";
-  const marker =
-    finding.blocking === true ? `[blocking] [${finding.severity}]` : `[${finding.severity}]`;
-  return `${marker} ${finding.title}${location}`;
+  return `${findingMarker(finding)} ${finding.title}${location}`;
 }
 
 function ApprovalBody(props: {
@@ -131,7 +121,7 @@ function ApprovalBody(props: {
       </text>
       <For each={sections()}>
         {(section, sectionIndex) => {
-          const meta = SECTION_META[section.action];
+          const style = SECTION_STYLE[section.action];
           // Findings keep one flat index across every section so the focus highlight lines up with
           // the navigation index, which walks the same section order (orderedFindings).
           const offset = () =>
@@ -140,8 +130,8 @@ function ApprovalBody(props: {
               .reduce((total, prior) => total + prior.findings.length, 0);
           return (
             <box flexDirection="column" marginTop={1}>
-              <text fg={meta.color} attributes={1}>
-                {meta.icon} {meta.label} ({section.findings.length})
+              <text fg={style.color} attributes={1}>
+                {style.icon} {SECTION_LABEL[section.action]} ({section.findings.length})
               </text>
               <For each={section.findings}>
                 {(finding, findingIndex) => {

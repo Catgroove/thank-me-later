@@ -3,7 +3,10 @@
 // of hardcoding or invoking language-specific local toolchains. Kept pure and snapshot-tested;
 // the Steps compose them into fresh check/fix/review agent rounds.
 
-import type { CheckRun, Finding, RoundTrigger } from "@tml/core";
+import { hasPriorRounds, type CheckRun, type Finding, type RoundTrigger } from "@tml/core";
+
+/** The finding fields the fix prompts quote back to the agent. */
+type PromptFinding = Pick<Finding, "id" | "severity" | "action" | "title" | "detail" | "location">;
 
 export const formatPrompt =
   "Verify repository formatting by model-backed source inspection. Read relevant project " +
@@ -32,9 +35,17 @@ export const testPrompt =
   "Report each real failing test or test infrastructure problem that remains. If there are no " +
   "tests, report no findings.";
 
+/**
+ * How a check reaches its verdict. `inspect` checks (format, lint, typecheck) read source and never
+ * invoke local toolchains; `run` checks (test) discover and execute their command. The mode only
+ * changes the round's ground rules - both still report structured findings and feed the same loop.
+ */
+export type CheckMode = "inspect" | "run";
+
 export interface CheckPromptInput {
   readonly name: string;
   readonly goal: string;
+  readonly mode: CheckMode;
   readonly trigger: Extract<RoundTrigger, "initial" | "verify">;
   readonly historyText: string;
 }
@@ -42,24 +53,30 @@ export interface CheckPromptInput {
 export function checkPrompt(input: CheckPromptInput): string {
   const history = input.historyText.trim();
   const prior =
-    input.trigger === "verify" && history.length > 0 && history !== "No prior rounds."
+    input.trigger === "verify" && hasPriorRounds(history)
       ? "\n\nPrior check round history from this run. Use it explicitly: verify that previous " +
         "auto-fix findings were actually fixed, do not re-report resolved findings, and report " +
         "any remaining or newly introduced findings against the current worktree.\n" +
         history
       : "";
+  const groundRules =
+    input.mode === "run"
+      ? "\n\nThis is a check/verification round, not a fix round. Run the check's command to judge " +
+        "the repository, building or installing whatever it needs to run. Do not edit source " +
+        "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
+        "repaired by changing files, return an auto-fix finding for the later fix round. "
+      : "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
+        "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
+        "directly instead of invoking local quality tools. If a tool can only prove or repair the " +
+        "problem by changing files, return an auto-fix finding for the later fix round. ";
   return (
     `Check step: ${input.name}.\n\n` +
     input.goal +
-    "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
-    "changes, commit, install dependencies, or run a mutating auto-fix command. For " +
-    "format, lint, and typecheck checks, inspect files directly instead of invoking local " +
-    "quality tools. If a tool can only prove or repair the problem by changing files, return an " +
-    "auto-fix finding for the later fix round. Return structured findings. Use action " +
-    "auto-fix only for issues a future fix round can safely " +
-    "repair without changing product intent; use ask-user when human judgement is required; " +
-    "use no-op only for informational observations. Report no findings when the check is clean " +
-    "or not configured." +
+    groundRules +
+    "Return structured findings. Use action auto-fix only for issues a future fix round can " +
+    "safely repair without changing product intent; use ask-user when human judgement is " +
+    "required; use no-op only for informational observations. Report no findings when the check " +
+    "is clean or not configured." +
     prior
   );
 }
@@ -67,10 +84,7 @@ export function checkPrompt(input: CheckPromptInput): string {
 export interface CheckFixPromptInput {
   readonly name: string;
   readonly goal: string;
-  readonly findings: readonly Pick<
-    Finding,
-    "id" | "severity" | "action" | "title" | "detail" | "location"
-  >[];
+  readonly findings: readonly PromptFinding[];
   readonly historyText: string;
 }
 
@@ -79,10 +93,7 @@ export function checkFixPrompt(input: CheckFixPromptInput): string {
     .map((f) => `- ${f.id}: ${f.title}${f.location ? ` (${f.location})` : ""}: ${f.detail}`)
     .join("\n");
   const history = input.historyText.trim();
-  const prior =
-    history.length > 0 && history !== "No prior rounds."
-      ? "\n\nPrior check round history:\n" + history
-      : "";
+  const prior = hasPriorRounds(history) ? "\n\nPrior check round history:\n" + history : "";
   return (
     `Fix step: ${input.name}.\n\n` +
     input.goal +
@@ -99,10 +110,7 @@ export function checkFixPrompt(input: CheckFixPromptInput): string {
 }
 
 export interface CiFixPromptInput {
-  readonly findings: readonly Pick<
-    Finding,
-    "id" | "severity" | "action" | "title" | "detail" | "location"
-  >[];
+  readonly findings: readonly PromptFinding[];
   readonly checks: readonly CheckRun[];
   readonly failedLogs: string;
   readonly historyText: string;
@@ -161,10 +169,9 @@ export function ciFixPrompt(input: CiFixPromptInput): string {
   const metadata = formatUntrustedCiMetadata(input);
   const logs = input.failedLogs.trim();
   const history = input.historyText.trim();
-  const prior =
-    history.length > 0 && history !== "No prior rounds."
-      ? "\n\nPrior CI round history:\n" + formatUntrustedCiHistory(history)
-      : "";
+  const prior = hasPriorRounds(history)
+    ? "\n\nPrior CI round history:\n" + formatUntrustedCiHistory(history)
+    : "";
   return (
     "The pull request CI checks below failed after the branch was pushed. Diagnose and fix the " +
     "selected findings in place. Prefer the smallest root-cause fix in the repository over " +
@@ -178,28 +185,28 @@ export function ciFixPrompt(input: CiFixPromptInput): string {
   );
 }
 
-export const checkFindingsSchema = {
+/** Wrap a findings-item schema in the `{ findings: [...] }` envelope both check and review share. */
+function findingsResultSchema<Item>(item: Item) {
+  return {
+    type: "object",
+    properties: { findings: { type: "array", items: item } },
+    required: ["findings"],
+    additionalProperties: false,
+  } as const;
+}
+
+export const checkFindingsSchema = findingsResultSchema({
   type: "object",
   properties: {
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          severity: { type: "string", enum: ["error", "warning", "info"] },
-          action: { type: "string", enum: ["auto-fix", "ask-user", "no-op"] },
-          title: { type: "string" },
-          detail: { type: "string" },
-          location: { type: "string" },
-        },
-        required: ["severity", "action", "title", "detail"],
-        additionalProperties: false,
-      },
-    },
+    severity: { type: "string", enum: ["error", "warning", "info"] },
+    action: { type: "string", enum: ["auto-fix", "ask-user", "no-op"] },
+    title: { type: "string" },
+    detail: { type: "string" },
+    location: { type: "string" },
   },
-  required: ["findings"],
+  required: ["severity", "action", "title", "detail"],
   additionalProperties: false,
-} as const;
+} as const);
 
 // --- Review: one thermo-nuclear code-quality pass plus one fix pass. --------------------
 // The Step injects one deterministic diff into a single read-only maintainability review based
@@ -279,15 +286,14 @@ export function reviewPrompt(input: ReviewPromptInput): string {
 }
 
 /** The fix pass - the only one that edits files; applies the auto-fix findings in place. */
-type FixPromptFinding = Pick<Finding, "severity" | "action" | "title" | "detail" | "location">;
+type FixPromptFinding = Omit<PromptFinding, "id">;
 
 export function fixPrompt(findings: readonly FixPromptFinding[], historyText?: string): string {
   const list = findings
     .map((f) => `- ${f.title}${f.location ? ` (${f.location})` : ""}: ${f.detail}`)
     .join("\n");
-  const history = historyText?.trim();
-  const prior =
-    history && history !== "No prior rounds." ? "\n\nPrior review round history:\n" + history : "";
+  const history = historyText?.trim() ?? "";
+  const prior = hasPriorRounds(history) ? "\n\nPrior review round history:\n" + history : "";
   return (
     "A review of this branch produced the findings below. Apply fixes for them in place. Always " +
     "start by double-checking that each finding is legitimate, and skip any that are not. Prefer " +
@@ -300,43 +306,34 @@ export function fixPrompt(findings: readonly FixPromptFinding[], historyText?: s
   );
 }
 
-/** JSON Schema for a review pass's structured reply; parsed back by `parsePassResult`. */
-export const findingsSchema = {
+/** JSON Schema for a review pass's structured reply; parsed back by `parseReviewFindings`. The
+ *  review variant adds an action hint and a severity/action `oneOf` constraint over the check item. */
+export const findingsSchema = findingsResultSchema({
   type: "object",
   properties: {
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          severity: { type: "string", enum: ["error", "warning", "info"] },
-          action: {
-            type: "string",
-            enum: ["auto-fix", "ask-user", "no-op"],
-            description:
-              "Use auto-fix or ask-user for error/warning findings; use no-op only with info severity.",
-          },
-          title: { type: "string" },
-          detail: { type: "string" },
-          location: { type: "string" },
-        },
-        oneOf: [
-          {
-            properties: {
-              severity: { enum: ["error", "warning"] },
-              action: { enum: ["auto-fix", "ask-user"] },
-            },
-          },
-          { properties: { severity: { const: "info" }, action: { const: "no-op" } } },
-        ],
-        required: ["severity", "action", "title", "detail"],
-        additionalProperties: false,
+    severity: { type: "string", enum: ["error", "warning", "info"] },
+    action: {
+      type: "string",
+      enum: ["auto-fix", "ask-user", "no-op"],
+      description:
+        "Use auto-fix or ask-user for error/warning findings; use no-op only with info severity.",
+    },
+    title: { type: "string" },
+    detail: { type: "string" },
+    location: { type: "string" },
+  },
+  oneOf: [
+    {
+      properties: {
+        severity: { enum: ["error", "warning"] },
+        action: { enum: ["auto-fix", "ask-user"] },
       },
     },
-  },
-  required: ["findings"],
+    { properties: { severity: { const: "info" }, action: { const: "no-op" } } },
+  ],
+  required: ["severity", "action", "title", "detail"],
   additionalProperties: false,
-} as const;
+} as const);
 
 /**
  * The prompt handed to the agent when a rebase stops on conflicts. The rebase is in progress; the

@@ -13,6 +13,7 @@ import {
 } from "@tml/core";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
 import {
+  type CheckMode,
   checkFindingsSchema,
   checkFixPrompt,
   checkPrompt,
@@ -22,7 +23,7 @@ import {
   typecheckPrompt,
 } from "../prompts.ts";
 
-export function checkStep(name: string, goal: string): Step {
+export function checkStep(name: string, goal: string, mode: CheckMode = "inspect"): Step {
   return defineStep({
     name,
     async run(ctx) {
@@ -30,7 +31,7 @@ export function checkStep(name: string, goal: string): Step {
         stepName: name,
         async check(input) {
           const before = await ctx.git.status();
-          const agentResult = await ctx.agent.run(checkPrompt({ name, goal, ...input }), {
+          const agentResult = await ctx.agent.run(checkPrompt({ name, goal, mode, ...input }), {
             schema: checkFindingsSchema,
           });
           await revertIfWorktreeChanged(
@@ -86,4 +87,4 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
 export const formatStep = (): Step => checkStep("format", formatPrompt);
 export const lintStep = (): Step => checkStep("lint", lintPrompt);
 export const typecheckStep = (): Step => checkStep("typecheck", typecheckPrompt);
-export const testStep = (): Step => checkStep("test", testPrompt);
+export const testStep = (): Step => checkStep("test", testPrompt, "run");

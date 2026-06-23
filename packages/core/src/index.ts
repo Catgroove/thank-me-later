@@ -26,12 +26,11 @@ export {
   type StepRoundSummary,
   currentFindings,
   findingId,
+  hasPriorRounds,
   makeFinding,
   parseAgentFindingsOutput,
   renderFindingForPr,
   renderPipelineSummaryForPr,
-  renderRoundForPr,
-  renderRoundForPrompt,
   renderRoundsForPr,
   renderRoundsForPrompt,
   renderUnresolvedFindingsForPr,
@@ -90,10 +89,5 @@ export {
   type RunMetadata,
   type RunStatus,
 } from "./run-journal.ts";
-export {
-  createIsolatedWorkspace,
-  currentWorkspaceSourceBranch,
-  removeIsolatedWorkspace,
-  type WorkspaceSnapshot,
-} from "./workspace.ts";
+export { createWorktree, currentWorkspaceSourceBranch, removeWorktree } from "./workspace.ts";
 export { AssemblyError, validatePipeline } from "./validate.ts";
