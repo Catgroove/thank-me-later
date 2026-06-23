@@ -44,7 +44,9 @@ function copySelectedText(cli: CliRenderer): boolean {
   const text = selection.getSelectedText();
   if (text.length === 0) return false;
 
-  const copied = cli.copyToClipboardOSC52(text) || writeSystemClipboard(text);
+  // OSC52 reports that the escape sequence was written, not that the terminal accepted it. Also
+  // write the local clipboard when possible so local TUI sessions work in terminals that ignore OSC52.
+  const copied = writeSystemClipboard(text) || cli.copyToClipboardOSC52(text);
   if (copied) cli.clearSelection();
   return true;
 }
