@@ -48,6 +48,17 @@ describe("createGit (real git, against a throwaway temp repo)", () => {
     expect(after.unstaged).toEqual([]);
   });
 
+  test("status preserves filenames that contain newlines", async () => {
+    const g = createGit(dir);
+    const name = "line\nbreak.txt";
+    await writeFile(join(dir, name), "hello");
+
+    expect((await g.status()).unstaged).toContain(name);
+
+    await g.stageAll();
+    expect((await g.status()).staged).toContain(name);
+  });
+
   test("headSha returns the abbreviated HEAD commit sha", async () => {
     const g = createGit(dir);
     expect(await g.headSha()).toMatch(/^[0-9a-f]{7,}$/);

@@ -3,8 +3,7 @@
 // the run generator iterates. It is *pull-based*, so a slow consumer applies
 // natural backpressure on iteration — there is no callback that can outrun a TUI.
 //
-// `close()` ends iteration after the buffer drains; `fail()` makes the next pull
-// reject. Both are terminal and idempotent.
+// `close()` ends iteration after the buffer drains and is terminal and idempotent.
 //
 // NOTE: the buffer is unbounded. A persistently slow consumer lets it grow; a hard
 // bound (drop / coalesce policy) is deliberately deferred until a real consumer
@@ -12,13 +11,11 @@
 
 interface Waiter<T> {
   resolve(result: IteratorResult<T>): void;
-  reject(error: unknown): void;
 }
 
 export interface EventQueue<T> {
   push(event: T): void;
   close(): void;
-  fail(error: unknown): void;
   [Symbol.asyncIterator](): AsyncIterator<T>;
 }
 
@@ -26,7 +23,6 @@ export function createEventQueue<T>(): EventQueue<T> {
   const buffer: T[] = [];
   let waiter: Waiter<T> | null = null;
   let closed = false;
-  let failure: { error: unknown } | null = null;
 
   const takeWaiter = (): Waiter<T> | null => {
     const w = waiter;
@@ -36,35 +32,27 @@ export function createEventQueue<T>(): EventQueue<T> {
 
   return {
     push(event) {
-      if (closed || failure) return; // terminal — ignore late producers
+      if (closed) return; // terminal — ignore late producers
       const w = takeWaiter();
       if (w) w.resolve({ value: event, done: false });
       else buffer.push(event);
     },
 
     close() {
-      if (closed || failure) return;
+      if (closed) return;
       closed = true;
       takeWaiter()?.resolve({ value: undefined as never, done: true });
-    },
-
-    fail(error) {
-      if (closed || failure) return;
-      failure = { error };
-      takeWaiter()?.reject(error);
     },
 
     [Symbol.asyncIterator]() {
       return {
         next(): Promise<IteratorResult<T>> {
-          // Buffered events drain first — a failure or close only surfaces once
-          // the consumer has caught up.
+          // Buffered events drain before close surfaces.
           if (buffer.length > 0)
             return Promise.resolve({ value: buffer.shift() as T, done: false });
-          if (failure) return Promise.reject(failure.error);
           if (closed) return Promise.resolve({ value: undefined as never, done: true });
-          return new Promise<IteratorResult<T>>((resolve, reject) => {
-            waiter = { resolve, reject };
+          return new Promise<IteratorResult<T>>((resolve) => {
+            waiter = { resolve };
           });
         },
       };

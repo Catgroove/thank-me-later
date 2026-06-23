@@ -5,8 +5,8 @@
 // produce the same `Config` the engine consumes.
 //
 // This is what lets a Plugin extend tml WITHOUT importing `@tml/core`: `defineStep`,
-// `defineArtifact`, the pipeline patch ops, and `register{GitProvider,Harness}` are all reachable off
-// the injected `tml`. The declarative knobs (`tml.json`) arrive as `Selection`; JSON may only
+// `defineArtifact`, flow signals, the pipeline patch ops, and `register{GitProvider,Harness}` are
+// all reachable off the injected `tml`. The declarative knobs (`tml.json`) arrive as `Selection`; JSON may only
 // toggle/select (provider names, `branch`, `models`, `disable`) — reshaping the pipeline
 // (insert/replace/reorder) is a Plugin's job.
 
@@ -14,6 +14,7 @@ import { defineArtifact } from "./artifact.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import type { Harness } from "./providers/harness.ts";
+import { cancel, goto, retry, skip } from "./signals.ts";
 import { type Step, defineStep } from "./step.ts";
 import { AssemblyError } from "./validate.ts";
 
@@ -55,6 +56,10 @@ export interface Tml {
   readonly config: ResolvedKnobs;
   readonly defineStep: typeof defineStep;
   readonly defineArtifact: typeof defineArtifact;
+  readonly skip: typeof skip;
+  readonly cancel: typeof cancel;
+  readonly goto: typeof goto;
+  readonly retry: typeof retry;
   readonly pipeline: PipelineBuilder;
   registerGitProvider(name: string, factory: GitProviderFactory): void;
   registerHarness(name: string, factory: HarnessFactory): void;
@@ -109,6 +114,10 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
     config: { branch: selection.branch },
     defineStep,
     defineArtifact,
+    skip,
+    cancel,
+    goto,
+    retry,
     pipeline,
     registerGitProvider(name, factory) {
       gitProviders.set(name, factory);

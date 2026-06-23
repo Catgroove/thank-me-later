@@ -3,7 +3,6 @@
 // and guard, the run-loop internals) stays private to the package.
 
 export {
-  type ApprovalAction,
   type ApprovalDecision,
   type ApproveDecision,
   type ApproveFindingsInput,
@@ -76,7 +75,7 @@ export type {
 } from "./providers/git-provider.ts";
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent } from "./events.ts";
-export { createEngine, type Engine, type EngineOptions, NotImplementedError } from "./engine.ts";
+export { createEngine, type Engine, type EngineOptions } from "./engine.ts";
 export {
   checkoutKeyForPath,
   createRunJournal,
