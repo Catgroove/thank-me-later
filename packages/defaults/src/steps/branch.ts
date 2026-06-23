@@ -20,7 +20,8 @@ import { branchName } from "../artifacts.ts";
 import { branchNamePrompt, branchNameSchema } from "../prompts.ts";
 
 /** How the `branch` Step gets a feature branch when you aren't already on one. */
-export type BranchMode = "ai" | "auto" | "require";
+export const BRANCH_MODES = ["ai", "auto", "require"] as const;
+export type BranchMode = (typeof BRANCH_MODES)[number];
 
 /** Derive a deterministic feature-branch name from an abbreviated commit SHA (the `auto` mode). */
 export function branchNameFor(sha: string): string {

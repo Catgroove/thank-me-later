@@ -32,7 +32,9 @@ describe("parseStructuredText", () => {
   });
 
   test("throws when no JSON object is present", () => {
-    expect(() => parseStructuredText("no json here, sorry", schema)).toThrow(/no schema-valid/);
+    expect(() => parseStructuredText("no json here, sorry", schema)).toThrow(
+      /no JSON object satisfying required schema fields/,
+    );
   });
 
   test("throws when JSON is present but missing a required field", () => {

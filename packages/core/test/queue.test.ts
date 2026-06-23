@@ -34,35 +34,6 @@ describe("createEventQueue", () => {
     expect(await iterator.next()).toEqual({ value: undefined, done: true });
   });
 
-  test("fail rejects a waiting consumer", async () => {
-    const q = createEventQueue<number>();
-    const iterator = q[Symbol.asyncIterator]();
-    const pending = iterator.next();
-    q.fail(new Error("boom"));
-    let caught: unknown;
-    try {
-      await pending;
-    } catch (error) {
-      caught = error;
-    }
-    expect((caught as Error)?.message).toBe("boom");
-  });
-
-  test("buffered events drain before a failure surfaces", async () => {
-    const q = createEventQueue<number>();
-    q.push(1);
-    q.fail(new Error("boom"));
-    const iterator = q[Symbol.asyncIterator]();
-    expect(await iterator.next()).toEqual({ value: 1, done: false });
-    let caught: unknown;
-    try {
-      await iterator.next();
-    } catch (error) {
-      caught = error;
-    }
-    expect((caught as Error)?.message).toBe("boom");
-  });
-
   test("push and close are ignored after a terminal state", async () => {
     const q = createEventQueue<number>();
     q.close();

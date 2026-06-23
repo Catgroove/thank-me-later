@@ -1,7 +1,7 @@
 // The single seam to the outside world: shell out to the `gh` CLI. Everything
 // else in this package is pure and tested through an injected `GhRunner`, so this
 // is the only code that touches a subprocess (mirrors core's `git(cwd, args)`
-// helper). Auth and repo detection are `gh`'s job — we run it in `cwd`.
+// helper). Auth and repo detection are `gh`'s job - we run it in `cwd`.
 
 /** Run `gh` with the given argv (without the leading `gh`) and resolve its stdout. */
 export type GhRunner = (args: string[]) => Promise<string>;

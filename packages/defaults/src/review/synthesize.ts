@@ -3,7 +3,8 @@
 // into the single `reviewSummary` markdown. Risk is computed here, in code - the agent never sets
 // the overall risk. No `ctx`, so all of this is unit-testable in isolation.
 
-import { type Finding, makeFinding, renderFindingForPr } from "@tml/core";
+import { type Finding, renderFindingForPr } from "@tml/core";
+import { parseAgentFindingsOutput } from "../findings.ts";
 
 export type { Finding };
 export type Verdict = "proceed" | "block";
@@ -80,8 +81,6 @@ export function dedupeReviewPasses(passes: readonly ReviewPass[]): ReviewPass[] 
   }));
 }
 
-const SEVERITIES: ReadonlySet<string> = new Set(["error", "warning", "info"]);
-const ACTIONS: ReadonlySet<string> = new Set(["auto-fix", "ask-user", "no-op"]);
 const VERDICTS: ReadonlySet<string> = new Set(["proceed", "block"]);
 
 /** Validate one pass's structured reply into a `PassResult`, throwing on anything malformed. */
@@ -90,10 +89,11 @@ export function parsePassResult(output: unknown): PassResult {
     throw new Error("review: the agent did not return a structured pass result");
   }
   const obj = output as Record<string, unknown>;
-  if (!Array.isArray(obj.findings)) {
-    throw new Error("review: the pass result is missing a `findings` array");
-  }
-  const findings = obj.findings.map((raw, i) => parseFinding(raw, i));
+  const findings = parseAgentFindingsOutput(output, {
+    namespace: "review",
+    sourceName: "review",
+    enforceActionForSeverity: true,
+  });
   const result: { -readonly [K in keyof PassResult]: PassResult[K] } = { findings };
   if (typeof obj.understanding === "string" && obj.understanding.trim().length > 0) {
     result.understanding = obj.understanding.trim();
@@ -105,46 +105,6 @@ export function parsePassResult(output: unknown): PassResult {
     result.verdict = obj.verdict as Verdict;
   }
   return result;
-}
-
-function isAllowedActionForSeverity(severity: string, action: string): boolean {
-  if (severity === "info") return action === "no-op";
-  return action === "auto-fix" || action === "ask-user";
-}
-
-function parseFinding(raw: unknown, index: number): Finding {
-  if (typeof raw !== "object" || raw === null) {
-    throw new Error(`review: finding ${index} is not an object`);
-  }
-  const f = raw as Record<string, unknown>;
-  if (typeof f.severity !== "string" || !SEVERITIES.has(f.severity)) {
-    throw new Error(`review: finding ${index} has an invalid severity`);
-  }
-  if (typeof f.action !== "string" || !ACTIONS.has(f.action)) {
-    throw new Error(`review: finding ${index} has an invalid action`);
-  }
-  if (!isAllowedActionForSeverity(f.severity, f.action)) {
-    throw new Error(
-      `review: finding ${index} has action ${f.action} for severity ${f.severity}; ` +
-        "error and warning findings must be auto-fix or ask-user, and info findings must be no-op",
-    );
-  }
-  if (typeof f.title !== "string" || f.title.trim().length === 0) {
-    throw new Error(`review: finding ${index} is missing a title`);
-  }
-  if (typeof f.detail !== "string") {
-    throw new Error(`review: finding ${index} is missing a detail`);
-  }
-  const finding = {
-    severity: f.severity as Finding["severity"],
-    action: f.action as Finding["action"],
-    title: f.title.trim(),
-    detail: f.detail.trim(),
-    ...(typeof f.location === "string" && f.location.trim().length > 0
-      ? { location: f.location.trim() }
-      : {}),
-  };
-  return makeFinding("review", finding);
 }
 
 /** Highest severity wins; a blocking verdict forces high regardless of the findings. */
