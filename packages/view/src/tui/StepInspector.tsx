@@ -11,7 +11,13 @@ import type { Accessor } from "solid-js";
 import type { Finding, RoundRecord } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
-import { latestGroupPhases, statusColor, statusGlyph, stepElapsed } from "./format.ts";
+import {
+  latestGroupPhases,
+  phaseElapsed,
+  statusColor,
+  statusGlyph,
+  stepElapsed,
+} from "./format.ts";
 import { TABS, effectiveIndex, type NavState, type Tab } from "./navigation.ts";
 
 export interface InspectorProps {
@@ -67,28 +73,31 @@ function visibleFindings(step: StepView): Finding[] {
   return dedupeById(latestGroupPhases(step).flatMap((phase) => phase.findings));
 }
 
-function PhaseLine(props: { phase: PhaseView }) {
-  const p = props.phase;
+function PhaseLine(props: { phase: PhaseView; now: number }) {
+  const elapsed = () => phaseElapsed(props.phase, props.now);
   return (
     <box flexDirection="row">
-      <text fg={statusColor(p.status)}>{statusGlyph(p.status)}</text>
+      <text fg={statusColor(props.phase.status)}>{statusGlyph(props.phase.status)}</text>
       <text flexGrow={1} marginLeft={1} fg="#94a3b8">
-        {sanitize(p.label)}
+        {sanitize(props.phase.label)}
       </text>
       <text fg="#64748b">
-        {p.status === "done" && p.findings.length > 0 ? `${p.findings.length}` : ""}
+        {elapsed() === "" ? "" : ` ${elapsed()}`}
+        {props.phase.status === "done" && props.phase.findings.length > 0
+          ? ` ${props.phase.findings.length}`
+          : ""}
       </text>
     </box>
   );
 }
 
-function Phases(props: { step: StepView }) {
+function Phases(props: { step: StepView; now: number }) {
   const phases = () => latestGroupPhases(props.step);
   return (
     <Show when={phases().length > 0}>
       <box flexDirection="column" marginTop={1}>
         <text fg="#64748b">phases:</text>
-        <For each={phases()}>{(phase) => <PhaseLine phase={phase} />}</For>
+        <For each={phases()}>{(phase) => <PhaseLine phase={phase} now={props.now} />}</For>
       </box>
     </Show>
   );
@@ -119,7 +128,7 @@ function Summary(props: { step: StepView; now: number }) {
           error: {sanitize(props.step.error ?? "", { preserveNewlines: true })}
         </text>
       </Show>
-      <Phases step={props.step} />
+      <Phases step={props.step} now={props.now} />
       <Show
         when={
           props.step.artifacts.length === 0 &&
