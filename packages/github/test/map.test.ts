@@ -99,13 +99,13 @@ describe("mapCheckNode", () => {
 
 describe("mapChecks", () => {
   test("extracts the rollup off the last commit", () => {
-    expect(mapChecks(prOpen.commits)).toEqual([
+    expect(mapChecks(prOpen.statusCheckRollup)).toEqual([
       { name: "build", status: "completed", conclusion: "success" },
       { name: "ci/legacy", status: "completed", conclusion: "success" },
     ]);
   });
   test("no rollup yields an empty list", () => {
-    expect(mapChecks(prMerged.commits)).toEqual([]);
+    expect(mapChecks(prMerged.statusCheckRollup)).toEqual([]);
   });
 });
 
