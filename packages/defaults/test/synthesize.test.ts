@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  dedupeReviewPasses,
   type Finding,
   type ReviewPass,
   parsePassResult,
@@ -13,27 +12,20 @@ function finding(over: Partial<Finding> = {}): Finding {
 }
 
 describe("parsePassResult", () => {
-  test("parses a well-formed result and keeps optional fields", () => {
+  test("parses a well-formed result", () => {
     const r = parsePassResult({
       findings: [
         { severity: "warning", action: "auto-fix", title: "x", detail: "y", location: "a.ts:1" },
       ],
-      understanding: "does X",
-      verdict: "proceed",
     });
     expect(r.findings).toHaveLength(1);
     expect(r.findings[0]?.location).toBe("a.ts:1");
-    expect(r.understanding).toBe("does X");
-    expect(r.verdict).toBe("proceed");
   });
 
-  test("omits empty optional fields", () => {
+  test("omits an empty location", () => {
     const r = parsePassResult({
       findings: [{ severity: "info", action: "no-op", title: "t", detail: "d", location: "  " }],
-      understanding: "   ",
     });
-    expect(r.understanding).toBeUndefined();
-    expect(r.verdict).toBeUndefined();
     expect(r.findings[0]?.location).toBeUndefined();
   });
 
@@ -50,7 +42,6 @@ describe("parsePassResult", () => {
         findings: [{ severity: "info", action: "no-op", title: "", detail: "d" }],
       }),
     ).toThrow();
-    expect(() => parsePassResult({ findings: [], verdict: "blocked" })).toThrow();
   });
 
   test("constrains actions by severity", () => {
@@ -72,66 +63,18 @@ describe("riskOf", () => {
   test("a warning is medium", () =>
     expect(riskOf([finding({ severity: "warning" })])).toBe("medium"));
   test("an error is high", () => expect(riskOf([finding({ severity: "error" })])).toBe("high"));
-  test("a block forces high even with no findings", () => expect(riskOf([], true)).toBe("high"));
-});
-
-describe("dedupeReviewPasses", () => {
-  test("preserves first matching finding by location and title when priority ties", () => {
-    const duplicateA = finding({ id: "finding:1", title: "Same", location: "src/a.ts:1" });
-    const duplicateB = finding({
-      id: "finding:2",
-      title: "Same",
-      detail: "different detail",
-      location: "src/a.ts:1",
-    });
-    const unique = finding({ id: "finding:3", title: "Other", location: "src/a.ts:1" });
-
-    const passes = dedupeReviewPasses([
-      { title: "Correctness", result: { findings: [duplicateA] } },
-      { title: "Structural", result: { findings: [duplicateB, unique] } },
-    ]);
-
-    expect(passes[0]?.result.findings).toEqual([duplicateA]);
-    expect(passes[1]?.result.findings).toEqual([unique]);
-  });
-
-  test("keeps the most severe and actionable duplicate", () => {
-    const informational = finding({
-      id: "finding:1",
-      severity: "info",
-      action: "no-op",
-      title: "Same",
-      location: "src/a.ts:1",
-    });
-    const fixable = finding({
-      id: "finding:2",
-      severity: "warning",
-      action: "auto-fix",
-      title: "Same",
-      location: "src/a.ts:1",
-    });
-
-    const passes = dedupeReviewPasses([
-      { title: "Context", result: { findings: [informational] } },
-      { title: "Correctness", result: { findings: [fixable] } },
-    ]);
-
-    expect(passes[0]?.result.findings).toEqual([]);
-    expect(passes[1]?.result.findings).toEqual([fixable]);
-  });
 });
 
 describe("summarize", () => {
   test("renders risk, non-empty sections, severity labels, and fixes; omits empty sections", () => {
     const passes: ReviewPass[] = [
-      { title: "Context & intent", result: { findings: [] } },
+      { title: "Empty review", result: { findings: [] } },
       {
-        title: "Architecture & scope",
+        title: "Thermo-nuclear code quality review",
         result: {
           findings: [
             finding({ severity: "warning", title: "Scope creep", detail: "two features" }),
           ],
-          verdict: "proceed",
         },
       },
       {
@@ -151,26 +94,14 @@ describe("summarize", () => {
     const out = summarize(passes, "fixed the NPE");
     expect(out).toContain("**Risk: high**"); // error present
     expect(out).toContain("<details>"); // full breakdown is collapsible
-    expect(out).toContain("### Architecture & scope");
+    expect(out).toContain("### Thermo-nuclear code quality review");
     expect(out).toContain("Warning:");
     expect(out).toContain("Error:");
     expect(out).toContain("1 fixed"); // headline tally
     expect(out).toContain("~~"); // the auto-fixed error is struck through
     expect(out).toContain("(fixed)");
     expect(out).toContain("**Fixes applied:** fixed the NPE");
-    expect(out).not.toContain("### Context & intent"); // empty section omitted
-  });
-
-  test("a block verdict adds a banner and forces high risk", () => {
-    const out = summarize(
-      [{ title: "Architecture & scope", result: { findings: [], verdict: "block" } }],
-      "",
-    );
-    expect(out.toLowerCase()).toContain("blocking concern");
-    expect(out).toContain("**Risk: high**");
-    expect(out).toContain("### Architecture & scope");
-    expect(out).toContain("Blocking verdict returned without specific findings");
-    expect(out).not.toContain("**Fixes applied:**"); // nothing fixed → line omitted
+    expect(out).not.toContain("### Empty review"); // empty section omitted
   });
 
   test("ask-user findings are listed with a decision hint", () => {
@@ -192,7 +123,10 @@ describe("summarize", () => {
   });
 
   test("no findings at all renders a clean low-risk summary", () => {
-    const out = summarize([{ title: "Context & intent", result: { findings: [] } }], "");
+    const out = summarize(
+      [{ title: "Thermo-nuclear code quality review", result: { findings: [] } }],
+      "",
+    );
     expect(out).toContain("**Risk: low**");
     expect(out).toContain("No findings.");
   });
