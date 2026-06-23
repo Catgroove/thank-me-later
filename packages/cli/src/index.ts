@@ -266,9 +266,45 @@ export function parseShipArgs(args: string[]): ShipArgs {
   };
 }
 
+const HELP = `tml - spend time now, thank me later.
+
+Run it when an agent has finished a unit of work; it conducts a code-defined
+pipeline that branches, runs checks, reviews, opens a PR, and waits on CI.
+
+Usage:
+  tml <command> [options]
+
+Commands:
+  ship    Run the pipeline on the current checkout.
+  init    Scaffold a starter tml.json at the project root.
+
+Ship options:
+  -v, --verbose       Seal the full per-step trail instead of the quiet,
+                      results-forward default.
+      --plain         Force the append-only/inline renderer instead of the
+                      full-screen TUI. (alias: --no-tui)
+      --fresh         Start a new isolated run, discarding previous journal state.
+      --resume <id>   Resume a specific run by exact run id. (also --resume=<id>)
+
+Init options:
+  -f, --force         Overwrite an existing tml.json.
+
+Global options:
+  -h, --help          Show this help.`;
+
+const isHelp = (arg: string | undefined): boolean => arg === "--help" || arg === "-h";
+
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === undefined || isHelp(command)) {
+    console.log(HELP);
+    return 0;
+  }
   if (command === "ship") {
+    if (rest.some(isHelp)) {
+      console.log(HELP);
+      return 0;
+    }
     let args: ShipArgs;
     try {
       args = parseShipArgs(rest);
@@ -279,10 +315,14 @@ async function main(argv: string[]): Promise<number> {
     return ship(args);
   }
   if (command === "init") {
+    if (rest.some(isHelp)) {
+      console.log(HELP);
+      return 0;
+    }
     const force = rest.includes("--force") || rest.includes("-f");
     return init({ force });
   }
-  console.error(`Unknown command: ${command ?? "(none)"}. Try: tml ship | tml init`);
+  console.error(`Unknown command: ${command}. Try: tml ship | tml init | tml --help`);
   return 1;
 }
 
