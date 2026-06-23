@@ -8,7 +8,14 @@
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
-import type { Finding, FindingAction, RoundRecord } from "@tml/core";
+import type {
+  Finding,
+  FindingAction,
+  FindingLifecycle,
+  FindingStatus,
+  RoundRecord,
+} from "@tml/core";
+import { findingLifecycle } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
@@ -56,29 +63,24 @@ function TabBar(props: { active: Tab }) {
   );
 }
 
-/** A finding's identity for live de-dup: the same finding reported by two passes shows once. */
-function dedupeById(findings: readonly Finding[]): Finding[] {
-  const seen = new Set<string>();
-  const out: Finding[] = [];
-  for (const f of findings) {
-    if (!seen.has(f.id)) {
-      seen.add(f.id);
-      out.push(f);
+/**
+ * The Step's findings as a cumulative checklist with their lifecycle status, derived from the whole
+ * round history (not just the latest round) so resolved findings stay visible with a ✓ instead of
+ * silently vanishing. A finding the current passes have surfaced but not yet recorded in a round is
+ * appended as a live `open` preview, so findings still appear the moment a pass lands.
+ */
+function checklist(step: StepView): FindingLifecycle[] {
+  const lifecycle = findingLifecycle(step.rounds, { settled: step.status !== "active" });
+  const known = new Set(lifecycle.map((entry) => entry.finding.id));
+  const preview: FindingLifecycle[] = [];
+  for (const phase of latestGroupPhases(step)) {
+    for (const finding of phase.findings) {
+      if (known.has(finding.id)) continue;
+      known.add(finding.id);
+      preview.push({ finding, status: "open" });
     }
   }
-  return out;
-}
-
-/**
- * The findings to show: the latest recorded Round's deduped set once a Round exists, else a live
- * preview from the current group's resolved phases (so findings appear as each pass lands, before
- * the round is recorded).
- */
-function visibleFindings(step: StepView): Finding[] {
-  const phaseFindings = dedupeById(latestGroupPhases(step).flatMap((phase) => phase.findings));
-  if (phaseFindings.length > 0 && step.status === "active") return phaseFindings;
-  if (step.rounds.length > 0) return step.findings;
-  return phaseFindings;
+  return [...lifecycle, ...preview];
 }
 
 function PhaseLine(props: { phase: PhaseView; now: number }) {
@@ -161,11 +163,56 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
   );
 }
 
-function FindingLine(props: { finding: Finding; focused?: boolean }) {
-  const f = props.finding;
+// Each lifecycle status gets a checkbox-style glyph, a short tag, and a color, so the Findings tab
+// reads as a to-do list that checks itself off: queued fixes show ⟳ pending, a verified fix shows a
+// green ✓, an operator decision shows its outcome. Resolved items recede (dim) so attention lands on
+// what still needs work.
+const STATUS_META: Record<
+  FindingStatus,
+  {
+    readonly glyph: string;
+    readonly tag: string;
+    readonly color: string;
+    readonly resolved: boolean;
+  }
+> = {
+  open: { glyph: "○", tag: "", color: "#94a3b8", resolved: false },
+  pending: { glyph: "⟳", tag: "pending", color: "#38bdf8", resolved: false },
+  fixed: { glyph: "✓", tag: "fixed", color: "#22c55e", resolved: true },
+  unresolved: { glyph: "✗", tag: "unresolved", color: "#ef4444", resolved: false },
+  accepted: { glyph: "✓", tag: "accepted as-is", color: "#22c55e", resolved: true },
+  skipped: { glyph: "⤼", tag: "skipped", color: "#9ca3af", resolved: true },
+};
+
+/** A one-line progress tally above the sections, so overall progress reads at a glance. */
+function progressLine(entries: readonly FindingLifecycle[]): string {
+  const count = (predicate: (entry: FindingLifecycle) => boolean) =>
+    entries.filter(predicate).length;
+  const parts: string[] = [];
+  const pending = count((e) => e.status === "pending");
+  const needsYou = count((e) => e.status === "open" && e.finding.action === "ask-user");
+  const unresolved = count((e) => e.status === "unresolved");
+  const fixed = count((e) => e.status === "fixed");
+  const accepted = count((e) => e.status === "accepted");
+  const skipped = count((e) => e.status === "skipped");
+  if (pending > 0) parts.push(`⟳ ${pending} pending`);
+  if (needsYou > 0) parts.push(`${needsYou} needs you`);
+  if (unresolved > 0) parts.push(`✗ ${unresolved} unresolved`);
+  if (fixed > 0) parts.push(`✓ ${fixed} fixed`);
+  if (accepted > 0) parts.push(`✓ ${accepted} accepted`);
+  if (skipped > 0) parts.push(`⤼ ${skipped} skipped`);
+  return parts.join(" · ");
+}
+
+function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
+  const f = () => props.entry.finding;
+  const meta = () => STATUS_META[props.entry.status];
   // The focused background matches the approval drawer's focused-finding row so the two surfaces
   // read as pointing at the same finding.
-  const marker = f.blocking === true ? `[blocking] [${f.severity}]` : `[${f.severity}]`;
+  const marker = () =>
+    f().blocking === true ? `[blocking] [${f().severity}]` : `[${f().severity}]`;
+  // Resolved findings dim so the eye lands on what still needs work; open/pending keep severity color.
+  const titleColor = () => (meta().resolved ? "#64748b" : SEVERITY_COLOR[f().severity]);
   return (
     <box
       flexDirection="column"
@@ -174,12 +221,18 @@ function FindingLine(props: { finding: Finding; focused?: boolean }) {
       paddingRight={1}
       backgroundColor={props.focused ? "#334155" : undefined}
     >
-      <text fg={SEVERITY_COLOR[f.severity]}>
-        {marker} {sanitize(f.title)}
-        {f.location ? ` — ${sanitize(f.location)}` : ""}
-      </text>
+      <box flexDirection="row">
+        <text fg={meta().color}>{meta().glyph}</text>
+        <text flexGrow={1} marginLeft={1} fg={titleColor()}>
+          {marker()} {sanitize(f().title)}
+          {f().location ? ` — ${sanitize(f().location ?? "")}` : ""}
+        </text>
+        <Show when={meta().tag !== ""}>
+          <text fg={meta().color}>{meta().tag}</text>
+        </Show>
+      </box>
       <text fg="#94a3b8" wrapMode="word" marginLeft={2}>
-        {sanitize(f.detail, { preserveNewlines: true })}
+        {sanitize(f().detail, { preserveNewlines: true })}
       </text>
     </box>
   );
@@ -188,39 +241,45 @@ function FindingLine(props: { finding: Finding; focused?: boolean }) {
 // Findings split by what happens to them, most-actionable first: a decision the user must make, then
 // the set the next round will fix on its own, then purely informational notes. Grouping replaces the
 // per-line `(action)` tag - the section header now carries it - so the user sees at a glance what
-// needs them versus what the pipeline handles.
+// needs them versus what the pipeline handles. The per-line status glyph adds the orthogonal
+// progress dimension: which of those findings are still pending, fixed, or decided.
 const FINDING_SECTIONS: readonly { action: FindingAction; label: string }[] = [
   { action: "ask-user", label: "Needs your decision" },
   { action: "auto-fix", label: "Auto-fix" },
   { action: "no-op", label: "Informational" },
 ];
 
-function FindingSection(props: { label: string; findings: Finding[]; focusedId?: string }) {
+function FindingSection(props: { label: string; entries: FindingLifecycle[]; focusedId?: string }) {
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg="#64748b" attributes={1}>
-        {props.label} ({props.findings.length})
+        {props.label} ({props.entries.length})
       </text>
-      <For each={props.findings}>
-        {(finding) => <FindingLine finding={finding} focused={finding.id === props.focusedId} />}
+      <For each={props.entries}>
+        {(entry) => <FindingLine entry={entry} focused={entry.finding.id === props.focusedId} />}
       </For>
     </box>
   );
 }
 
 function Findings(props: { step: StepView; focusedId?: string }) {
-  const findings = () => visibleFindings(props.step);
+  const entries = () => checklist(props.step);
   return (
     <box flexDirection="column">
-      <Show when={findings().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
+      <Show when={entries().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
+        <Show when={progressLine(entries()) !== ""}>
+          <text fg="#cbd5e1" marginBottom={1}>
+            {progressLine(entries())}
+          </text>
+        </Show>
         <For each={FINDING_SECTIONS}>
           {(section) => {
-            const items = () => findings().filter((f) => f.action === section.action);
+            const items = () => entries().filter((e) => e.finding.action === section.action);
             return (
               <Show when={items().length > 0}>
                 <FindingSection
                   label={section.label}
-                  findings={items()}
+                  entries={items()}
                   focusedId={props.focusedId}
                 />
               </Show>
