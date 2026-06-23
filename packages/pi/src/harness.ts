@@ -6,7 +6,6 @@
 
 import { AbortError, type AgentResult, type Harness } from "@tml/core";
 
-import { listModelsArgs, runArgs } from "./args.ts";
 import { isAgentEnd, parseModels, parsePiEvent, toProgress } from "./map.ts";
 import { parseStructuredText, withInlinedSchema } from "./schema.ts";
 import { defaultSpawn, type PiSpawn } from "./spawn.ts";
@@ -21,11 +20,16 @@ export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harne
 
   return {
     async run(task, runOpts) {
+      const signal = runOpts?.signal;
+      if (signal?.aborted) throw new AbortError();
+
       const schema = runOpts?.schema;
       const prompt = schema ? withInlinedSchema(task, schema) : task;
-      const proc = spawn(runArgs(prompt, runOpts?.model), { cwd });
+      const args = ["-p", "--mode", "json", "--no-session"];
+      if (runOpts?.model) args.push("--model", runOpts.model);
+      args.push(prompt);
+      const proc = spawn(args, { cwd });
 
-      const signal = runOpts?.signal;
       const onAbort = () => proc.kill();
       signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -57,7 +61,7 @@ export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harne
     },
 
     async listModels() {
-      const proc = spawn(listModelsArgs(), { cwd });
+      const proc = spawn(["--list-models"], { cwd });
       let out = "";
       for await (const line of proc.stdout) out += `${line}\n`;
       const { exitCode, stderr } = await proc.done;

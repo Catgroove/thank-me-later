@@ -4,21 +4,21 @@
 // contract. Lifts into @tml/core if a second harness needs it.)
 //
 // Models wrap JSON in prose and ```json fences inconsistently, so we try, in order:
-// fenced ```json blocks, then the last bare balanced {…} object; then validate the
-// candidate against the (minimally-interpreted) schema. Nothing valid → throw.
+// fenced ```json blocks, then the last bare balanced {…} object; then check the
+// minimally interpreted schema: object type and required keys only. Nothing valid → throw.
 
 /** Append the schema and a JSON-only instruction to the task prompt. */
 export function withInlinedSchema(task: string, schema: object): string {
   return [
     task,
     "",
-    "Respond with ONLY a single JSON object matching this JSON Schema — no prose, no",
+    "Respond with ONLY a single JSON object matching this JSON Schema - no prose, no",
     "explanation, optionally inside one ```json fenced block:",
     JSON.stringify(schema),
   ].join("\n");
 }
 
-/** Parse + validate the structured object out of `text`, or throw. */
+/** Parse the structured object out of `text` and check required schema fields, or throw. */
 export function parseStructuredText(text: string, schema: object): unknown {
   const candidates = [...fencedJsonBlocks(text), ...bareJsonObjects(text)];
   let lastError: Error | null = null;
@@ -35,7 +35,7 @@ export function parseStructuredText(text: string, schema: object): unknown {
     lastError = new Error(problem);
   }
   throw new Error(
-    `no schema-valid JSON object found in agent output${lastError ? `: ${lastError.message}` : ""}`,
+    `no JSON object satisfying required schema fields found in agent output${lastError ? `: ${lastError.message}` : ""}`,
   );
 }
 
@@ -88,7 +88,7 @@ function scanBalanced(text: string, start: number): number {
   return -1;
 }
 
-/** Minimal JSON-Schema check: object type + required keys present. Returns a problem or null. */
+/** Minimal schema check: object type + required keys present. Returns a problem or null. */
 function validate(value: unknown, schema: object): string | null {
   const s = schema as { type?: string; required?: string[] };
   if (s.type === "object" || s.required !== undefined) {
