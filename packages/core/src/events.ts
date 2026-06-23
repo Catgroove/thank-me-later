@@ -13,7 +13,7 @@
 
 import type { ApproveFindingsInput } from "./approval.ts";
 import type { AgentProgress } from "./providers/harness.ts";
-import type { RoundRecord } from "./round.ts";
+import type { Finding, RoundRecord } from "./round.ts";
 
 export type RunEvent =
   | { type: "run:started"; at: number; pipeline: string[] }
@@ -28,6 +28,22 @@ export type RunEvent =
   // model so presenters can render Findings and Round history without scraping PR Markdown or
   // waiting for an approval gate. The `round` is the fully normalized record (with `step`, `index`).
   | { type: "round:recorded"; at: number; step: string; round: RoundRecord }
+  // A Step opened a named span of work within itself — e.g. one review pass. Purely observational:
+  // it lets presenters show what a Step is doing mid-run without the Step decomposing into separate
+  // Steps. `group` is an optional caller-supplied label (e.g. a round) so related phases nest.
+  | { type: "phase:started"; at: number; step: string; phase: string; group?: string }
+  // The matching span closed. `status` is `error` if the span's work threw (then the Step's own
+  // failure path takes over). `findings` are the phase's own findings, surfaced live as the phase
+  // resolves — a preview ahead of the deduped, authoritative set carried by `round:recorded`.
+  | {
+      type: "phase:finished";
+      at: number;
+      step: string;
+      phase: string;
+      group?: string;
+      findings: Finding[];
+      status: "ok" | "error";
+    }
   // The Run's pull request is open on the Git provider — freshly opened, or rediscovered on a re-run.
   // Carries the URL so a consumer can surface a clickable link at the end of the Run.
   | { type: "pr:opened"; at: number; url: string }

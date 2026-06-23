@@ -38,6 +38,36 @@ describe("TUI App (no real terminal)", () => {
     t.renderer.destroy();
   });
 
+  test("renders an active Step's phases as a sub-tree in the rail", async () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      { type: "phase:started", step: "review", phase: "Context & intent", group: "initial" },
+      {
+        type: "phase:finished",
+        step: "review",
+        phase: "Context & intent",
+        group: "initial",
+        findings: [],
+        status: "ok",
+      },
+      { type: "phase:started", step: "review", phase: "Architecture & scope", group: "initial" },
+    ]);
+    const [getView] = createSignal(view);
+    const [now] = createSignal(1000);
+    const [prompt] = createSignal<ActivePrompt | undefined>(undefined);
+
+    const t = await testRender(() => App({ view: getView, now, prompt, onAbort: () => {} }), {
+      width: 100,
+      height: 24,
+    });
+    await t.flush();
+    const frame = t.captureCharFrame();
+    expect(frame).toContain("Context & intent");
+    expect(frame).toContain("Architecture & scope");
+    t.renderer.destroy();
+  });
+
   test("shows the approval drawer with its findings when an interaction is pending", async () => {
     const view = fold([
       { type: "run:started", pipeline: PIPELINE },

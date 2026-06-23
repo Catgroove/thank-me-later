@@ -182,17 +182,25 @@ export interface FakeCtxParts {
   until?: Ctx["until"];
 }
 
+/** A phase opened on the fake ctx: its label and grouping, captured in invocation order. */
+export interface PhaseCall {
+  label: string;
+  group?: string;
+}
+
 export interface FakeCtxResult {
   ctx: Ctx;
   logs: string[];
   asks: string[];
   approvals: ApproveFindingsInput[];
+  phases: PhaseCall[];
 }
 
 export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const logs: string[] = [];
   const asks: string[] = [];
   const approvals: ApproveFindingsInput[] = [];
+  const phases: PhaseCall[] = [];
   const reads = parts.reads ?? {};
   const signal = parts.signal ?? new AbortController().signal;
   const ask = parts.ask ?? ((_prompt: string) => Promise.resolve(""));
@@ -226,7 +234,11 @@ export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
     log(message) {
       logs.push(message);
     },
+    phase(label, fn, opts) {
+      phases.push({ label, ...(opts?.group !== undefined ? { group: opts.group } : {}) });
+      return fn();
+    },
   };
 
-  return { ctx, logs, asks, approvals };
+  return { ctx, logs, asks, approvals, phases };
 }

@@ -107,6 +107,9 @@ function fakeCtx(parts: { git?: Git; approveFindings?: () => Promise<ApprovalDec
         return [];
       },
       log() {},
+      phase(_label, fn) {
+        return fn();
+      },
     },
   };
 }

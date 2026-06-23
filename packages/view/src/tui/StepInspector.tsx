@@ -9,9 +9,9 @@ import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
 import type { Finding, RoundRecord } from "@tml/core";
-import type { StepView, ViewState } from "../present.ts";
+import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
-import { stepElapsed } from "./format.ts";
+import { latestGroupPhases, statusColor, statusGlyph, stepElapsed } from "./format.ts";
 import { TABS, effectiveIndex, type NavState, type Tab } from "./navigation.ts";
 
 export interface InspectorProps {
@@ -44,6 +44,56 @@ function TabBar(props: { active: Tab }) {
   );
 }
 
+/** A finding's identity for live de-dup: the same finding reported by two passes shows once. */
+function dedupeById(findings: readonly Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const out: Finding[] = [];
+  for (const f of findings) {
+    if (!seen.has(f.id)) {
+      seen.add(f.id);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+/**
+ * The findings to show: the latest recorded Round's deduped set once a Round exists, else a live
+ * preview from the current group's resolved phases (so findings appear as each pass lands, before
+ * the round is recorded).
+ */
+function visibleFindings(step: StepView): Finding[] {
+  if (step.rounds.length > 0) return step.findings;
+  return dedupeById(latestGroupPhases(step).flatMap((phase) => phase.findings));
+}
+
+function PhaseLine(props: { phase: PhaseView }) {
+  const p = props.phase;
+  return (
+    <box flexDirection="row">
+      <text fg={statusColor(p.status)}>{statusGlyph(p.status)}</text>
+      <text flexGrow={1} marginLeft={1} fg="#94a3b8">
+        {sanitize(p.label)}
+      </text>
+      <text fg="#64748b">
+        {p.status === "done" && p.findings.length > 0 ? `${p.findings.length}` : ""}
+      </text>
+    </box>
+  );
+}
+
+function Phases(props: { step: StepView }) {
+  const phases = () => latestGroupPhases(props.step);
+  return (
+    <Show when={phases().length > 0}>
+      <box flexDirection="column" marginTop={1}>
+        <text fg="#64748b">phases:</text>
+        <For each={phases()}>{(phase) => <PhaseLine phase={phase} />}</For>
+      </box>
+    </Show>
+  );
+}
+
 function Summary(props: { step: StepView; now: number }) {
   // Read `props.step` inside JSX (never hoisted into a const) so the panel stays reactive when the
   // selected Step changes under j/k - hoisting captures a stale StepView and freezes the tab.
@@ -69,10 +119,12 @@ function Summary(props: { step: StepView; now: number }) {
           error: {sanitize(props.step.error ?? "", { preserveNewlines: true })}
         </text>
       </Show>
+      <Phases step={props.step} />
       <Show
         when={
           props.step.artifacts.length === 0 &&
           props.step.rounds.length === 0 &&
+          props.step.phases.length === 0 &&
           props.step.headline === undefined
         }
       >
@@ -124,13 +176,11 @@ function FindingLine(props: { finding: Finding }) {
 }
 
 function Findings(props: { step: StepView }) {
+  const findings = () => visibleFindings(props.step);
   return (
     <box flexDirection="column">
-      <Show
-        when={props.step.findings.length > 0}
-        fallback={<text fg="#64748b">No current findings.</text>}
-      >
-        <For each={props.step.findings}>{(finding) => <FindingLine finding={finding} />}</For>
+      <Show when={findings().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
+        <For each={findings()}>{(finding) => <FindingLine finding={finding} />}</For>
       </Show>
     </box>
   );

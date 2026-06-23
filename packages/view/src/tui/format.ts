@@ -1,9 +1,24 @@
 // Small pure formatting helpers shared by the TUI components: status glyphs/labels and human
 // duration/elapsed strings. Kept generic - no Step-name knowledge, no default-Pipeline assumptions.
 
-import type { StepView, ViewState } from "../present.ts";
+import type { PhaseView, StepView, ViewState } from "../present.ts";
 
 export type StepStatus = StepView["status"];
+
+/**
+ * The phases of a Step's latest group (the most recently started), deduped by label keeping the
+ * latest - so a re-run pass replaces its earlier appearance rather than doubling. Returns [] for
+ * Steps that declare no phases, so callers stay generic over the Pipeline.
+ */
+export function latestGroupPhases(step: StepView): PhaseView[] {
+  const last = step.phases[step.phases.length - 1];
+  if (last === undefined) return [];
+  const byLabel = new Map<string, PhaseView>();
+  for (const phase of step.phases) {
+    if (phase.group === last.group) byLabel.set(phase.label, phase);
+  }
+  return [...byLabel.values()];
+}
 
 const GLYPHS: Record<StepStatus, string> = {
   pending: "·",

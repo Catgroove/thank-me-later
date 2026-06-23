@@ -222,6 +222,93 @@ describe("present", () => {
     expect(step(view, "review").findings).toEqual([finding]);
   });
 
+  test("phase:started appends an active phase; phase:finished resolves it with its findings", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      { type: "phase:started", step: "review", phase: "Context & intent", group: "initial" },
+      {
+        type: "phase:finished",
+        step: "review",
+        phase: "Context & intent",
+        group: "initial",
+        findings: [finding],
+        status: "ok",
+      },
+    ]);
+    expect(step(view, "review").phases).toHaveLength(1);
+    expect(step(view, "review").phases[0]).toMatchObject({
+      label: "Context & intent",
+      group: "initial",
+      status: "done",
+      findings: [finding],
+    });
+  });
+
+  test("phase findings surface live before any round is recorded", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      { type: "phase:started", step: "review", phase: "Architecture & scope", group: "initial" },
+      {
+        type: "phase:finished",
+        step: "review",
+        phase: "Architecture & scope",
+        group: "initial",
+        findings: [finding],
+        status: "ok",
+      },
+    ]);
+    // The round set is still empty (no round recorded), but the phase carries the finding.
+    expect(step(view, "review").findings).toEqual([]);
+    expect(step(view, "review").phases[0]?.findings).toEqual([finding]);
+  });
+
+  test("phase:finished with status error marks the phase failed", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      { type: "phase:started", step: "review", phase: "Structural", group: "initial" },
+      {
+        type: "phase:finished",
+        step: "review",
+        phase: "Structural",
+        group: "initial",
+        findings: [],
+        status: "error",
+      },
+    ]);
+    expect(step(view, "review").phases[0]).toMatchObject({ status: "failed" });
+  });
+
+  test("a re-run phase (same label + group) resolves the latest still-active occurrence", () => {
+    const started: RunEventInput = {
+      type: "phase:started",
+      step: "review",
+      phase: "Architecture & scope",
+      group: "initial",
+    };
+    const finished: RunEventInput = {
+      type: "phase:finished",
+      step: "review",
+      phase: "Architecture & scope",
+      group: "initial",
+      findings: [],
+      status: "ok",
+    };
+    const view = fold([
+      { type: "run:started", pipeline: ["review"] },
+      { type: "step:started", step: "review" },
+      started,
+      finished,
+      started, // tainted-worktree rerun: a second occurrence
+      finished,
+    ]);
+    const phases = step(view, "review").phases;
+    expect(phases).toHaveLength(2);
+    expect(phases.every((p) => p.status === "done")).toBe(true);
+  });
+
   test("ask:pending sets a pending interaction; the next event clears it", () => {
     const base = fold([
       { type: "run:started", pipeline: ["lint"] },

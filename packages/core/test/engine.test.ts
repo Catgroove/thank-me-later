@@ -77,6 +77,63 @@ describe("engine - happy path", () => {
     expect(events).toContainEqual({ type: "step:log", step: "consume", message: "raw=hi" });
   });
 
+  test("ctx.phase brackets work with phase:started/phase:finished carrying its findings", async () => {
+    const finding = makeFinding("review", {
+      severity: "info",
+      action: "no-op",
+      title: "Noted",
+      detail: "A note.",
+    });
+    const stepped = defineStep({
+      name: "review",
+      async run(ctx) {
+        await ctx.phase("Context & intent", () => Promise.resolve({ findings: [finding] }), {
+          group: "initial",
+          findings: (result) => result.findings,
+        });
+        return {};
+      },
+    });
+
+    const events = await collect(engineFor([stepped]));
+
+    expect(events).toContainEqual({
+      type: "phase:started",
+      step: "review",
+      phase: "Context & intent",
+      group: "initial",
+    });
+    expect(events).toContainEqual({
+      type: "phase:finished",
+      step: "review",
+      phase: "Context & intent",
+      group: "initial",
+      findings: [finding],
+      status: "ok",
+    });
+  });
+
+  test("ctx.phase emits a phase:finished with status error when its work throws, then rethrows", async () => {
+    const boom = defineStep({
+      name: "review",
+      async run(ctx) {
+        await ctx.phase("Architecture & scope", () => Promise.reject(new Error("nope")));
+        return {};
+      },
+    });
+
+    const events = await collect(engineFor([boom]));
+
+    expect(events).toContainEqual({
+      type: "phase:finished",
+      step: "review",
+      phase: "Architecture & scope",
+      findings: [],
+      status: "error",
+    });
+    expect(events.some((e) => e.type === "run:failed")).toBe(true);
+  });
+
   test("exposes completed rounds to later Steps", async () => {
     const finding = makeFinding("review", {
       severity: "warning",

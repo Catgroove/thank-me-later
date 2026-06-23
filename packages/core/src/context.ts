@@ -11,7 +11,15 @@ import type { Pending } from "./pending.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import type { Git } from "./providers/git.ts";
 import type { Harness } from "./providers/harness.ts";
-import type { RoundRecord } from "./round.ts";
+import type { Finding, RoundRecord } from "./round.ts";
+
+/** Options for a `phase` span: a grouping label and a way to surface the span's findings live. */
+export interface PhaseOptions<T> {
+  /** A label grouping related phases (e.g. a round), so presenters can nest them. */
+  readonly group?: string;
+  /** Extract the phase's findings from its result, surfaced live when the phase resolves. */
+  readonly findings?: (result: T) => readonly Finding[];
+}
 
 export interface Ctx<
   C extends readonly Artifact<unknown, string>[] = readonly Artifact<unknown, string>[],
@@ -43,4 +51,12 @@ export interface Ctx<
 
   /** Emit a progress line into the Run's event stream. */
   log(message: string): void;
+
+  /**
+   * Run `fn` as a named, observable span within the Step. Brackets the work with `phase:started`
+   * and `phase:finished` events so presenters can show what a Step is doing mid-run without it
+   * decomposing into separate Steps. Returns whatever `fn` returns; rethrows if `fn` throws (after
+   * emitting a `phase:finished` with `status: "error"`).
+   */
+  phase<T>(label: string, fn: () => Promise<T>, opts?: PhaseOptions<T>): Promise<T>;
 }
