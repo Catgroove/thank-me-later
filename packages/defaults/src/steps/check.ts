@@ -3,8 +3,14 @@
 // verification pass confirms the result. Toolchain discovery stays inside the prompts - tml never
 // hardcodes repo-specific commands.
 
-import { defineStep, executeRoundLoop, makeFinding, type Finding, type Step } from "@tml/core";
-import { parseAgentFindingsOutput } from "../findings.ts";
+import {
+  defineStep,
+  executeRoundLoop,
+  makeFinding,
+  parseAgentFindingsOutput,
+  type Finding,
+  type Step,
+} from "@tml/core";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
 import {
   checkFindingsSchema,
