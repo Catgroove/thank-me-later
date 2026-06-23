@@ -71,6 +71,13 @@ export function stepElapsed(step: StepView, now: number): string {
   return "";
 }
 
+/** Elapsed time for a Phase: fixed after finish, live while active. */
+export function phaseElapsed(phase: PhaseView, now: number): string {
+  const end = phase.finishedAt ?? (phase.status === "active" ? now : undefined);
+  if (end === undefined) return "";
+  return formatDuration(Math.max(0, end - phase.startedAt));
+}
+
 /** Elapsed time for the whole Run: end-to-end once finished, else live from start. */
 export function runElapsed(view: ViewState, now: number): string {
   if (view.startedAt === undefined) return "";

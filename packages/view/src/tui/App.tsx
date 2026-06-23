@@ -138,6 +138,7 @@ export function App(props: AppProps) {
 function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
   const status = () => props.view().status;
   const active = () => props.view().activeStep;
+  const elapsed = () => runElapsed(props.view(), props.now());
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
       <text fg="#38bdf8" attributes={1}>
@@ -147,7 +148,9 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
         {status()}
         {active() ? ` · ${sanitize(active() ?? "")}` : ""}
       </text>
-      <text fg="#64748b">{runElapsed(props.view(), props.now())}</text>
+      <Show when={elapsed() !== ""}>
+        <text fg="#64748b">total {elapsed()}</text>
+      </Show>
       <Show when={props.view().prUrl !== undefined}>
         <text marginLeft={2} fg="#22d3ee">
           {sanitize(props.view().prUrl ?? "")}
