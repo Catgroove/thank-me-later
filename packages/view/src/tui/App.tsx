@@ -32,9 +32,14 @@ export function App(props: AppProps) {
   const [focused, setFocused] = createSignal(0);
   const [confirmAbort, setConfirmAbort] = createSignal(false);
 
-  // Reset the action menu to its first option whenever a fresh approval prompt opens.
+  // When a fresh approval prompt opens: reset the action menu to its first option, and pull the
+  // inspector onto the findings tab of the Step under decision so the findings are in view the moment
+  // input is asked for - the drawer carries only a one-line tally, the detail lives in that tab.
   createEffect(() => {
-    if (props.prompt()?.kind === "approval") setFocused(0);
+    if (props.prompt()?.kind === "approval") {
+      setFocused(0);
+      setNav((n) => ({ ...n, tab: "findings", followActive: true }));
+    }
   });
 
   const handleApproval = (
