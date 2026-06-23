@@ -31,7 +31,9 @@ export {
   renderFindingForPr,
   renderPipelineSummaryForPr,
   renderRoundForPr,
+  renderRoundForPrompt,
   renderRoundsForPr,
+  renderRoundsForPrompt,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
 } from "./round.ts";

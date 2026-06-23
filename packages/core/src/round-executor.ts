@@ -11,7 +11,7 @@ import {
   type Finding,
   type RoundRecordInput,
   type RoundTrigger,
-  renderFindingForPr,
+  renderRoundsForPrompt,
 } from "./round.ts";
 
 const DEFAULT_MAX_AUTO_FIX_ATTEMPTS = 3;
@@ -121,7 +121,7 @@ export async function executeRoundLoop(
       trigger,
       attempt: attempts,
       history: [...rounds],
-      historyText: renderHistory(rounds),
+      historyText: renderRoundsForPrompt(rounds),
     };
     const check = await options.check(checkInput);
     const findings = [...check.findings];
@@ -166,7 +166,7 @@ export async function executeRoundLoop(
       prompt: defaultPrompt(options.stepName, stopReason),
       findings,
       ...(selectedFindingIds ? { selectedFindingIds } : {}),
-      context: renderHistory(rounds),
+      context: renderRoundsForPrompt(rounds),
     });
 
     if (decision.action === "abort") throw new Error("approval aborted by operator");
@@ -209,7 +209,7 @@ async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs)
     attempt: args.attempt,
     findings: [...args.fixFindings],
     history: [...args.rounds],
-    historyText: renderHistory(args.rounds),
+    historyText: renderRoundsForPrompt(args.rounds),
   };
   const fix = await options.fix(fixInput);
   const commitSha = await commitFix(ctx, options, fixInput, fix);
@@ -223,27 +223,6 @@ async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs)
     ...(fixSummary.length > 0 ? { fixSummary } : {}),
     ...(commitSha !== undefined ? { commitSha } : {}),
   });
-}
-
-function renderHistory(rounds: readonly RoundRecordInput[]): string {
-  if (rounds.length === 0) return "No prior rounds.";
-  return rounds
-    .map((round, index) => {
-      const lines = [`Round ${index}: ${round.trigger}`];
-      if (round.findings.length === 0) lines.push("No findings.");
-      else lines.push(...round.findings.map(renderFindingForPr));
-      if (round.selectedFindingIds && round.selectedFindingIds.length > 0) {
-        lines.push(`Selected: ${round.selectedFindingIds.join(", ")}`);
-      }
-      if (round.userNotes && Object.keys(round.userNotes).length > 0) {
-        lines.push("User notes:");
-        for (const [id, note] of Object.entries(round.userNotes)) lines.push(`- ${id}: ${note}`);
-      }
-      if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
-      if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
-      return lines.join("\n");
-    })
-    .join("\n\n");
 }
 
 function selectFindings(

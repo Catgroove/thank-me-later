@@ -189,6 +189,34 @@ export function renderRoundsForPr(rounds: readonly RoundRecord[]): string {
   return rounds.map(renderRoundForPr).join("\n\n");
 }
 
+/**
+ * Compact rendering of one completed round for a fresh-agent prompt. Unlike the
+ * PR renderer this is the flat, heading-free form fed back to agents (round
+ * history) and to the approval gate (decision context), so both surfaces give
+ * an identical account of every prior round - user notes included.
+ */
+export function renderRoundForPrompt(round: RoundRecordInput, index: number): string {
+  const lines = [`Round ${index}: ${round.trigger}`];
+  if (round.findings.length === 0) lines.push("No findings.");
+  else lines.push(...round.findings.map(renderFindingForPr));
+  if (round.selectedFindingIds && round.selectedFindingIds.length > 0) {
+    lines.push(`Selected: ${round.selectedFindingIds.join(", ")}`);
+  }
+  if (round.userNotes && Object.keys(round.userNotes).length > 0) {
+    lines.push("User notes:");
+    for (const [id, note] of Object.entries(round.userNotes)) lines.push(`- ${id}: ${note}`);
+  }
+  if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
+  if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
+  return lines.join("\n");
+}
+
+/** Compact rendering of completed rounds for a fresh-agent prompt. */
+export function renderRoundsForPrompt(rounds: readonly RoundRecordInput[]): string {
+  if (rounds.length === 0) return "No prior rounds.";
+  return rounds.map(renderRoundForPrompt).join("\n\n");
+}
+
 /** Current findings are the findings from the latest recorded round per Step. */
 export function currentFindings(rounds: readonly RoundRecord[]): Finding[] {
   return summarizeStepRounds(rounds).flatMap(
