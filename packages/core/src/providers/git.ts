@@ -57,6 +57,8 @@ export interface Git {
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
   status(): Promise<GitStatus>;
+  /** Git diff against `base`, including committed, tracked worktree, and untracked changes. */
+  diffAgainst(base: string): Promise<string>;
   /** Discard all uncommitted changes — tracked and untracked — returning the worktree to `HEAD`. */
   discardChanges(): Promise<void>;
   /**
@@ -100,6 +102,33 @@ async function conflictedFiles(cwd: string): Promise<string[]> {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+async function refExists(cwd: string, ref: string): Promise<boolean> {
+  return (await tryGit(cwd, ["rev-parse", "--verify", "--quiet", ref])).exitCode === 0;
+}
+
+async function comparisonRef(cwd: string, base: string): Promise<string> {
+  if (await refExists(cwd, `refs/remotes/origin/${base}`)) return `origin/${base}`;
+  if (await refExists(cwd, `refs/heads/${base}`)) return base;
+  return base;
+}
+
+async function untrackedDiff(cwd: string): Promise<string> {
+  const out = await git(cwd, ["ls-files", "--others", "--exclude-standard"]);
+  const files = out
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const diffs: string[] = [];
+  for (const file of files) {
+    const result = await tryGit(cwd, ["diff", "--no-index", "--", "/dev/null", file]);
+    if (result.exitCode !== 0 && result.exitCode !== 1) {
+      throw new Error(`git diff --no-index /dev/null ${file} failed: ${result.stderr.trim()}`);
+    }
+    if (result.stdout.trim().length > 0) diffs.push(result.stdout.trim());
+  }
+  return diffs.join("\n\n");
 }
 
 export function createGit(cwd: string): Git {
@@ -213,6 +242,18 @@ export function createGit(cwd: string): Git {
         if (worktree !== " ") unstaged.push(file);
       }
       return { branch: await branch(), staged, unstaged };
+    },
+
+    async diffAgainst(base) {
+      const ref = await comparisonRef(cwd, base);
+      const diffs = [
+        await git(cwd, ["diff", "--find-renames", `${ref}...HEAD`, "--"]),
+        await git(cwd, ["diff", "--find-renames", "HEAD", "--"]),
+        await untrackedDiff(cwd),
+      ]
+        .map((diff) => diff.trim())
+        .filter((diff) => diff.length > 0);
+      return diffs.join("\n\n");
     },
 
     async discardChanges() {

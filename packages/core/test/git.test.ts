@@ -141,6 +141,28 @@ describe("createGit (real git, against a throwaway temp repo)", () => {
     expect(await g.currentBranch()).toBe("feature");
   });
 
+  test("diffAgainst includes committed, tracked worktree, and untracked changes", async () => {
+    await setup(dir, "branch", "-M", "main");
+    const g = createGit(dir);
+    await g.createBranch("feature");
+    await writeFile(join(dir, "a.txt"), "committed\n");
+    await g.stageAll();
+    await g.commit("add a");
+    await writeFile(join(dir, "a.txt"), "committed\nworktree\n");
+    await writeFile(join(dir, "b.txt"), "untracked\n");
+
+    const diff = await g.diffAgainst("main");
+
+    expect(diff).toContain("diff --git a/a.txt b/a.txt");
+    expect(diff).toContain("+committed");
+    expect(diff).toContain("+worktree");
+    expect(diff).toContain("diff --git a/b.txt b/b.txt");
+    expect(diff).toContain("+untracked");
+    expect(diff).not.toContain("Committed branch diff");
+    expect(diff).not.toContain("Tracked worktree diff");
+    expect(diff).not.toContain("Untracked file diff");
+  });
+
   test("force push updates a rewritten branch the remote already has", async () => {
     await setup(dir, "branch", "-M", "main");
     await setup(dir, "init", "--bare", "-q", join(dir, "remote.git"));

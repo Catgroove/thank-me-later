@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  dedupeReviewPasses,
   type Finding,
   type ReviewPass,
   parsePassResult,
@@ -51,6 +52,19 @@ describe("parsePassResult", () => {
     ).toThrow();
     expect(() => parsePassResult({ findings: [], verdict: "blocked" })).toThrow();
   });
+
+  test("constrains actions by severity", () => {
+    expect(() =>
+      parsePassResult({
+        findings: [{ severity: "error", action: "no-op", title: "t", detail: "d" }],
+      }),
+    ).toThrow(/error and warning findings must be auto-fix or ask-user/);
+    expect(() =>
+      parsePassResult({
+        findings: [{ severity: "info", action: "auto-fix", title: "t", detail: "d" }],
+      }),
+    ).toThrow(/info findings must be no-op/);
+  });
 });
 
 describe("riskOf", () => {
@@ -59,6 +73,52 @@ describe("riskOf", () => {
     expect(riskOf([finding({ severity: "warning" })])).toBe("medium"));
   test("an error is high", () => expect(riskOf([finding({ severity: "error" })])).toBe("high"));
   test("a block forces high even with no findings", () => expect(riskOf([], true)).toBe("high"));
+});
+
+describe("dedupeReviewPasses", () => {
+  test("preserves first matching finding by location and title when priority ties", () => {
+    const duplicateA = finding({ id: "finding:1", title: "Same", location: "src/a.ts:1" });
+    const duplicateB = finding({
+      id: "finding:2",
+      title: "Same",
+      detail: "different detail",
+      location: "src/a.ts:1",
+    });
+    const unique = finding({ id: "finding:3", title: "Other", location: "src/a.ts:1" });
+
+    const passes = dedupeReviewPasses([
+      { title: "Correctness", result: { findings: [duplicateA] } },
+      { title: "Structural", result: { findings: [duplicateB, unique] } },
+    ]);
+
+    expect(passes[0]?.result.findings).toEqual([duplicateA]);
+    expect(passes[1]?.result.findings).toEqual([unique]);
+  });
+
+  test("keeps the most severe and actionable duplicate", () => {
+    const informational = finding({
+      id: "finding:1",
+      severity: "info",
+      action: "no-op",
+      title: "Same",
+      location: "src/a.ts:1",
+    });
+    const fixable = finding({
+      id: "finding:2",
+      severity: "warning",
+      action: "auto-fix",
+      title: "Same",
+      location: "src/a.ts:1",
+    });
+
+    const passes = dedupeReviewPasses([
+      { title: "Context", result: { findings: [informational] } },
+      { title: "Correctness", result: { findings: [fixable] } },
+    ]);
+
+    expect(passes[0]?.result.findings).toEqual([]);
+    expect(passes[1]?.result.findings).toEqual([fixable]);
+  });
 });
 
 describe("summarize", () => {

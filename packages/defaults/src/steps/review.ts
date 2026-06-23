@@ -1,19 +1,24 @@
 // `review` - a pre-push review of the branch's diff that mimics how a staff engineer reads a
-// change: five focused read-only passes (context -> architecture -> correctness -> design+NFR ->
-// micro), then a core round loop applies safe fixes and verifies them with fresh passes. Read-only
-// is the passes' contract; the prompts ask for it and a before/after worktree check reverts any
-// edits a pass makes anyway, so only the fix callback can change files. Synthesis and the overall
+// change: focused read-only passes over one injected diff (context -> architecture -> correctness
+// + NFR -> structural maintainability), then a core round loop applies safe fixes and verifies
+// them with fresh passes. Read-only is the passes' contract; the prompts ask for it and a
+// before/after worktree check reverts any edits a pass makes anyway, so only the fix callback can
+// change files. Synthesis and the overall
 // risk are computed in code (see `../review/synthesize.ts`), not by the agent. The architecture
-// pass can `block`, which is recorded as a high-risk banner - it does not halt the run. The
-// resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR body.
+// pass can `block`, which is recorded as a high-risk banner and routed through the approval gate.
+// The resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR body.
 
 import {
   defineStep,
   type Ctx,
+  makeFinding,
+  renderRoundsForPr,
+  type Finding,
   type Git,
   type GitStatus,
   type Harness,
   type RoundCheckInput,
+  type RoundRecord,
   type Step,
 } from "@tml/core";
 import { executeRoundLoopWithApproval } from "../approval-gate.ts";
@@ -23,12 +28,12 @@ import {
   architectureSchema,
   contextPrompt,
   correctnessPrompt,
-  designPrompt,
   findingsSchema,
   fixPrompt,
-  microPrompt,
+  structuralPrompt,
 } from "../prompts.ts";
 import {
+  dedupeReviewPasses,
   type PassResult,
   type ReviewPass,
   parsePassResult,
@@ -38,10 +43,18 @@ import {
 const REVIEW_PASS_TITLES = {
   context: "Context & intent",
   architecture: "Architecture & scope",
-  correctness: "Correctness & testing",
-  design: "Design & non-functional",
-  micro: "Maintainability & nits",
+  correctness: "Correctness, tests & non-functional",
+  structural: "Structural maintainability",
 } as const;
+
+const BLOCK_APPROVAL_FINDING = makeFinding("review", {
+  severity: "error",
+  action: "ask-user",
+  title: "Blocking architecture verdict",
+  detail:
+    "The architecture pass returned a block verdict, meaning the change was judged fundamentally " +
+    "risky, out of scope, or too large to review safely. Approve explicitly before proceeding.",
+});
 
 /** Run one read-only review pass: structured reply against the given schema, validated. */
 async function runPass(
@@ -67,10 +80,24 @@ async function revertRogueEdits(
   git: Git,
   before: GitStatus,
   log: (m: string) => void,
-): Promise<void> {
-  if (touched(await git.status()) === touched(before)) return;
+): Promise<boolean> {
+  if (touched(await git.status()) === touched(before)) return false;
   log("warning: a read-only review pass modified the worktree; reverting before continuing");
   await git.discardChanges();
+  return true;
+}
+
+async function runGuardedPass(
+  ctx: Ctx,
+  prompt: string,
+  schema: object = findingsSchema,
+): Promise<PassResult> {
+  const before = await ctx.git.status();
+  try {
+    return await runPass(ctx.agent, prompt, schema);
+  } finally {
+    await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+  }
 }
 
 function withRoundHistory(prompt: string, input: RoundCheckInput): string {
@@ -86,35 +113,105 @@ function withRoundHistory(prompt: string, input: RoundCheckInput): string {
   );
 }
 
+const MAX_TEST_CONTEXT_CHARS = 12_000;
+
+function truncateTestContext(text: string): string {
+  return text.length > MAX_TEST_CONTEXT_CHARS
+    ? `${text.slice(0, MAX_TEST_CONTEXT_CHARS)}\n\n[truncated after ${MAX_TEST_CONTEXT_CHARS} characters]`
+    : text;
+}
+
+function formatTestRoundContext(rounds: readonly RoundRecord[]): string {
+  if (rounds.length === 0) return "No test step rounds were recorded.";
+  const latest = rounds.reduce((a, b) => (b.index > a.index ? b : a));
+  const status = latest.findings.length === 0 ? "passed" : "has unresolved findings";
+  const lines = [`Latest test step status: ${status}.`, "", renderRoundsForPr(rounds)];
+  return truncateTestContext(lines.join("\n").trim());
+}
+
+function hasBlockVerdict(passes: readonly ReviewPass[]): boolean {
+  return passes.some((pass) => pass.result.verdict === "block");
+}
+
+function ensureBlockRequiresUser(passes: readonly ReviewPass[]): ReviewPass[] {
+  if (!hasBlockVerdict(passes)) return [...passes];
+  return passes.map((pass) => {
+    if (pass.result.verdict !== "block") return pass;
+    const hasBlockingFinding = pass.result.findings.some(
+      (finding) => finding.id === BLOCK_APPROVAL_FINDING.id,
+    );
+    if (hasBlockingFinding) return pass;
+    return {
+      ...pass,
+      result: { ...pass.result, findings: [...pass.result.findings, BLOCK_APPROVAL_FINDING] },
+    };
+  });
+}
+
+function reviewFindings(passes: readonly ReviewPass[]): Finding[] {
+  return passes.flatMap((pass) => pass.result.findings);
+}
+
+async function runPostContextPasses(
+  ctx: Ctx,
+  input: RoundCheckInput,
+  understanding: string,
+  diff: string,
+  testResults: string,
+): Promise<readonly [PassResult, PassResult, PassResult]> {
+  const prompts = {
+    architecture: withRoundHistory(architecturePrompt(understanding, diff), input),
+    correctness: withRoundHistory(correctnessPrompt(understanding, diff, testResults), input),
+    structural: withRoundHistory(structuralPrompt(understanding, diff), input),
+  };
+  const before = await ctx.git.status();
+  const settled = await Promise.allSettled([
+    runPass(ctx.agent, prompts.architecture, architectureSchema),
+    runPass(ctx.agent, prompts.correctness),
+    runPass(ctx.agent, prompts.structural),
+  ]);
+  const tainted = await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
+  const rejected = settled.find((result) => result.status === "rejected");
+  if (rejected !== undefined) throw rejected.reason;
+  const results = settled.map((result) => {
+    if (result.status !== "fulfilled") throw new Error("unreachable rejected review pass");
+    return result.value;
+  }) as [PassResult, PassResult, PassResult];
+  if (!tainted) return results;
+
+  ctx.log("warning: rerunning read-only review passes serially after reverting rogue edits");
+  return [
+    await runGuardedPass(ctx, prompts.architecture, architectureSchema),
+    await runGuardedPass(ctx, prompts.correctness),
+    await runGuardedPass(ctx, prompts.structural),
+  ];
+}
+
 async function runReviewPasses(
   ctx: Ctx<readonly [typeof prBody]>,
   input: RoundCheckInput,
 ): Promise<ReviewPass[]> {
-  const { agent } = ctx;
-  const before = await ctx.git.status();
   const body = ctx.read(prBody);
-  const context = await runPass(agent, withRoundHistory(contextPrompt(body), input));
+  const diff = await ctx.git.diffAgainst(await ctx.git.defaultBranch());
+  const testResults = formatTestRoundContext(ctx.rounds("test"));
+  const context = await runGuardedPass(ctx, withRoundHistory(contextPrompt(body, diff), input));
   const understanding = context.understanding ?? "";
-  const architecture = await runPass(
-    agent,
-    withRoundHistory(architecturePrompt(understanding), input),
-    architectureSchema,
+  const [architecture, correctness, structural] = await runPostContextPasses(
+    ctx,
+    input,
+    understanding,
+    diff,
+    testResults,
   );
-  const correctness = await runPass(
-    agent,
-    withRoundHistory(correctnessPrompt(understanding), input),
-  );
-  const design = await runPass(agent, withRoundHistory(designPrompt(understanding), input));
-  const micro = await runPass(agent, withRoundHistory(microPrompt(understanding), input));
-  await revertRogueEdits(ctx.git, before, (m) => ctx.log(m));
 
-  return [
-    { title: REVIEW_PASS_TITLES.context, result: context },
-    { title: REVIEW_PASS_TITLES.architecture, result: architecture },
-    { title: REVIEW_PASS_TITLES.correctness, result: correctness },
-    { title: REVIEW_PASS_TITLES.design, result: design },
-    { title: REVIEW_PASS_TITLES.micro, result: micro },
-  ];
+  return ensureBlockRequiresUser(
+    dedupeReviewPasses([
+      { title: REVIEW_PASS_TITLES.context, result: context },
+      { title: REVIEW_PASS_TITLES.architecture, result: architecture },
+      { title: REVIEW_PASS_TITLES.correctness, result: correctness },
+      { title: REVIEW_PASS_TITLES.structural, result: structural },
+    ]),
+  );
 }
 
 function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): string {
@@ -136,7 +233,10 @@ export function reviewStep(): Step {
         stepName: "review",
         async check(input) {
           latestPasses = await runReviewPasses(ctx, input);
-          return { findings: latestPasses.flatMap((p) => p.result.findings) };
+          return { findings: reviewFindings(latestPasses) };
+        },
+        stopPolicy() {
+          return hasBlockVerdict(latestPasses) ? "needs_user" : undefined;
         },
         async fix(input) {
           const result = await ctx.agent.run(fixPrompt(input.findings, input.historyText));
