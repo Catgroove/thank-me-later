@@ -43,6 +43,14 @@ export function App(props: AppProps) {
   const [selectedFindingIds, setSelectedFindingIds] = createSignal<readonly string[]>([]);
   const [confirmAbort, setConfirmAbort] = createSignal(false);
 
+  // The finding the action list is currently on, surfaced to the inspector so its Findings tab can
+  // highlight the same finding. Undefined unless an approval is pending - nothing to point at otherwise.
+  const focusedFindingId = (): string | undefined => {
+    const p = props.prompt();
+    if (p?.kind !== "approval") return undefined;
+    return p.input.findings[focusedFinding()]?.id;
+  };
+
   // Seed a fresh approval prompt with its suggested fix selection, show that selection visibly, and
   // pull the inspector onto the findings tab so the detailed findings are in view while deciding.
   createEffect(() => {
@@ -167,7 +175,12 @@ export function App(props: AppProps) {
       <Header view={props.view} now={props.now} />
       <box flexGrow={7} flexBasis={0} flexDirection="row">
         <PipelineRail view={props.view} nav={nav} now={props.now} />
-        <StepInspector view={props.view} nav={nav} now={props.now} />
+        <StepInspector
+          view={props.view}
+          nav={nav}
+          now={props.now}
+          focusedFindingId={focusedFindingId}
+        />
       </box>
       {/* The activity panel yields the lower region to a blocking drawer: the Run is paused on a
           decision, so no activity is flowing, and the drawer is the surface that needs the room. */}
