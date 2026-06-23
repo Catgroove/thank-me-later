@@ -86,7 +86,9 @@ describe("createPiHarness — run", () => {
       line({ type: "agent_end", messages: [] }),
     ];
     const harness = createPiHarness("/tmp", { spawn: fakeSpawn(lines) });
-    expect(String(await rejection(harness.run("review", { schema })))).toMatch(/no schema-valid/);
+    expect(String(await rejection(harness.run("review", { schema })))).toMatch(
+      /no JSON object satisfying required schema fields/,
+    );
   });
 
   test("throws with stderr on a non-zero exit", async () => {
@@ -99,6 +101,22 @@ describe("createPiHarness — run", () => {
   test("throws on a truncated stream with no agent_end", async () => {
     const harness = createPiHarness("/tmp", { spawn: fakeSpawn(NO_AGENT_END_LINES) });
     expect(String(await rejection(harness.run("x")))).toMatch(/no agent_end/);
+  });
+
+  test("rejects without spawning when the signal is already aborted", async () => {
+    let spawned = false;
+    const spawn: PiSpawn = () => {
+      spawned = true;
+      throw new Error("spawned");
+    };
+    const controller = new AbortController();
+    controller.abort();
+    const harness = createPiHarness("/tmp", { spawn });
+
+    expect(await rejection(harness.run("long task", { signal: controller.signal }))).toBeInstanceOf(
+      AbortError,
+    );
+    expect(spawned).toBe(false);
   });
 
   test("aborting mid-stream kills the process and rejects with AbortError", async () => {
@@ -146,13 +164,19 @@ describe("createPiHarness — run", () => {
 });
 
 describe("createPiHarness — listModels", () => {
-  test("parses the pi --list-models output into ids", async () => {
-    const harness = createPiHarness("/tmp", { spawn: fakeSpawn(LIST_MODELS_LINES) });
+  test("passes --list-models and parses the output into ids", async () => {
+    let seenArgs: string[] = [];
+    const spawn: PiSpawn = (args, opts) => {
+      seenArgs = args;
+      return fakeSpawn(LIST_MODELS_LINES)(args, opts);
+    };
+    const harness = createPiHarness("/tmp", { spawn });
     expect(await harness.listModels?.()).toEqual([
       "anthropic/claude-sonnet-4-6",
       "openai/gpt-5.5",
       "google/gemini-3-pro",
     ]);
+    expect(seenArgs).toEqual(["--list-models"]);
   });
 
   test("throws with stderr on a non-zero exit", async () => {
