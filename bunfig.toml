@@ -1,0 +1,8 @@
+# The OpenTUI Solid renderer compiles its JSX (.tsx) through a Bun loader plugin. The preload
+# registers that transform for `bun run`/`bunx`; `[test].preload` does the same for `bun test`; the
+# bundler gets it via scripts/build.ts. The plugin's loader only matches project .tsx/.jsx files, so
+# plain .ts modules are untouched.
+preload = ["@opentui/solid/preload"]
+
+[test]
+preload = ["@opentui/solid/preload"]

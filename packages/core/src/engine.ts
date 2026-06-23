@@ -13,7 +13,7 @@
 import type { ApprovalDecision, ApproveFindingsInput } from "./approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
-import type { RunEvent } from "./events.ts";
+import type { RunEvent, RunEventInput } from "./events.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
@@ -41,6 +41,8 @@ export interface EngineOptions {
   signal?: AbortSignal;
   /** Local execution journal. Defaults to the out-of-tree file Run Journal; `false` disables. */
   journal?: RunJournal | false;
+  /** Clock for the `at` timestamp stamped on every event. Defaults to `Date.now`; injectable for tests. */
+  now?: () => number;
 }
 
 export interface Engine {
@@ -58,6 +60,7 @@ export function createEngine(config: Config, opts: EngineOptions = {}): Engine {
 
 async function* runPipeline(config: Config, opts: EngineOptions): AsyncGenerator<RunEvent> {
   const queue = createEventQueue<RunEvent>();
+  const now = opts.now ?? (() => Date.now());
 
   // The Run's abort signal: tripped by an external EngineOptions.signal, or by the
   // consumer abandoning the generator (the `finally` below). Providers observe it.
@@ -70,7 +73,7 @@ async function* runPipeline(config: Config, opts: EngineOptions): AsyncGenerator
   // Run the pipeline in the background, pushing events live. A truly unexpected
   // throw (the driver catches Step errors itself) still terminates the stream.
   const driver = drive(config, opts, queue, controller.signal).catch((error) =>
-    failed(queue, opts.journal === false ? undefined : opts.journal, error),
+    failed(queue, opts.journal === false ? undefined : opts.journal, now, error),
   );
 
   try {
@@ -89,11 +92,26 @@ async function drive(
   signal: AbortSignal,
 ): Promise<void> {
   const { pipeline, providers, models } = config;
+  const now = opts.now ?? (() => Date.now());
   const cwd = opts.cwd ?? process.cwd();
   const git = opts.git ?? createGit(cwd);
   const journal =
     opts.journal === false ? undefined : (opts.journal ?? createRunJournal({ checkoutPath: cwd }));
-  const snapshot = await journal?.begin({ pipeline: pipeline.map((s) => s.name) });
+  // The branch you're on scopes `auto` resume: a parked Run only resumes on the branch it was
+  // shipping. We seed it at start and advance it as Steps move HEAD onto a feature branch.
+  let resumeKey = await currentBranchOrUndefined(git);
+  const snapshot = await journal?.begin({
+    pipeline: pipeline.map((s) => s.name),
+    ...(resumeKey !== undefined ? { resumeKey } : {}),
+  });
+  const syncResumeKey = async (): Promise<void> => {
+    if (journal === undefined) return;
+    const branch = await currentBranchOrUndefined(git);
+    if (branch !== undefined && branch !== resumeKey) {
+      resumeKey = branch;
+      await journal.recordResumeKey(branch);
+    }
+  };
   const ask =
     opts.ask ??
     (() =>
@@ -115,7 +133,7 @@ async function drive(
   const runRounds: RoundRecord[] = [...(snapshot?.rounds ?? [])];
   const roundIndexes = new Map<string, number>(snapshot?.roundIndexes);
 
-  await emit(queue, journal, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
+  await emit(queue, journal, now, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
 
   // Validate configured model ids against the live Harness *before* the first Step,
   // but only when the Harness can list its models - otherwise we can't, so we don't.
@@ -125,10 +143,10 @@ async function drive(
     try {
       available = new Set(await providers.agent.listModels());
     } catch (error) {
-      if (signal.aborted) return cancelled(queue, journal);
-      return failed(queue, journal, error);
+      if (signal.aborted) return cancelled(queue, journal, now);
+      return failed(queue, journal, now, error);
     }
-    if (signal.aborted) return cancelled(queue, journal);
+    if (signal.aborted) return cancelled(queue, journal, now);
     // An empty list is not a usable allowlist (the Harness can't, or won't, enumerate) - skip
     // rather than reject every id. Only a non-empty list validates configured ids.
     for (const [key, id] of available.size === 0 ? [] : Object.entries(models)) {
@@ -137,6 +155,7 @@ async function drive(
       return failed(
         queue,
         journal,
+        now,
         `${where} is "${id}", which the Harness does not list as an available model.`,
       );
     }
@@ -147,20 +166,20 @@ async function drive(
   while (i < pipeline.length) {
     const step = pipeline[i];
     if (step === undefined) break;
-    if (signal.aborted) return cancelled(queue, journal, step.name);
+    if (signal.aborted) return cancelled(queue, journal, now, step.name);
 
     if (step.resume === "reconcile") replayFromJournal = false;
     try {
       if (replayFromJournal && isStepReplayableFromJournal(step, snapshot)) {
-        await emit(queue, journal, { type: "step:skipped", step: step.name });
+        await emit(queue, journal, now, { type: "step:skipped", step: step.name });
         i += 1;
         continue;
       }
     } catch (error) {
-      return failed(queue, journal, error, step.name);
+      return failed(queue, journal, now, error, step.name);
     }
 
-    await emit(queue, journal, { type: "step:started", step: step.name });
+    await emit(queue, journal, now, { type: "step:started", step: step.name });
     const visibleRounds = runRounds.filter((round) => (stepByName.get(round.step) ?? Infinity) < i);
     const ctx = makeContext(
       step,
@@ -168,6 +187,7 @@ async function drive(
       providers,
       git,
       queue,
+      now,
       ask,
       approveFindings,
       signal,
@@ -182,22 +202,22 @@ async function drive(
     } catch (error) {
       // An abort surfaces here as a thrown AbortError (from until / the agent);
       // report it as a cancellation, not a failure.
-      if (signal.aborted) return cancelled(queue, journal, step.name);
-      return failed(queue, journal, error, step.name);
+      if (signal.aborted) return cancelled(queue, journal, now, step.name);
+      return failed(queue, journal, now, error, step.name);
     }
-    if (signal.aborted) return cancelled(queue, journal, step.name);
+    if (signal.aborted) return cancelled(queue, journal, now, step.name);
 
     if (isFlowSignal(result)) {
       switch (result.kind) {
         case "skip": {
           await journal?.recordStepCompleted(step.name);
-          await emit(queue, journal, { type: "step:skipped", step: step.name });
+          await emit(queue, journal, now, { type: "step:skipped", step: step.name });
           i += 1;
           continue;
         }
         case "cancel": {
           await journal?.finish("finished");
-          await emit(queue, journal, { type: "run:finished" });
+          await emit(queue, journal, now, { type: "run:finished" });
           queue.close();
           return;
         }
@@ -207,12 +227,13 @@ async function drive(
             return failed(
               queue,
               journal,
+              now,
               `goto target "${result.step}" is not a Step in the Pipeline`,
               step.name,
             );
           }
           await journal?.recordStepCompleted(step.name);
-          await emit(queue, journal, { type: "step:finished", step: step.name });
+          await emit(queue, journal, now, { type: "step:finished", step: step.name });
           i = target;
           continue;
         }
@@ -222,6 +243,7 @@ async function drive(
             return failed(
               queue,
               journal,
+              now,
               `Step "${step.name}" exceeded ${MAX_RETRIES} retries`,
               step.name,
             );
@@ -239,6 +261,7 @@ async function drive(
         return failed(
           queue,
           journal,
+          now,
           `Step "${step.name}" returned undeclared artifact "${key}".`,
           step.name,
         );
@@ -249,6 +272,7 @@ async function drive(
         return failed(
           queue,
           journal,
+          now,
           `Step "${step.name}" did not produce declared artifact "${artifact.name}".`,
           step.name,
         );
@@ -257,12 +281,12 @@ async function drive(
       try {
         await journal?.recordArtifact({ step: step.name, artifact: artifact.name, value });
       } catch (error) {
-        return failed(queue, journal, error, step.name);
+        return failed(queue, journal, now, error, step.name);
       }
       store.set(artifact.name, value);
       // Relay the value's string form for presentation when it has one; non-string artifacts
       // (e.g. a PullRequest object - surfaced via `pr:opened`) carry no `rendered`.
-      await emit(queue, journal, {
+      await emit(queue, journal, now, {
         type: "artifact:written",
         step: step.name,
         artifact: artifact.name,
@@ -271,18 +295,27 @@ async function drive(
     }
 
     try {
-      runRounds.push(...(await appendRounds(journal, roundIndexes, step.name, rounds)));
+      // Surface each completed Round as a factual event before the Step finishes, so presenters
+      // can render Findings and Round history without scraping Markdown or waiting on a gate.
+      const recorded = await appendRounds(journal, roundIndexes, step.name, rounds);
+      for (const round of recorded) {
+        await emit(queue, journal, now, { type: "round:recorded", step: step.name, round });
+      }
+      runRounds.push(...recorded);
     } catch (error) {
-      return failed(queue, journal, error, step.name);
+      return failed(queue, journal, now, error, step.name);
     }
 
     await journal?.recordStepCompleted(step.name);
-    await emit(queue, journal, { type: "step:finished", step: step.name });
+    // A Step may have moved HEAD onto a feature branch; keep the resume key pointed at it so a
+    // re-run on that branch resumes this Run (and a fresh run elsewhere does not).
+    await syncResumeKey();
+    await emit(queue, journal, now, { type: "step:finished", step: step.name });
     i += 1;
   }
 
   await journal?.finish("finished");
-  await emit(queue, journal, { type: "run:finished" });
+  await emit(queue, journal, now, { type: "run:finished" });
   queue.close();
 }
 
@@ -332,26 +365,36 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/** Stamp an unstamped event with the engine clock - the single point where `at` is added. */
+function stamp(event: RunEventInput, now: () => number): RunEvent {
+  return { ...event, at: now() } as RunEvent;
+}
+
 async function emit(
   queue: EventQueue<RunEvent>,
   journal: RunJournal | undefined,
-  event: RunEvent,
+  now: () => number,
+  event: RunEventInput,
 ): Promise<void> {
-  await journal?.recordEvent(event).catch(() => undefined);
-  queue.push(event);
+  const stamped = stamp(event, now);
+  await journal?.recordEvent(stamped).catch(() => undefined);
+  queue.push(stamped);
 }
 
 async function failed(
   queue: EventQueue<RunEvent>,
   journal: RunJournal | undefined,
+  now: () => number,
   error: unknown,
   step?: string,
 ): Promise<void> {
   await journal?.finish("failed").catch(() => undefined);
-  const event: RunEvent =
+  const event = stamp(
     step === undefined
       ? { type: "run:failed", error: errorMessage(error) }
-      : { type: "run:failed", step, error: errorMessage(error) };
+      : { type: "run:failed", step, error: errorMessage(error) },
+    now,
+  );
   await journal?.recordEvent(event).catch(() => undefined);
   queue.push(event);
   queue.close();
@@ -360,11 +403,14 @@ async function failed(
 async function cancelled(
   queue: EventQueue<RunEvent>,
   journal: RunJournal | undefined,
+  now: () => number,
   step?: string,
 ): Promise<void> {
   await journal?.finish("cancelled").catch(() => undefined);
-  const event: RunEvent =
-    step === undefined ? { type: "run:cancelled" } : { type: "run:cancelled", step };
+  const event = stamp(
+    step === undefined ? { type: "run:cancelled" } : { type: "run:cancelled", step },
+    now,
+  );
   await journal?.recordEvent(event).catch(() => undefined);
   queue.push(event);
   queue.close();
@@ -376,6 +422,7 @@ function makeContext(
   providers: Providers,
   git: Git,
   queue: EventQueue<RunEvent>,
+  now: () => number,
   ask: (prompt: string) => Promise<string>,
   approveFindings: (input: ApproveFindingsInput) => Promise<ApprovalDecision>,
   signal: AbortSignal,
@@ -392,6 +439,15 @@ function makeContext(
     return store.get(artifact.name);
   };
 
+  // Live events the Step itself triggers (agent progress, PR open, ask/approval, log) go straight
+  // onto the queue rather than through `emit` - they're fired from inside provider callbacks, not
+  // the drive loop. They share the same stamping path so `at` is never forgotten.
+  const pushEvent = (event: RunEventInput): void => {
+    const stamped = stamp(event, now);
+    queue.push(stamped);
+    void journal?.recordEvent(stamped).catch(() => undefined);
+  };
+
   // Wrap the configured Harness so progress flows into the one event stream and the
   // Run's signal is threaded automatically - Steps call `ctx.agent.run(task)` plain.
   const configured = providers.agent;
@@ -405,9 +461,7 @@ function makeContext(
         ...(model !== undefined ? { model } : {}),
         onProgress: (progress) => {
           runOpts?.onProgress?.(progress);
-          const event: RunEvent = { type: "agent:progress", step: step.name, progress };
-          queue.push(event);
-          void journal?.recordEvent(event).catch(() => undefined);
+          pushEvent({ type: "agent:progress", step: step.name, progress });
         },
         signal: runOpts?.signal ?? signal,
       });
@@ -428,18 +482,12 @@ function makeContext(
   const gitProvider: GitProvider = {
     async openPullRequest(input) {
       const pr = await base.openPullRequest(input);
-      const event: RunEvent = { type: "pr:opened", url: pr.url };
-      queue.push(event);
-      void journal?.recordEvent(event).catch(() => undefined);
+      pushEvent({ type: "pr:opened", url: pr.url });
       return pr;
     },
     async findPullRequest(head) {
       const pr = await base.findPullRequest(head);
-      if (pr) {
-        const event: RunEvent = { type: "pr:opened", url: pr.url };
-        queue.push(event);
-        void journal?.recordEvent(event).catch(() => undefined);
-      }
+      if (pr) pushEvent({ type: "pr:opened", url: pr.url });
       return pr;
     },
     getPullRequest: (prNumber) => base.getPullRequest(prNumber),
@@ -458,15 +506,11 @@ function makeContext(
     until: (pending, untilOpts) =>
       until(pending, { ...untilOpts, signal: untilOpts?.signal ?? signal }),
     ask(prompt: string) {
-      const event: RunEvent = { type: "ask:pending", step: step.name, prompt };
-      queue.push(event);
-      void journal?.recordEvent(event).catch(() => undefined);
+      pushEvent({ type: "ask:pending", step: step.name, prompt });
       return ask(prompt);
     },
     approveFindings(input: ApproveFindingsInput) {
-      const event: RunEvent = { type: "approval:pending", step: step.name, input };
-      queue.push(event);
-      void journal?.recordEvent(event).catch(() => undefined);
+      pushEvent({ type: "approval:pending", step: step.name, input });
       return approveFindings(input);
     },
     rounds(stepName?: string) {
@@ -475,13 +519,21 @@ function makeContext(
         : visibleRounds.filter((round) => round.step === stepName);
     },
     log(message: string) {
-      const event: RunEvent = { type: "step:log", step: step.name, message };
-      queue.push(event);
-      void journal?.recordEvent(event).catch(() => undefined);
+      pushEvent({ type: "step:log", step: step.name, message });
     },
   };
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** The current git branch, or undefined when it can't be read (no repo, detached HEAD, error). */
+async function currentBranchOrUndefined(git: Git): Promise<string | undefined> {
+  try {
+    const branch = await git.currentBranch();
+    return branch === "HEAD" || branch.length === 0 ? undefined : branch;
+  } catch {
+    return undefined;
+  }
 }

@@ -36,7 +36,7 @@ describe("engine — cancellation", () => {
       if (event.type === "step:started") controller.abort(); // interrupt while running
     }
 
-    expect(events.at(-1)).toEqual({ type: "run:cancelled", step: "agentic" });
+    expect(events.at(-1)).toMatchObject({ type: "run:cancelled", step: "agentic" });
     expect(harness.aborted).toBe(true); // the in-flight agent observed its signal
     // The second Step never started.
     expect(events.filter((e) => e.type === "step:started" && e.step === "after")).toHaveLength(0);

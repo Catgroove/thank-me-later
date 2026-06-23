@@ -8,11 +8,12 @@ import {
   type Engine,
   type EngineOptions,
   type RunEvent,
+  type RunEventInput,
 } from "@tml/core";
-import { createTerminalRenderer, type Renderer } from "@tml/view";
+import { createTerminalRenderer, type InteractiveRenderer, type Renderer } from "@tml/view";
 import { assembleShipConfig } from "../src/config.ts";
 import type { Loaded } from "../src/load.ts";
-import { ship } from "../src/index.ts";
+import { parseShipArgs, ship } from "../src/index.ts";
 
 /** A plain (append-only) renderer for tests; forwards each emitted line to `onLine`. */
 function plainRenderer(onLine: (line: string) => void = () => {}): Renderer {
@@ -23,6 +24,9 @@ function plainRenderer(onLine: (line: string) => void = () => {}): Renderer {
     },
   });
 }
+
+/** Stamp a deterministic `at` so fixtures can be written without one. */
+const stamp = (event: RunEventInput, i: number): RunEvent => ({ ...event, at: i }) as RunEvent;
 
 const tempDirs: string[] = [];
 function pluginFile(source: string): string {
@@ -50,10 +54,10 @@ async function runCli(...args: string[]) {
   return { stdout, stderr, exitCode };
 }
 
-function engineYielding(events: RunEvent[]): Engine {
+function engineYielding(events: RunEventInput[]): Engine {
   return {
     async *run(): AsyncGenerator<RunEvent> {
-      for (const event of events) yield event;
+      for (const [i, event] of events.entries()) yield stamp(event, i);
     },
   };
 }
@@ -71,6 +75,32 @@ describe("tml CLI", () => {
     const { stderr, exitCode } = await runCli("ship", "--resume");
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("--resume requires a run id");
+  });
+});
+
+describe("parseShipArgs", () => {
+  test("--plain and --no-tui both set plain; default is the TUI (plain false)", () => {
+    expect(parseShipArgs([]).plain).toBe(false);
+    expect(parseShipArgs(["--plain"]).plain).toBe(true);
+    expect(parseShipArgs(["--no-tui"]).plain).toBe(true);
+  });
+
+  test("preserves --verbose, --fresh, and --resume", () => {
+    expect(parseShipArgs(["--verbose"]).verbose).toBe(true);
+    expect(parseShipArgs(["-v"]).verbose).toBe(true);
+    expect(parseShipArgs(["--fresh"]).journalResume).toBe("fresh");
+    expect(parseShipArgs(["--resume", "run-7"])).toMatchObject({
+      journalResume: "exact",
+      runId: "run-7",
+    });
+    expect(parseShipArgs(["--resume=run-9"])).toMatchObject({
+      journalResume: "exact",
+      runId: "run-9",
+    });
+  });
+
+  test("rejects an unknown option", () => {
+    expect(() => parseShipArgs(["--bogus"])).toThrow(/Unknown ship option: --bogus/);
   });
 });
 
@@ -199,7 +229,7 @@ describe("ship() run lifecycle", () => {
     };
     const engine: Engine = {
       async *run(): AsyncGenerator<RunEvent> {
-        yield { type: "run:started", pipeline: [] };
+        yield { type: "run:started", at: 0, pipeline: [] };
         await gate; // hang mid-run until the test releases it
       },
     };
@@ -247,7 +277,7 @@ describe("ship() run lifecycle", () => {
     };
     const engine: Engine = {
       async *run(): AsyncGenerator<RunEvent> {
-        yield { type: "run:started", pipeline: [] };
+        yield { type: "run:started", at: 0, pipeline: [] };
         await gate;
       },
     };
@@ -277,7 +307,7 @@ describe("ship() run lifecycle", () => {
     expect(process.listenerCount("SIGTERM")).toBe(before);
   });
 
-  test("passes a CLI structured approval responder to the engine", async () => {
+  test("a non-interactive renderer wires clear failing Ask/approval responders into the engine", async () => {
     let captured: EngineOptions | undefined;
 
     const code = await ship({
@@ -286,31 +316,107 @@ describe("ship() run lifecycle", () => {
         captured = opts;
         return engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]);
       },
-      renderer: plainRenderer(),
+      renderer: plainRenderer(), // the plain renderer supplies no responders
     });
 
     expect(code).toBe(0);
-    const approveFindings = captured?.approveFindings;
+    const { ask, approveFindings } = captured ?? {};
+    expect(typeof ask).toBe("function");
     expect(typeof approveFindings).toBe("function");
-    if (approveFindings === undefined) throw new Error("missing approval responder");
-    try {
-      await approveFindings({
-        prompt: "Review findings",
-        findings: [
-          makeFinding("test", {
-            severity: "warning",
-            action: "ask-user",
-            title: "Needs input",
-            detail: "decide locally",
-          }),
-        ],
-      });
-      throw new Error("approval responder unexpectedly resolved");
-    } catch (error) {
-      expect(error instanceof Error ? error.message : String(error)).toContain(
-        "structured approval requires an interactive terminal",
-      );
-    }
+    if (ask === undefined || approveFindings === undefined) throw new Error("missing responders");
+
+    const askError = await ask("ship it?").then(
+      () => undefined,
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    expect(askError).toMatch(/needs an interactive Ask/);
+
+    const approveError = await approveFindings({
+      prompt: "Review findings",
+      findings: [
+        makeFinding("test", {
+          severity: "warning",
+          action: "ask-user",
+          title: "Needs input",
+          detail: "decide locally",
+        }),
+      ],
+    }).then(
+      () => undefined,
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    expect(approveError).toMatch(/needs an interactive findings approval/);
+  });
+
+  test("an interactive renderer supplies the engine's Ask/approval responders", async () => {
+    let captured: EngineOptions | undefined;
+    const interactive: InteractiveRenderer = {
+      render() {},
+      close() {},
+      ask: (prompt) => Promise.resolve(`answered: ${prompt}`),
+      approveFindings: () => Promise.resolve({ action: "approve" }),
+    };
+
+    await ship({
+      buildConfig: () => dummyConfig,
+      engineFor: (_config, opts) => {
+        captured = opts;
+        return engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]);
+      },
+      renderer: interactive,
+    });
+
+    const { ask, approveFindings } = captured ?? {};
+    if (ask === undefined || approveFindings === undefined) throw new Error("missing responders");
+    expect(await ask("ok?")).toBe("answered: ok?");
+    expect(await approveFindings({ prompt: "p", findings: [] })).toEqual({ action: "approve" });
+  });
+
+  test("a TTY default selects the TUI through the createTui seam; non-TTY and --plain do not", async () => {
+    const noopEngine = () =>
+      engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]);
+    let tuiBuilds = 0;
+    const fakeTui: InteractiveRenderer = { render() {}, close() {} };
+    const createTui = () => {
+      tuiBuilds += 1;
+      return fakeTui;
+    };
+
+    // Interactive TTY → builds the TUI.
+    await ship({ buildConfig: () => dummyConfig, engineFor: noopEngine, isTTY: true, createTui });
+    expect(tuiBuilds).toBe(1);
+
+    // --plain over a TTY → inline terminal renderer, no TUI.
+    await ship({
+      buildConfig: () => dummyConfig,
+      engineFor: noopEngine,
+      isTTY: true,
+      plain: true,
+      createTui,
+    });
+    // Non-TTY → plain renderer, no TUI.
+    await ship({ buildConfig: () => dummyConfig, engineFor: noopEngine, isTTY: false, createTui });
+    expect(tuiBuilds).toBe(1);
+  });
+
+  test("prints the renderer epilogue after the run, with the final ViewState", async () => {
+    let epilogueStatus: string | undefined;
+    const interactive: InteractiveRenderer = {
+      render() {},
+      close() {},
+      epilogue: (view) => {
+        epilogueStatus = view.status;
+      },
+    };
+
+    await ship({
+      buildConfig: () => dummyConfig,
+      engineFor: () =>
+        engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]),
+      renderer: interactive,
+    });
+
+    expect(epilogueStatus).toBe("finished");
   });
 
   test("returns 1 when engine setup throws", async () => {

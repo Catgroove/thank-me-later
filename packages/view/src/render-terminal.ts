@@ -305,7 +305,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
 
   /** A step's sealed result line: a short artifact inline, dimmed when the step produced none. */
   function stepResult(view: ViewState, name: string): string {
-    const rendered = view.steps.find((step) => step.name === name)?.rendered;
+    const rendered = view.steps.find((step) => step.name === name)?.headline;
     if (rendered === undefined) {
       // No artifact (a check, a commit) - structural, so de-emphasize it.
       return dim(`${STEP_INDENT}${glyphs.done} ${name}${elapsed()}`);
@@ -333,7 +333,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
       : Math.max(1, Math.min(termColumns(), MAX_WIDTH) - gutter);
     for (const step of narrative) {
       const label = `${STEP_INDENT}${step.name.padEnd(labelWidth)}`;
-      wrap(step.rendered, width).forEach((segment, i) =>
+      wrap(step.headline, width).forEach((segment, i) =>
         lines.push((i === 0 ? label : cont) + segment),
       );
     }

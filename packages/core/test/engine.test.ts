@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { defineArtifact } from "../src/artifact.ts";
 import { createEngine, type Engine } from "../src/engine.ts";
-import type { RunEvent } from "../src/events.ts";
+import type { RunEvent, RunEventInput } from "../src/events.ts";
 import { makeFinding, type RoundRecord } from "../src/round.ts";
 import type { Pipeline } from "../src/pipeline.ts";
 import type { RunJournal } from "../src/run-journal.ts";
@@ -20,13 +20,27 @@ function engineFor(pipeline: Pipeline, ask?: (p: string) => Promise<string>): En
   );
 }
 
-async function collect(engine: Engine): Promise<RunEvent[]> {
+/** Strip the engine-stamped `at` so event-shape assertions stay timestamp-agnostic. */
+function withoutAt(event: RunEvent): RunEventInput {
+  const copy = { ...event } as { at?: number };
+  delete copy.at;
+  return copy as RunEventInput;
+}
+
+async function collect(engine: Engine): Promise<RunEventInput[]> {
+  const events: RunEventInput[] = [];
+  for await (const event of engine.run()) events.push(withoutAt(event));
+  return events;
+}
+
+/** Like `collect`, but keeps `at` for tests that assert on timestamps. */
+async function collectRaw(engine: Engine): Promise<RunEvent[]> {
   const events: RunEvent[] = [];
   for await (const event of engine.run()) events.push(event);
   return events;
 }
 
-const types = (events: RunEvent[]) => events.map((e) => e.type);
+const types = (events: readonly { type: RunEvent["type"] }[]) => events.map((e) => e.type);
 
 describe("engine - happy path", () => {
   test("runs steps in order, threads artifacts, and emits an ordered event stream", async () => {
@@ -115,6 +129,7 @@ describe("engine - happy path", () => {
         }),
       recordArtifact: () => Promise.resolve(),
       recordStepCompleted: () => Promise.resolve(),
+      recordResumeKey: () => Promise.resolve(),
       recordRound: (record) => Promise.resolve(void records.push(record)),
       recordEvent: () => Promise.resolve(),
       finish: () => Promise.resolve(),
@@ -371,11 +386,13 @@ describe("engine - live emission", () => {
     const finishedAt = order.indexOf("step:finished");
     expect(progressAt).toBeGreaterThanOrEqual(0);
     expect(progressAt).toBeLessThan(finishedAt);
-    expect(events).toContainEqual({
-      type: "agent:progress",
-      step: "agentic",
-      progress: { kind: "text", text: "thinking…" },
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "agent:progress",
+        step: "agentic",
+        progress: { kind: "text", text: "thinking…" },
+      }),
+    );
     expect(order.at(-1)).toBe("run:finished");
   });
 });
@@ -425,5 +442,89 @@ describe("engine - pr:opened", () => {
       },
     });
     expect(types(await collect(engineFor([miss])))).not.toContain("pr:opened");
+  });
+});
+
+describe("engine — event timestamps and round events", () => {
+  test("every emitted event carries a numeric `at`", async () => {
+    const finding = makeFinding("review", {
+      severity: "warning",
+      action: "ask-user",
+      title: "Confirm",
+      detail: "Needs a decision.",
+    });
+    const review = defineStep({
+      name: "review",
+      run(ctx) {
+        ctx.log("looking");
+        return Promise.resolve({
+          artifacts: {},
+          rounds: [{ trigger: "initial" as const, findings: [finding] }],
+        });
+      },
+    });
+
+    const events = await collectRaw(engineFor([review]));
+
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) expect(typeof event.at).toBe("number");
+  });
+
+  test("uses the injected clock so `at` is deterministic", async () => {
+    let tick = 100;
+    const step = defineStep({ name: "noop", run: () => Promise.resolve({}) });
+    const engine = createEngine(
+      {
+        pipeline: [step],
+        providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
+      },
+      { now: () => (tick += 1) },
+    );
+    const events: RunEvent[] = [];
+    for await (const event of engine.run()) events.push(event);
+    // Strictly increasing stamps, all derived from the injected clock (first stamp is 101).
+    expect(events[0]?.at).toBe(101);
+    for (let i = 1; i < events.length; i += 1) {
+      expect((events[i]?.at ?? 0) > (events[i - 1]?.at ?? 0)).toBe(true);
+    }
+  });
+
+  test("emits a round:recorded event per completed Round, in order, before step:finished", async () => {
+    const finding = makeFinding("review", {
+      severity: "warning",
+      action: "ask-user",
+      title: "Confirm",
+      detail: "Needs a decision.",
+    });
+    const review = defineStep({
+      name: "review",
+      run: () =>
+        Promise.resolve({
+          artifacts: {},
+          rounds: [
+            { trigger: "initial" as const, findings: [finding] },
+            { trigger: "verify" as const, findings: [] },
+          ],
+        }),
+    });
+
+    const events = await collectRaw(engineFor([review]));
+    const recorded = events.filter((e) => e.type === "round:recorded");
+    expect(
+      recorded.map((e) => (e.type === "round:recorded" ? [e.round.index, e.round.trigger] : [])),
+    ).toEqual([
+      [0, "initial"],
+      [1, "verify"],
+    ]);
+    // The full normalized record is carried, including `step`.
+    const first = recorded[0];
+    if (first?.type === "round:recorded") {
+      expect(first.round.step).toBe("review");
+      expect(first.round.findings).toEqual([finding]);
+    }
+    // step:finished remains the terminal Step event, after the rounds.
+    const roundIdx = events.findIndex((e) => e.type === "round:recorded");
+    const finishIdx = events.findIndex((e) => e.type === "step:finished");
+    expect(roundIdx).toBeLessThan(finishIdx);
   });
 });

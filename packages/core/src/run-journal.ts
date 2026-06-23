@@ -27,6 +27,14 @@ export interface RunMetadata {
   readonly startedAt: string;
   readonly updatedAt: string;
   readonly completedSteps: string[];
+  /**
+   * The git branch this Run is shipping, used to scope `auto` resume. Set to the branch at start and
+   * advanced to the feature branch once the Run cuts one. A new Run only resumes a parked Run whose
+   * `resumeKey` equals the branch you're on now - so a fresh `tml ship` on the default branch starts
+   * clean instead of replaying a prior shipment, while re-running on the feature branch resumes it.
+   * Optional: absent on legacy journals and when no git branch is available.
+   */
+  readonly resumeKey?: string;
 }
 
 export interface RunJournalSnapshot {
@@ -40,8 +48,14 @@ export interface RunJournalSnapshot {
 }
 
 export interface RunJournal {
-  /** Select the configured fresh/resumed Run and return the durable replay snapshot. */
-  begin(input: { pipeline: string[] }): Promise<RunJournalSnapshot>;
+  /**
+   * Select the configured fresh/resumed Run and return the durable replay snapshot. `resumeKey` is
+   * the git branch the caller is on at start; under `auto` resume, only a parked Run with the same
+   * `resumeKey` is resumed (see `RunMetadata.resumeKey`).
+   */
+  begin(input: { pipeline: string[]; resumeKey?: string }): Promise<RunJournalSnapshot>;
+  /** Advance the Run's resume key as the working branch changes (e.g. once a feature branch is cut). */
+  recordResumeKey(resumeKey: string): Promise<void>;
   /** Persist an artifact value before its producing Step is marked complete. */
   recordArtifact(input: { step: string; artifact: string; value: unknown }): Promise<void>;
   /** Mark a Step complete after all of its artifacts have been persisted. */
@@ -126,9 +140,9 @@ class FileRunJournal implements RunJournal {
     this.events = opts.events;
   }
 
-  async begin(input: { pipeline: string[] }): Promise<RunJournalSnapshot> {
+  async begin(input: { pipeline: string[]; resumeKey?: string }): Promise<RunJournalSnapshot> {
     const pipeline = [...input.pipeline];
-    const { runId, metadata } = await this.selectRun(pipeline);
+    const { runId, metadata } = await this.selectRun(pipeline, input.resumeKey);
     const runsDir = join(this.root, "runs");
     this.runDir = join(runsDir, runId);
     await ensurePrivateDir(dirname(this.root));
@@ -148,6 +162,7 @@ class FileRunJournal implements RunJournal {
         startedAt: now,
         updatedAt: now,
         completedSteps: [],
+        ...(input.resumeKey !== undefined ? { resumeKey: input.resumeKey } : {}),
       };
       await this.writeMetadata();
     } else {
@@ -195,6 +210,13 @@ class FileRunJournal implements RunJournal {
     }
   }
 
+  async recordResumeKey(resumeKey: string): Promise<void> {
+    const metadata = this.requireMetadata();
+    if (metadata.resumeKey === resumeKey) return;
+    this.metadata = { ...metadata, resumeKey, updatedAt: new Date().toISOString() };
+    await this.writeMetadata();
+  }
+
   async recordRound(round: RoundRecord): Promise<void> {
     await appendJsonLine(join(this.requireRunDir(), "rounds.jsonl"), round);
     this.touch(new Date().toISOString());
@@ -217,6 +239,7 @@ class FileRunJournal implements RunJournal {
 
   private async selectRun(
     pipeline: string[],
+    resumeKey: string | undefined,
   ): Promise<{ runId: string; metadata: RunMetadata | undefined }> {
     const runsDir = join(this.root, "runs");
     if (this.resume === "exact") {
@@ -232,13 +255,16 @@ class FileRunJournal implements RunJournal {
       return { runId: this.requestedRunId, metadata };
     }
     if (this.resume === "auto") {
-      const metadata = await this.latestResumableRun(pipeline);
+      const metadata = await this.latestResumableRun(pipeline, resumeKey);
       if (metadata !== undefined) return { runId: metadata.runId, metadata };
     }
     return { runId: newRunId(), metadata: undefined };
   }
 
-  private async latestResumableRun(pipeline: string[]): Promise<RunMetadata | undefined> {
+  private async latestResumableRun(
+    pipeline: string[],
+    resumeKey: string | undefined,
+  ): Promise<RunMetadata | undefined> {
     const runsDir = join(this.root, "runs");
     if (!existsSync(runsDir)) return undefined;
     const candidates: RunMetadata[] = [];
@@ -246,6 +272,10 @@ class FileRunJournal implements RunJournal {
       const metadata = await readMetadataIfExists(join(runsDir, runId));
       if (metadata === undefined || metadata.status === "finished") continue;
       if (!samePipeline(metadata.pipeline, pipeline)) continue;
+      // Only resume a parked Run that belongs to the branch you're on now. This keeps a fresh
+      // `tml ship` on the default branch from hijacking a prior shipment's feature branch, while a
+      // re-run on that feature branch still resumes it. Legacy runs without a key match a keyless start.
+      if (metadata.resumeKey !== resumeKey) continue;
       candidates.push(metadata);
     }
     candidates.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

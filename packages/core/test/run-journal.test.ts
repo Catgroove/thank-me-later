@@ -47,7 +47,7 @@ describe("RunJournal", () => {
       trigger: "initial",
       findings: [],
     });
-    await journal.recordEvent({ type: "run:started", pipeline: ["produce"] });
+    await journal.recordEvent({ type: "run:started", at: 0, pipeline: ["produce"] });
     await journal.finish("finished");
 
     const runDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath), "runs", "run-1");
@@ -89,6 +89,48 @@ describe("RunJournal", () => {
     expect([...snapshot.roundIndexes]).toEqual([["produce", 1]]);
   });
 
+  test("auto resume is scoped to the branch (resumeKey): a run on the base branch starts fresh", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const pipeline = ["branch", "commit"];
+
+    // A prior shipment started on master, cut a feature branch, then failed (left parked).
+    const first = createRunJournal({ stateHome, checkoutPath, resume: "fresh", events: false });
+    const firstSnapshot = await first.begin({ pipeline, resumeKey: "master" });
+    const firstRunId = firstSnapshot.metadata.runId;
+    await first.recordResumeKey("feat/x"); // the branch Step moved HEAD onto the feature branch
+    await first.recordStepCompleted("branch");
+    await first.finish("failed");
+
+    // A fresh `tml ship` back on master must NOT resume that shipment - it starts clean.
+    const onMaster = createRunJournal({ stateHome, checkoutPath, resume: "auto", events: false });
+    const masterSnapshot = await onMaster.begin({ pipeline, resumeKey: "master" });
+    expect(masterSnapshot.metadata.runId).not.toBe(firstRunId);
+    expect([...masterSnapshot.completedSteps]).toEqual([]);
+
+    // Re-running while still on the feature branch resumes the parked shipment.
+    const onFeature = createRunJournal({ stateHome, checkoutPath, resume: "auto", events: false });
+    const featureSnapshot = await onFeature.begin({ pipeline, resumeKey: "feat/x" });
+    expect(featureSnapshot.metadata.runId).toBe(firstRunId);
+    expect([...featureSnapshot.completedSteps]).toEqual(["branch"]);
+  });
+
+  test("auto resume matches a legacy keyless run when no branch key is available", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const pipeline = ["branch", "commit"];
+
+    const legacy = createRunJournal({ stateHome, checkoutPath, resume: "fresh", events: false });
+    const legacyId = (await legacy.begin({ pipeline })).metadata.runId; // no resumeKey recorded
+    await legacy.recordStepCompleted("branch");
+    await legacy.finish("failed");
+
+    const next = createRunJournal({ stateHome, checkoutPath, resume: "auto", events: false });
+    const snapshot = await next.begin({ pipeline }); // also keyless
+    expect(snapshot.metadata.runId).toBe(legacyId);
+    expect([...snapshot.completedSteps]).toEqual(["branch"]);
+  });
+
   test("rejects resuming an incompatible pipeline", async () => {
     const stateHome = tempDir();
     const checkoutPath = join(stateHome, "repo");
@@ -128,7 +170,7 @@ describe("RunJournal", () => {
       trigger: "initial",
       findings: [],
     });
-    await journal.recordEvent({ type: "run:started", pipeline: ["produce"] });
+    await journal.recordEvent({ type: "run:started", at: 0, pipeline: ["produce"] });
 
     const checkoutStateDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath));
     const runDir = join(checkoutStateDir, "runs", "private");

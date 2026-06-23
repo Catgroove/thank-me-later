@@ -11,7 +11,7 @@
     "lint": "oxlint --type-aware",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "build": "bun build packages/cli/src/index.ts --compile --outfile dist/tml",
+    "build": "bun run scripts/build.ts",
     "build:binaries": "bash scripts/build-binaries.sh",
     "test": "bun test",
     "changeset": "changeset",
@@ -20,10 +20,14 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
+    "@opentui/core": "0.4.1",
+    "@opentui/solid": "0.4.1",
     "@types/bun": "latest",
+    "opentui-spinner": "0.0.7",
     "oxfmt": "^0.54.0",
     "oxlint": "^1.69.0",
     "oxlint-tsgolint": "^0.23.0",
+    "solid-js": "1.9.12",
     "tml": "workspace:*",
     "typescript": "^5.6.0"
   }
