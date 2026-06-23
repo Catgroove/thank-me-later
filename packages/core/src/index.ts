@@ -94,6 +94,7 @@ export {
   createIsolatedWorkspace,
   currentWorkspaceSourceBranch,
   removeIsolatedWorkspace,
+  type CreateIsolatedWorkspaceOptions,
   type WorkspaceSnapshot,
 } from "./workspace.ts";
 export { AssemblyError, validatePipeline } from "./validate.ts";

@@ -41,6 +41,10 @@ export interface EngineOptions {
   signal?: AbortSignal;
   /** Local execution journal. Defaults to the out-of-tree file Run Journal; `false` disables. */
   journal?: RunJournal | false;
+  /** Override the Pipeline recorded in the journal when running a preparatory Pipeline subset. */
+  journalPipeline?: readonly string[];
+  /** Whether a successful run closes the journal. Defaults to true. */
+  finishJournal?: boolean;
   /** Clock for the `at` timestamp stamped on every event. Defaults to `Date.now`; injectable for tests. */
   now?: () => number;
 }
@@ -100,8 +104,9 @@ async function drive(
   // The branch you're on scopes `auto` resume: a parked Run only resumes on the branch it was
   // shipping. We seed it at start and advance it as Steps move HEAD onto a feature branch.
   let resumeKey = await currentBranchOrUndefined(git);
+  const journalPipeline = opts.journalPipeline ?? pipeline.map((s) => s.name);
   const snapshot = await journal?.begin({
-    pipeline: pipeline.map((s) => s.name),
+    pipeline: [...journalPipeline],
     ...(resumeKey !== undefined ? { resumeKey } : {}),
   });
   const syncResumeKey = async (): Promise<void> => {
@@ -339,8 +344,10 @@ async function drive(
     i += 1;
   }
 
-  await journal?.finish("finished");
-  await emit(queue, journal, now, { type: "run:finished" });
+  if (opts.finishJournal !== false) {
+    await journal?.finish("finished");
+    await emit(queue, journal, now, { type: "run:finished" });
+  }
   queue.close();
 }
 

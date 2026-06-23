@@ -11,6 +11,11 @@ export interface WorkspaceSnapshot {
   readonly sourceHead: string;
 }
 
+export interface CreateIsolatedWorkspaceOptions {
+  /** Overlay staged, unstaged, and untracked source changes. Defaults to true for legacy callers. */
+  readonly overlayChanges?: boolean;
+}
+
 interface GitRunOptions {
   readonly allowExitCodes?: readonly number[];
 }
@@ -54,14 +59,19 @@ export async function removeIsolatedWorkspace(workspacePath: string): Promise<vo
   await rm(target, { recursive: true, force: true });
 }
 
-/** Create `workspacePath` as a clone of `sourcePath`, overlaid with non-ignored local changes. */
+/** Create `workspacePath` as a clone of `sourcePath`, optionally overlaid with local changes. */
 export async function createIsolatedWorkspace(
   sourcePath: string,
   workspacePath: string,
+  opts: CreateIsolatedWorkspaceOptions = {},
 ): Promise<WorkspaceSnapshot> {
   const source = resolve(sourcePath);
   const workspace = resolve(workspacePath);
+  const overlayChanges = opts.overlayChanges ?? true;
   const before = await sourceStatus(source);
+  if (!overlayChanges && before.length > 0) {
+    throw new Error("tml ship: source checkout must be clean before creating the run workspace.");
+  }
   const sourceHead = (await git(source, ["rev-parse", "HEAD"])).trim();
   const sourceBranch = (await git(source, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
 
@@ -77,9 +87,14 @@ export async function createIsolatedWorkspace(
       await git(workspace, ["checkout", "-B", sourceBranch, sourceHead]);
     }
 
-    await applyPatch(workspace, await git(source, ["diff", "--binary", "--cached", "HEAD", "--"]));
-    await applyPatch(workspace, await git(source, ["diff", "--binary", "--"]));
-    await copyUntrackedFiles(source, workspace);
+    if (overlayChanges) {
+      await applyPatch(
+        workspace,
+        await git(source, ["diff", "--binary", "--cached", "HEAD", "--"]),
+      );
+      await applyPatch(workspace, await git(source, ["diff", "--binary", "--"]));
+      await copyUntrackedFiles(source, workspace);
+    }
 
     const after = await sourceStatus(source);
     if (after !== before) {

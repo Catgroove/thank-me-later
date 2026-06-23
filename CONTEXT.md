@@ -165,9 +165,10 @@ _Avoid_: Cancel (reserve for the Flow signal), kill, interrupt, stop
 **Ship branch**:
 The feature branch tml ships the work on. If you're already on a feature branch that isn't spent,
 that's the Ship branch. Otherwise (the default branch, a detached `HEAD`, or a spent branch) the
-Branch mode produces one. The Pipeline commits and pushes from the isolated Run workspace created
-from the source checkout snapshot. The PR opens with the Ship branch as its head and the repo's
-default branch as its base.
+Branch mode produces one in the source checkout before the isolated Run workspace is created.
+The initial work is committed there first; then the Pipeline runs checks, fixes, reviews, pushes,
+and opens the PR from the isolated Run workspace created from that committed branch. The PR opens
+with the Ship branch as its head and the repo's default branch as its base.
 _Avoid_: Feature branch (too generic), ship-<sha> (only the `auto` mode's name shape)
 
 **Spent branch**:

@@ -29,16 +29,16 @@ bun install && bun run build   # → dist/tml
 
 ```sh
 tml init      # scaffold a starter tml.json (optional - tml ship is zero-config)
-tml ship      # snapshot this checkout and run the pipeline in an isolated workspace
+tml ship      # commit this checkout, then run the gate in an isolated workspace
 ```
 
-`tml ship` snapshots your non-ignored checkout state into a disposable workspace under the
-local Run Journal, then runs there. You can keep editing the source checkout while the Run
-continues; those later edits are not part of the shipment. The pipeline puts the snapshot on
-a feature branch (AI-named by default), then commits a clean history - your change, then the
-gate's fixes as their own commits - as it runs model-backed format, lint, and type-check
-passes, tests, and reviews (the agent applies fixes), before pushing and opening a PR and
-watching CI.
+`tml ship` first puts the source checkout on a feature branch (AI-named by default) and commits
+the current dirty work as the shipment's first commit. It then creates a disposable workspace
+under the local Run Journal from that committed branch and runs the gate there. You can keep
+editing the source checkout while the Run continues; those later edits are not part of the
+shipment. The gate's fixes land as their own commits as it runs model-backed format, lint,
+and type-check passes, tests, and reviews (the agent applies fixes), before pushing and opening
+a PR and watching CI.
 
 tml is built with tml: every change to this repo ships through `tml ship`.
 

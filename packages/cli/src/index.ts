@@ -79,6 +79,51 @@ async function defaultCreateTui(options: { onAbort: () => void }): Promise<Inter
 
 // 128 + signal number: the conventional exit code for a signal-terminated process.
 const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
+const SOURCE_PREP_STEPS = ["branch", "describe", "commit-change"] as const;
+const SOURCE_PREP_STEP_SET = new Set<string>(SOURCE_PREP_STEPS);
+
+function sourcePrepConfig(config: Config): Config | undefined {
+  const prep = config.pipeline.slice(0, SOURCE_PREP_STEPS.length);
+  if (!SOURCE_PREP_STEPS.every((name, i) => prep[i]?.name === name)) return undefined;
+  const prepNames = new Set(prep.map((s) => s.name));
+  const models = config.models
+    ? Object.fromEntries(
+        Object.entries(config.models).filter(([name]) => name === "default" || prepNames.has(name)),
+      )
+    : undefined;
+  return { ...config, pipeline: prep, ...(models ? { models } : {}) };
+}
+
+function canCreateWorkspaceFromPreparedSource(completed: ReadonlySet<string>): boolean {
+  if (completed.size === 0) return false;
+  return [...completed].every((step) => SOURCE_PREP_STEP_SET.has(step));
+}
+
+async function runSourcePrep(opts: {
+  config: Config;
+  cwd: string;
+  journal: RunJournal;
+  ask: EngineOptions["ask"];
+  approveFindings: EngineOptions["approveFindings"];
+  signal: AbortSignal;
+}): Promise<void> {
+  const config = sourcePrepConfig(opts.config);
+  if (config === undefined) return;
+
+  const engine = createEngine(config, {
+    cwd: opts.cwd,
+    journal: opts.journal,
+    journalPipeline: opts.config.pipeline.map((s) => s.name),
+    finishJournal: false,
+    ask: opts.ask,
+    approveFindings: opts.approveFindings,
+    signal: opts.signal,
+  });
+  for await (const event of engine.run()) {
+    if (event.type === "run:failed") throw new Error(event.error);
+    if (event.type === "run:cancelled") throw new Error("tml ship: source preparation cancelled");
+  }
+}
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
@@ -160,13 +205,23 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         snapshot.rounds.length > 0 ||
         snapshot.artifacts.size > 0;
       if (!workspaceExists) {
-        if (hasRunProgress) {
+        if (hasRunProgress && !canCreateWorkspaceFromPreparedSource(snapshot.completedSteps)) {
           throw new Error(
             `tml ship: cannot resume run ${snapshot.metadata.runId}; its workspace is missing. ` +
               "Use `tml ship --fresh` to start a new isolated run.",
           );
         }
-        await createIsolatedWorkspace(cwd, workspacePath);
+        if (!hasRunProgress) {
+          await runSourcePrep({
+            config: sourceConfig,
+            cwd,
+            journal,
+            ask,
+            approveFindings,
+            signal: abortController.signal,
+          });
+        }
+        await createIsolatedWorkspace(cwd, workspacePath, { overlayChanges: false });
       }
       runCwd = workspacePath;
       workspaceToClean = workspacePath;
