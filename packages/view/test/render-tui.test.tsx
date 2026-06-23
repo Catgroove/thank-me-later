@@ -27,10 +27,13 @@ describe("TUI App (no real terminal)", () => {
     const [now] = createSignal(1000);
     const [prompt] = createSignal<ActivePrompt | undefined>(undefined);
 
-    const t = await testRender(() => App({ view: getView, now, prompt, onAbort: () => {} }), {
-      width: 100,
-      height: 24,
-    });
+    const t = await testRender(
+      () => App({ view: getView, now, prompt, onCopySelection: () => false, onAbort: () => {} }),
+      {
+        width: 100,
+        height: 24,
+      },
+    );
     await t.flush();
     const frame = t.captureCharFrame();
     for (const name of PIPELINE) expect(frame).toContain(name);
@@ -57,10 +60,13 @@ describe("TUI App (no real terminal)", () => {
     const [now] = createSignal(1000);
     const [prompt] = createSignal<ActivePrompt | undefined>(undefined);
 
-    const t = await testRender(() => App({ view: getView, now, prompt, onAbort: () => {} }), {
-      width: 100,
-      height: 24,
-    });
+    const t = await testRender(
+      () => App({ view: getView, now, prompt, onCopySelection: () => false, onAbort: () => {} }),
+      {
+        width: 100,
+        height: 24,
+      },
+    );
     await t.flush();
     const frame = t.captureCharFrame();
     expect(frame).toContain("Context & intent");
@@ -91,10 +97,13 @@ describe("TUI App (no real terminal)", () => {
       submit: () => {},
     });
 
-    const t = await testRender(() => App({ view: getView, now, prompt, onAbort: () => {} }), {
-      width: 100,
-      height: 24,
-    });
+    const t = await testRender(
+      () => App({ view: getView, now, prompt, onCopySelection: () => false, onAbort: () => {} }),
+      {
+        width: 100,
+        height: 24,
+      },
+    );
     await t.flush();
     const frame = t.captureCharFrame();
     expect(frame).toContain("Approve these findings"); // the prompt
