@@ -9,7 +9,13 @@ import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { PhaseView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
-import { latestGroupPhases, stepElapsed, statusColor, statusGlyph } from "./format.ts";
+import {
+  latestGroupPhases,
+  phaseElapsed,
+  stepElapsed,
+  statusColor,
+  statusGlyph,
+} from "./format.ts";
 import { effectiveIndex, type NavState } from "./navigation.ts";
 import { ensureSpinner } from "./spinner.ts";
 
@@ -19,21 +25,27 @@ export interface RailProps {
   readonly now: Accessor<number>;
 }
 
-function PhaseRow(props: { phase: PhaseView; last: boolean }) {
-  const p = props.phase;
-  const count = () => (p.status === "done" && p.findings.length > 0 ? ` ${p.findings.length}` : "");
+function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
+  const elapsed = () => phaseElapsed(props.phase, props.now);
+  const count = () =>
+    props.phase.status === "done" && props.phase.findings.length > 0
+      ? ` ${props.phase.findings.length}`
+      : "";
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1}>
       <text fg="#475569">{props.last ? " └ " : " ├ "}</text>
-      {p.status === "active" ? (
+      {props.phase.status === "active" ? (
         <spinner name="dots" color={statusColor("active")} />
       ) : (
-        <text fg={statusColor(p.status)}>{statusGlyph(p.status)}</text>
+        <text fg={statusColor(props.phase.status)}>{statusGlyph(props.phase.status)}</text>
       )}
       <text flexGrow={1} marginLeft={1} fg="#94a3b8">
-        {sanitize(p.label)}
+        {sanitize(props.phase.label)}
       </text>
-      <text fg="#64748b">{count()}</text>
+      <text fg="#64748b">
+        {elapsed() === "" ? "" : ` ${elapsed()}`}
+        {count()}
+      </text>
     </box>
   );
 }
@@ -75,7 +87,9 @@ export function PipelineRail(props: RailProps) {
               </box>
               <Show when={phases().length > 0}>
                 <For each={phases()}>
-                  {(phase, i) => <PhaseRow phase={phase} last={i() === phases().length - 1} />}
+                  {(phase, i) => (
+                    <PhaseRow phase={phase} last={i() === phases().length - 1} now={props.now()} />
+                  )}
                 </For>
               </Show>
             </box>
