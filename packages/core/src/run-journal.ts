@@ -27,6 +27,8 @@ export interface RunMetadata {
   readonly startedAt: string;
   readonly updatedAt: string;
   readonly completedSteps: string[];
+  /** Disposable checkout where the Run executes. It lives under this Run's private state dir. */
+  readonly workspacePath?: string;
   /**
    * The git branch this Run is shipping, used to scope `auto` resume. Set to the branch at start and
    * advanced to the feature branch once the Run cuts one. A new Run only resumes a parked Run whose
@@ -142,9 +144,14 @@ class FileRunJournal implements RunJournal {
 
   async begin(input: { pipeline: string[]; resumeKey?: string }): Promise<RunJournalSnapshot> {
     const pipeline = [...input.pipeline];
+    if (this.metadata !== undefined) {
+      assertCompatible(this.metadata, pipeline, this.metadata.runId);
+      return this.snapshot();
+    }
     const { runId, metadata } = await this.selectRun(pipeline, input.resumeKey);
     const runsDir = join(this.root, "runs");
     this.runDir = join(runsDir, runId);
+    const workspacePath = join(this.runDir, "workspace");
     await ensurePrivateDir(dirname(this.root));
     await ensurePrivateDir(this.root);
     await ensurePrivateDir(runsDir);
@@ -162,16 +169,21 @@ class FileRunJournal implements RunJournal {
         startedAt: now,
         updatedAt: now,
         completedSteps: [],
+        workspacePath,
         ...(input.resumeKey !== undefined ? { resumeKey: input.resumeKey } : {}),
       };
       await this.writeMetadata();
     } else {
       const resumed: RunMetadata =
         metadata.status === "running" ? metadata : { ...metadata, status: "running" };
-      this.metadata = { ...resumed, runId };
+      this.metadata = { ...resumed, runId, workspacePath: resumed.workspacePath ?? workspacePath };
       await this.writeMetadata();
     }
 
+    return this.snapshot();
+  }
+
+  private async snapshot(): Promise<RunJournalSnapshot> {
     const artifacts = await this.readArtifacts();
     const rounds = await this.readRounds();
     const roundIndexes = roundIndexesFor(rounds);
@@ -246,6 +258,9 @@ class FileRunJournal implements RunJournal {
       const runId = this.requestedRunId as string;
       const metadata = await readMetadataIfExists(join(runsDir, runId));
       if (metadata === undefined) throw new Error(`tml: cannot resume run ${runId}: not found.`);
+      if (metadata.status === "finished") {
+        throw new Error(`tml: cannot resume run ${runId}: it already finished.`);
+      }
       assertCompatible(metadata, pipeline, runId);
       return { runId, metadata };
     }

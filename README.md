@@ -6,8 +6,8 @@ on CI. The defaults run **zero-config in any language**; tune them with a `tml.j
 knobs) or extend them with a local plugin (`export default (tml) => …`). _Spend time now, thank me later._
 
 > **Status: functional.** `tml ship` runs the default pipeline end-to-end against GitHub
-> (`gh`) and the pi agent, configurable via `tml.json` + local plugins. The TUI,
-> resume/checkpoint, and PR-comment handling aren't built yet.
+> (`gh`) and the pi agent, configurable via `tml.json` + local plugins. The TUI and
+> local Run Journal resume are built; PR-comment handling is not built yet.
 
 ## Install
 
@@ -28,14 +28,16 @@ bun install && bun run build   # → dist/tml
 ## Quick start
 
 ```sh
-tml init      # scaffold a starter tml.json (optional — tml ship is zero-config)
-tml ship      # run the pipeline in your checkout
+tml init      # scaffold a starter tml.json (optional - tml ship is zero-config)
+tml ship      # snapshot this checkout and run the pipeline in an isolated workspace
 ```
 
-`tml ship` runs **in place** in your current checkout, from any starting state. It puts the
-work on a feature branch (AI-named by default), then commits a clean history — your change,
-then the gate's fixes as their own commits — as it formats, lints, type-checks, tests, and
-reviews (the agent applies fixes), before pushing and opening a PR and watching CI.
+`tml ship` snapshots your non-ignored checkout state into a disposable workspace under the
+local Run Journal, then runs there. You can keep editing the source checkout while the Run
+continues; those later edits are not part of the shipment. The pipeline puts the snapshot on
+a feature branch (AI-named by default), then commits a clean history - your change, then the
+gate's fixes as their own commits - as it formats, lints, type-checks, tests, and reviews
+(the agent applies fixes), before pushing and opening a PR and watching CI.
 
 tml is built with tml: every change to this repo ships through `tml ship`.
 

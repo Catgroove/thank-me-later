@@ -90,4 +90,10 @@ export {
   type RunMetadata,
   type RunStatus,
 } from "./run-journal.ts";
+export {
+  createIsolatedWorkspace,
+  currentWorkspaceSourceBranch,
+  removeIsolatedWorkspace,
+  type WorkspaceSnapshot,
+} from "./workspace.ts";
 export { AssemblyError, validatePipeline } from "./validate.ts";
