@@ -9,7 +9,7 @@ import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 // Accessor is used both as a prop type and for the keyed <Show> render-prop param below.
 import type { FindingLifecycle, FindingStatus, RoundRecord } from "@tml/core";
-import { findingLifecycle } from "@tml/core";
+import { findingLifecycle, isFixAttemptRound } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
@@ -302,11 +302,11 @@ function RoundLine(props: { round: RoundRecord; fixNumber?: number }) {
 
 function Rounds(props: { step: StepView }) {
   // The persisted round index counts every pass; operators reason in fix attempts, so number the
-  // fix rounds (auto_fix/user_fix) on their own running counter and surface that alongside.
+  // actual fix rounds on their own running counter and surface that alongside.
   const items = () => {
     let fixNumber = 0;
     return props.step.rounds.map((round) => {
-      const isFix = round.trigger === "auto_fix" || round.trigger === "user_fix";
+      const isFix = isFixAttemptRound(round);
       if (isFix) fixNumber += 1;
       return { round, fixNumber: isFix ? fixNumber : undefined };
     });
