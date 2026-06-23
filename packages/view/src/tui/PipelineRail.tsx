@@ -12,6 +12,7 @@ import { sanitize } from "./sanitize.ts";
 import {
   latestGroupPhases,
   phaseElapsed,
+  railWidth,
   stepElapsed,
   statusColor,
   statusGlyph,
@@ -56,7 +57,7 @@ export function PipelineRail(props: RailProps) {
   return (
     <box
       flexDirection="column"
-      width={30}
+      width={railWidth(props.view())}
       border
       borderColor="#334155"
       title="pipeline"
