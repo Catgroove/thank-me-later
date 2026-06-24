@@ -6,6 +6,7 @@ import { AbortError, type Pending } from "../src/pending.ts";
 import type {
   CheckRun,
   GitProvider,
+  MergeState,
   OpenPullRequestInput,
   PullRequest,
 } from "../src/providers/git-provider.ts";
@@ -61,6 +62,7 @@ export class FakeGitProvider implements GitProvider {
       body: input.body,
       state: "open",
       mergeable: "mergeable",
+      mergeStateStatus: "clean",
       checks: this.checks,
     };
     this.prs.set(number, pr);
@@ -82,6 +84,11 @@ export class FakeGitProvider implements GitProvider {
 
   getChecks(_prNumber = 1): Pending<CheckRun[]> {
     return pendingAfter(this.checksSettleAfter, this.checks);
+  }
+
+  getMergeState(prNumber = 1): Pending<MergeState> {
+    const pr = this.prs.get(prNumber);
+    return pendingAfter(1, pr?.mergeStateStatus ?? "clean");
   }
 }
 

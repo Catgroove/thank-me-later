@@ -5,7 +5,7 @@
 // This file owns the input contract: the raw shapes of `gh pr view --json ...` and
 // `gh pr list` output that the provider feeds in.
 
-import type { CheckRun, Mergeable, PullRequest } from "@tml/core";
+import type { CheckRun, Mergeable, MergeState, PullRequest } from "@tml/core";
 
 // --- Raw `gh` response shapes (pre-mapping) -------------------------------------
 
@@ -44,6 +44,8 @@ export interface GhPullRequestNode {
   readonly state: string;
   /** MERGEABLE | CONFLICTING | UNKNOWN */
   readonly mergeable: string;
+  /** CLEAN | HAS_HOOKS | UNSTABLE | BEHIND | DIRTY | BLOCKED | DRAFT | UNKNOWN */
+  readonly mergeStateStatus: string;
   readonly statusCheckRollup: readonly GhCheckNode[] | null;
 }
 
@@ -81,6 +83,27 @@ export function mapMergeable(raw: string): Mergeable {
       return "conflicted";
     default:
       return "unknown"; // includes "UNKNOWN"
+  }
+}
+
+export function mapMergeStateStatus(raw: string): MergeState {
+  switch (raw) {
+    case "CLEAN":
+      return "clean";
+    case "HAS_HOOKS":
+      return "has_hooks";
+    case "UNSTABLE":
+      return "unstable";
+    case "BEHIND":
+      return "behind";
+    case "DIRTY":
+      return "dirty";
+    case "BLOCKED":
+      return "blocked";
+    case "DRAFT":
+      return "draft";
+    default:
+      return "unknown"; // includes "UNKNOWN" and any unobserved state - poll again
   }
 }
 
@@ -171,6 +194,7 @@ export function mapPullRequest(node: GhPullRequestNode): PullRequest {
     body: node.body,
     state: mapState(node.state),
     mergeable: mapMergeable(node.mergeable),
+    mergeStateStatus: mapMergeStateStatus(node.mergeStateStatus),
     checks: mapChecks(node.statusCheckRollup),
   };
 }

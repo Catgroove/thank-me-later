@@ -120,6 +120,7 @@ describe("mapPullRequest", () => {
       body: "Does x.",
       state: "open",
       mergeable: "mergeable",
+      mergeStateStatus: "clean",
       checks: [
         { name: "build", status: "completed", conclusion: "success" },
         { name: "ci/legacy", status: "completed", conclusion: "success" },

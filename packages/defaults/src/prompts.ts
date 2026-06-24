@@ -4,6 +4,7 @@
 // the Steps compose them into fresh check/fix/review agent rounds.
 
 import { hasPriorRounds, type CheckRun, type Finding, type RoundTrigger } from "@tml/core";
+import { formatMergeGateGuidance } from "./merge-gate-policy.ts";
 
 /** The finding fields the fix prompts quote back to the agent. */
 type PromptFinding = Pick<
@@ -338,6 +339,37 @@ export function rebaseConflictPrompt(onto: string, files: readonly string[]): st
     "branch's changes and the upstream changes. Stage each resolved file with `git add <file>`, " +
     "then run `git rebase --continue`. If further conflicts surface, resolve those too. Do not " +
     "touch files that have no conflicts, and do not abort the rebase."
+  );
+}
+
+export interface MergeGatePromptInput {
+  /** The host's current merge-readiness verdict (e.g. `behind`, `dirty`, `blocked`, `draft`). */
+  readonly state: string;
+  /** The PR's base branch, for rebase guidance. */
+  readonly base: string;
+  readonly findings: readonly PromptFinding[];
+  readonly historyText: string;
+}
+
+/**
+ * The prompt handed to the agent when the operator chooses to fix a PR the host reports as not
+ * mergeable. The agent operates on the branch and PR directly (rebasing, resolving conflicts, or
+ * marking a draft ready) and is responsible for its own git - so the merge-gate Step takes no
+ * commit. It must not weaken branch protection or skip required reviews to force the merge through.
+ */
+export function mergeGatePrompt(input: MergeGatePromptInput): string {
+  const history = input.historyText.trim();
+  const prior = hasPriorRounds(history) ? "\n\nPrior merge-gate round history:\n" + history : "";
+  return (
+    `The host reports this pull request as not mergeable (merge state: ${input.state}). Make it ` +
+    "mergeable, then stop. Choose the action that fits the reported state:\n" +
+    formatMergeGateGuidance(input.base) +
+    "\n\n" +
+    "Never weaken branch protection, dismiss reviews, or skip required checks to force a merge. " +
+    "Summarise what you did in one short line." +
+    prior +
+    "\n\nFindings:\n" +
+    input.findings.map((f) => `- ${f.title}: ${f.detail}`).join("\n")
   );
 }
 

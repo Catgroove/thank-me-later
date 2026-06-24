@@ -1,6 +1,6 @@
 // `tmlDefaults` - the blessed default pipeline as an injected-API Plugin. In order:
 //   branch → describe → commit(the change) │ rebase → format → lint → typecheck → test
-//          → review → resync → open-pr → ci-wait
+//          → review → resync → open-pr → ci-wait → merge-gate
 // The `│` marks the isolation boundary (carried on commit-change): branch/describe/commit-change run
 // in the source checkout, then the host switches the checkout back to the default branch and hands
 // the feature branch to a disposable worktree where the rest of the pipeline runs. The work lands as
@@ -9,6 +9,8 @@
 // (clean worktree) so the checks, review, and CI all see the freshly fetched base; `resync` rebases
 // once more right before `open-pr` so the PR opens on the latest base even if it drifted during the
 // slow checks/review phase. Turn either off with `disable: ["rebase"]` / `["resync"]` in tml.json.
+// `merge-gate` runs last: after CI is green it confirms the host will actually let the PR merge (no
+// conflicts, not behind, not blocked by branch protection, not a draft).
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
 // (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
 // (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
@@ -22,6 +24,7 @@ import { ciWaitStep } from "./steps/ci-wait.ts";
 import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
 import { commitStep } from "./steps/commit.ts";
 import { describeStep } from "./steps/describe.ts";
+import { mergeGateStep } from "./steps/merge-gate.ts";
 import { openPrStep } from "./steps/open-pr.ts";
 import { rebaseStep, resyncStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
@@ -42,6 +45,7 @@ export const tmlDefaults: Plugin = (tml) => {
     resyncStep(), // re-sync onto the latest base before opening the PR (base may have drifted)
     openPrStep(),
     ciWaitStep(),
+    mergeGateStep(),
   );
 };
 

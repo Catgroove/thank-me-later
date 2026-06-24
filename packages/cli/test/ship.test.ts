@@ -121,6 +121,7 @@ describe("assembleShipConfig", () => {
       "resync",
       "open-pr",
       "ci-wait",
+      "merge-gate",
     ]);
     expect(typeof config.providers.gitProvider.openPullRequest).toBe("function");
     expect(typeof config.providers.agent.run).toBe("function");

@@ -15,11 +15,13 @@ import {
   type GhPullRequestNode,
 } from "./map.ts";
 import {
+  branchRulesArgs,
   checksArgs,
   prCreateArgs,
   prEditBodyArgs,
   prListArgs,
   prViewArgs,
+  rulesetArgs,
   runViewFailedLogArgs,
 } from "./args.ts";
 
@@ -27,6 +29,25 @@ export interface GitHubProviderOptions {
   /** Override the `gh` runner; tests inject a fake returning canned JSON. */
   readonly run?: GhRunner;
 }
+
+/** A rule from `gh api .../rules/branches/<branch>`, tagged with the ruleset that contributes it. */
+interface GhBranchRule {
+  readonly type: string;
+  readonly ruleset_id?: number;
+}
+
+/** The subset of a ruleset GET we read: the current user's bypass capability for it. */
+interface GhRulesetView {
+  /** "always" | "pull_requests_only" | "never" (anything but "never" permits a PR-merge bypass). */
+  readonly current_user_can_bypass?: string;
+}
+
+// Rule types that produce a `blocking` merge state (BLOCKED/BEHIND). Other rules (deletion,
+// non_fast_forward, ...) never gate a PR merge, so a ruleset carrying only those is irrelevant here.
+const MERGE_GATING_RULE_TYPES: ReadonlySet<string> = new Set([
+  "pull_request",
+  "required_status_checks",
+]);
 
 interface CheckLogRow {
   readonly name: string;
@@ -121,13 +142,41 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
       };
     },
 
-    getMergeability(prNumber: number) {
+    // Pollable: settles once the host's merge-readiness verdict leaves `unknown` (it reports
+    // `unknown` right after a PR opens, until it has folded in conflicts, branch protection,
+    // required reviews, and required checks). The consuming step decides mergeable vs blocked.
+    getMergeState(prNumber: number) {
       return {
         async poll() {
           const pr = await getPullRequest(prNumber);
-          return pr.mergeable === "unknown" ? { done: false } : { done: true, value: pr.mergeable };
+          return pr.mergeStateStatus === "unknown"
+            ? { done: false }
+            : { done: true, value: pr.mergeStateStatus };
         },
       };
+    },
+
+    // Whether the current user may bypass the rules gating merges into `branch`. The merge state
+    // reflects the rule, not the viewer, so this is a separate question. GitHub matches the rules to
+    // the branch for us (`rules/branches`); we then read `current_user_can_bypass` per ruleset (only
+    // the single-ruleset GET carries it). The user can merge iff they can bypass every ruleset that
+    // contributes a merge-gating rule. Errs toward `false` - a false negative just keeps the gate up.
+    async canBypassMerge(branch: string): Promise<boolean> {
+      const rules = JSON.parse(await run(branchRulesArgs(branch))) as GhBranchRule[];
+      const gatingRulesetIds = [
+        ...new Set(
+          rules
+            .filter((rule) => MERGE_GATING_RULE_TYPES.has(rule.type))
+            .map((rule) => rule.ruleset_id)
+            .filter((id): id is number => typeof id === "number"),
+        ),
+      ];
+      if (gatingRulesetIds.length === 0) return false;
+      for (const id of gatingRulesetIds) {
+        const ruleset = JSON.parse(await run(rulesetArgs(id))) as GhRulesetView;
+        if ((ruleset.current_user_can_bypass ?? "never") === "never") return false;
+      }
+      return true;
     },
 
     async getFailedCheckLogs(input: { prNumber: number; checkNames?: string[] }): Promise<string> {

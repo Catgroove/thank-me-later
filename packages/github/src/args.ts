@@ -13,6 +13,7 @@ const PR_VIEW_FIELDS = [
   "body",
   "state",
   "mergeable",
+  "mergeStateStatus",
   "statusCheckRollup",
 ].join(",");
 
@@ -52,4 +53,17 @@ export function checksArgs(prNumber: number): string[] {
 
 export function runViewFailedLogArgs(runId: string): string[] {
   return ["run", "view", runId, "--log-failed"];
+}
+
+/**
+ * The active rules applying to a branch, each tagged with its `ruleset_id`. `gh` resolves the
+ * `{owner}`/`{repo}` placeholders from the repo, and GitHub does the ref-matching for us.
+ */
+export function branchRulesArgs(branch: string): string[] {
+  return ["api", `repos/{owner}/{repo}/rules/branches/${encodeURIComponent(branch)}`];
+}
+
+/** A single ruleset, including `current_user_can_bypass` (which the rulesets-list endpoint omits). */
+export function rulesetArgs(rulesetId: number): string[] {
+  return ["api", `repos/{owner}/{repo}/rulesets/${rulesetId}`];
 }
