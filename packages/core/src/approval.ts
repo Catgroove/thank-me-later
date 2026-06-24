@@ -16,11 +16,15 @@ export interface ApproveFindingsInput {
   readonly context?: string;
 }
 
+export type ApprovalDecisionSource = "operator" | "auto";
+
 interface ApprovalDecisionBase {
   /** Human notes keyed by finding id. */
   readonly notes?: Readonly<Record<string, string>>;
   /** Additional findings authored by the approver. */
   readonly userFindings?: readonly Finding[];
+  /** Who supplied this decision. Omitted means a human operator. */
+  readonly source?: ApprovalDecisionSource;
 }
 
 export interface ApproveDecision extends ApprovalDecisionBase {
@@ -38,6 +42,8 @@ export interface SkipDecision extends ApprovalDecisionBase {
 
 export interface AbortDecision extends ApprovalDecisionBase {
   readonly action: "abort";
+  /** Optional abort explanation surfaced by non-interactive policies. */
+  readonly reason?: string;
 }
 
 export type ApprovalDecision = ApproveDecision | FixDecision | SkipDecision | AbortDecision;

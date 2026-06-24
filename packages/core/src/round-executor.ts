@@ -7,6 +7,7 @@
 // continues the loop with the operator's selection and notes, and an abort throws.
 
 import type { ApprovalDecision } from "./approval.ts";
+import type { RoundApproveFindingsInput, RoundLoopStopReason } from "./round-approval.ts";
 import type { Ctx } from "./context.ts";
 import {
   type Finding,
@@ -16,13 +17,6 @@ import {
 } from "./round.ts";
 
 const DEFAULT_MAX_AUTO_FIX_ATTEMPTS = 3;
-
-export type RoundLoopStopReason =
-  | "clean"
-  | "needs_user"
-  | "auto_fix_limit_hit"
-  | "no_progress"
-  | "remaining_findings";
 
 export interface RoundCheckInput {
   /** `initial` for the first check, then `verify` after a fix commit. */
@@ -176,14 +170,23 @@ export async function executeRoundLoop(
     }
 
     const suggestedFindingIds = currentSelectedFindingIds(findings, rounds);
-    const decision = await ctx.approveFindings({
+    const approvalInput: RoundApproveFindingsInput = {
       prompt: defaultPrompt(options.stepName, stopReason),
+      stopReason,
       findings,
       ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
       context: renderRoundsForPrompt(rounds),
-    });
+      fixBudget: {
+        attempts,
+        maxAttempts: maxAutoFixAttempts,
+        remainingAttempts: Math.max(0, maxAutoFixAttempts - attempts),
+      },
+    };
+    const decision = await ctx.approveFindings(approvalInput);
 
-    if (decision.action === "abort") throw new Error("approval aborted by operator");
+    if (decision.action === "abort") {
+      throw new Error(decision.reason ?? "approval aborted by operator");
+    }
     if (decision.action === "approve" || decision.action === "skip") {
       await appendRound(ctx, options, rounds, approvalRound(findings, decision));
       return done(stopReason, findings, rounds, attempts);
@@ -194,6 +197,7 @@ export async function executeRoundLoop(
       throw new Error(`${options.stepName}: approval fix selected no current findings`);
     }
     const userFindings = decision.userFindings ?? [];
+    await appendRound(ctx, options, rounds, approvalRound(findings, decision));
     attempts += 1;
     lastFixProgress = await applyFix(ctx, options, {
       trigger: "user_fix",
@@ -309,12 +313,15 @@ function currentSelectedFindingIds(
 function approvalRound(findings: readonly Finding[], decision: ApprovalDecision): RoundRecordInput {
   const userFindings = decision.userFindings ?? [];
   const userNotes = cleanNotes(decision.notes);
-  const resolution = decision.action === "skip" ? "skipped" : "approved";
+  const resolution =
+    decision.action === "fix" ? undefined : decision.action === "skip" ? "skipped" : "approved";
   return {
     trigger: "approval",
     findings: [...findings, ...userFindings],
+    ...(decision.action === "fix" ? { selectedFindingIds: [...decision.selectedFindingIds] } : {}),
     ...(userNotes ? { userNotes } : {}),
-    resolution,
+    ...(decision.source ? { approvalSource: decision.source } : {}),
+    ...(resolution ? { resolution } : {}),
   };
 }
 

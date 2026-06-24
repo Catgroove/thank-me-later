@@ -11,7 +11,7 @@
 // whole Run; only noisy activity is bounded. The top-level `text`/`tool`/`logs` mirror
 // the *active* Step's live buffers - the append-only terminal renderer consumes those.
 
-import type { ApproveFindingsInput, Finding, RoundRecord, RunEvent } from "@tml/core";
+import type { ApprovalFindingsInput, Finding, RoundRecord, RunEvent } from "@tml/core";
 
 /** Current tool activity, with a short human label (e.g. bash → the command). */
 export interface ToolView {
@@ -90,7 +90,7 @@ export type PendingInteraction =
   | {
       readonly kind: "approval";
       readonly step: string;
-      readonly input: ApproveFindingsInput;
+      readonly input: ApprovalFindingsInput;
       readonly at: number;
     };
 

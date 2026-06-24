@@ -167,7 +167,10 @@ describe("tui interaction controller", () => {
     const interactions = createInteractions((p) => {
       active = p;
     });
-    const decision = interactions.approveFindings({ prompt: "review", findings: [] });
+    const decision = interactions.approveFindings({
+      prompt: "review",
+      findings: [],
+    });
     if (active?.kind !== "approval") throw new Error("expected approval prompt");
     const fix: ApprovalDecision = { action: "fix", selectedFindingIds: ["id-1"] };
     active.submit(fix);

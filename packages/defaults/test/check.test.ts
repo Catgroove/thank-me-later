@@ -222,6 +222,7 @@ describe("checkStep", () => {
     expect(result).toMatchObject({
       rounds: [
         { trigger: "initial", findings: [{ title: "Choose contract" }] },
+        { trigger: "approval", findings: [{ title: "Choose contract" }] },
         { trigger: "user_fix", fixSummary: "fixed selected finding" },
         { trigger: "verify", findings: [] },
       ],
@@ -284,6 +285,7 @@ describe("checkStep", () => {
     expect(result).toMatchObject({
       rounds: [
         { trigger: "initial", findings: [{ title: "Choose contract" }] },
+        { trigger: "approval", findings: [{ title: "Choose contract" }] },
         { trigger: "user_fix", fixSummary: "fixed selected finding" },
         { trigger: "verify", findings: [{ title: "Confirm follow-up" }] },
         { trigger: "approval", resolution: "approved" },

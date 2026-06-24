@@ -250,6 +250,12 @@ describe("executeRoundLoop", () => {
       rounds: [
         { trigger: "initial", findings: [selected] },
         {
+          trigger: "approval",
+          findings: [selected, userFinding],
+          selectedFindingIds: [selected.id],
+          userNotes: { [selected.id]: "focus here" },
+        },
+        {
           trigger: "user_fix",
           findings: [selected, userFinding],
           selectedFindingIds: [selected.id, userFinding.id],

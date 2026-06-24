@@ -8,7 +8,7 @@
 // the engine when present, and falls back to clear failing responders when they are not. The
 // engine stays the lifecycle owner; the renderer only provides these functions.
 
-import type { ApprovalDecision, ApproveFindingsInput, RunEvent } from "@tml/core";
+import type { ApprovalDecision, ApprovalFindingsInput, RunEvent } from "@tml/core";
 import type { ViewState } from "./present.ts";
 
 export interface Renderer {
@@ -21,7 +21,7 @@ export interface InteractiveRenderer extends Renderer {
   /** Resolve a free-text `ctx.ask`. */
   ask?(prompt: string): Promise<string>;
   /** Resolve a structured `ctx.approveFindings`. */
-  approveFindings?(input: ApproveFindingsInput): Promise<ApprovalDecision>;
+  approveFindings?(input: ApprovalFindingsInput): Promise<ApprovalDecision>;
   /** Print a compact scrollback summary after the renderer has closed and torn down. */
   epilogue?(view: ViewState): void;
 }

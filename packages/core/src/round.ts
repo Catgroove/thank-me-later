@@ -19,6 +19,7 @@ export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify" | "app
  * show "accepted as-is"/"skipped" instead of "still open".
  */
 export type RoundResolution = "approved" | "skipped";
+export type ApprovalDecisionSource = "operator" | "auto";
 
 /**
  * The lifecycle of a single finding across a Step's rounds.
@@ -58,6 +59,8 @@ export interface RoundRecord {
   readonly commitSha?: string;
   /** Set on the terminal round of an approval gate that the operator approved or skipped. */
   readonly resolution?: RoundResolution;
+  /** Source of an approval gate decision. Omitted means a human operator. */
+  readonly approvalSource?: ApprovalDecisionSource;
 }
 
 export interface StepRoundSummary {
@@ -309,13 +312,16 @@ export function findingLifecycle(
   for (const r of ordered)
     if (isFixAttemptRound(r)) for (const f of r.findings) attempted.add(f.id);
 
-  // The last round's queued/attempted set is in flight: a check that just selected fixes, or a fix
-  // round awaiting its verify. Either way the fix has not yet been confirmed.
+  // The last round's queued/attempted set is in flight: a check that just selected fixes, an
+  // approval selection that just handed findings to the fixer, or a fix round awaiting its verify.
+  // Either way the fix has not yet been confirmed.
   const last = ordered.at(-1);
   const inFlight = new Set<string>();
   if (last !== undefined) {
     if (isFixAttemptRound(last)) for (const f of last.findings) inFlight.add(f.id);
-    else if (isCheck(last)) for (const id of last.selectedFindingIds ?? []) inFlight.add(id);
+    else if (isCheck(last) || last.trigger === "approval") {
+      for (const id of last.selectedFindingIds ?? []) inFlight.add(id);
+    }
   }
 
   // The terminal approval round stamps its findings accepted or skipped.

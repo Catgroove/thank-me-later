@@ -15,8 +15,20 @@ import { createPiHarness } from "@tml/pi";
 import { errorMessage } from "./error.ts";
 import type { Loaded } from "./load.ts";
 
-export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<Config> {
-  const assembly = createAssembly(loaded.selection, cwd);
+export interface AssembleShipConfigOptions {
+  readonly autoApprove?: boolean;
+}
+
+export async function assembleShipConfig(
+  cwd: string,
+  loaded: Loaded,
+  options: AssembleShipConfigOptions = {},
+): Promise<Config> {
+  const selection =
+    options.autoApprove && loaded.selection.maxFixAttempts === undefined
+      ? { ...loaded.selection, maxFixAttempts: 5 }
+      : loaded.selection;
+  const assembly = createAssembly(selection, cwd);
   assembly.tml.registerGitProvider("github", createGitHubProvider);
   assembly.tml.registerHarness("pi", createPiHarness);
 

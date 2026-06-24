@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { render } from "@opentui/solid";
 import { createSignal } from "solid-js";
-import type { ApprovalDecision, ApproveFindingsInput, RunEvent } from "@tml/core";
+import type { ApprovalDecision, ApprovalFindingsInput, RunEvent } from "@tml/core";
 import { initialView, type ViewState } from "./present.ts";
 import type { InteractiveRenderer } from "./renderer.ts";
 import { App } from "./tui/App.tsx";
@@ -155,7 +155,7 @@ export async function createTuiRenderer(
     ask(promptText: string): Promise<string> {
       return interactions.ask(promptText);
     },
-    approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision> {
+    approveFindings(input: ApprovalFindingsInput): Promise<ApprovalDecision> {
       return interactions.approveFindings(input);
     },
     complete(finalView: ViewState): Promise<void> | void {

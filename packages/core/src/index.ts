@@ -4,12 +4,22 @@
 
 export {
   type ApprovalDecision,
+  type ApprovalDecisionSource,
   type ApproveDecision,
   type ApproveFindingsInput,
   type AbortDecision,
   type FixDecision,
   type SkipDecision,
 } from "./approval.ts";
+export {
+  type ApprovalFindingsInput,
+  autoApproveFindings,
+  autoApproveResponder,
+  isRoundApproveFindingsInput,
+  type RoundApprovalFixBudget,
+  type RoundApproveFindingsInput,
+  type RoundLoopStopReason,
+} from "./round-approval.ts";
 export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
 export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
@@ -53,7 +63,6 @@ export {
   type RoundFixResult,
   type RoundLoopOptions,
   type RoundLoopResult,
-  type RoundLoopStopReason,
   type RoundStopPolicyInput,
 } from "./round-executor.ts";
 export { defineStep, type Step, type StepResult, type StepRun } from "./step.ts";
