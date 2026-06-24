@@ -1,6 +1,7 @@
-// `rebase` — keep the work building on the latest base before the checks, review, and CI run
-// against it. It sits right after `commit-change`: the work is committed (so the worktree is clean
-// enough to rebase) but the fix Steps haven't run yet, so everything downstream sees the fresh base.
+// `rebase` — keep the work building on the latest base. The default Pipeline runs it twice: once
+// right after `commit-change` (so checks, review, and CI all see a freshly fetched base) and once
+// more as `resync` right before `open-pr` (so the PR opens on the latest base even if it drifted
+// during the slow checks/review phase). It only acts when the work is committed (a clean worktree).
 //
 // It rebases onto `origin/<default>` only. It deliberately never fetches the *feature* branch —
 // that's what keeps `open-pr`'s `--force-with-lease` honest: if the remote head diverged (another
@@ -15,9 +16,9 @@
 import { cancel, defineStep, skip, type Step } from "@tml/core";
 import { rebaseConflictPrompt } from "../prompts.ts";
 
-export function rebaseStep(): Step {
+export function rebaseStep(name = "rebase"): Step {
   return defineStep({
-    name: "rebase",
+    name,
     async run(ctx) {
       const base = await ctx.git.defaultBranch();
       const baseRef = `origin/${base}`;

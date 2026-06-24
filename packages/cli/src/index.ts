@@ -165,6 +165,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   };
   const exitCode = (o: PassOutcome): number => (o.cancelled ? 130 : o.failed ? 1 : 0);
 
+  // After the pipeline ends on its own (finished or failed), keep an interactive TUI up so the user
+  // can read the outcome and the PR link, leaving only when they dismiss it. A user-driven cancel
+  // already means "I'm done here", so it tears down at once; plain/non-TTY renderers omit
+  // `awaitDismissal` entirely, so CI and piped runs always return the moment the Run ends.
+  const finalize = async (o: PassOutcome): Promise<number> => {
+    if ((o.finished || o.failed) && interactive.awaitDismissal) await interactive.awaitDismissal();
+    return exitCode(o);
+  };
+
   try {
     // Test seam: a single engine pass directly in the checkout.
     if (deps.engineFor !== undefined) {
@@ -177,7 +186,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         signal: abortController.signal,
         ...(journal ? { journal } : {}),
       });
-      return exitCode(await runPass(engine));
+      return await finalize(await runPass(engine));
     }
 
     if (deps.journal === false) {
@@ -210,7 +219,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         signal: abortController.signal,
         journal,
       });
-      return exitCode(await runPass(engine));
+      return await finalize(await runPass(engine));
     }
     const boundaryName = boundary.step.name;
     const sourcePhase = new Set(boundary.sourceSteps.map((step) => step.name));
@@ -227,7 +236,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         stopAfter: boundaryName,
       });
       const outcome = await runPass(phase1);
-      if (outcome.finished || outcome.failed || outcome.cancelled) return exitCode(outcome);
+      if (outcome.finished || outcome.failed || outcome.cancelled) return await finalize(outcome);
       if (!outcome.paused)
         throw new Error("tml ship: engine stopped before the isolation handoff.");
     }
@@ -271,7 +280,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       await removeWorktree(cwd, workspaceToClean);
       workspaceToClean = undefined;
     }
-    return exitCode(outcome);
+    return await finalize(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
     console.error(errorMessage(error));

@@ -1,13 +1,14 @@
 // `tmlDefaults` - the blessed default pipeline as an injected-API Plugin. In order:
 //   branch → describe → commit(the change) │ rebase → format → lint → typecheck → test
-//          → review → open-pr → ci-wait
+//          → review → resync → open-pr → ci-wait
 // The `│` marks the isolation boundary (carried on commit-change): branch/describe/commit-change run
 // in the source checkout, then the host switches the checkout back to the default branch and hands
 // the feature branch to a disposable worktree where the rest of the pipeline runs. The work lands as
 // a clean history - your change, then tml's fixes in their own commits. Checks and review commit
 // their auto-fixes through the core round executor. `rebase` runs once the change is committed
-// (clean worktree) so the checks, review, and CI all see the freshly fetched base; turn it off with
-// `disable: ["rebase"]` in tml.json.
+// (clean worktree) so the checks, review, and CI all see the freshly fetched base; `resync` rebases
+// once more right before `open-pr` so the PR opens on the latest base even if it drifted during the
+// slow checks/review phase. Turn either off with `disable: ["rebase"]` / `["resync"]` in tml.json.
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
 // (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
 // (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
@@ -38,6 +39,7 @@ export const tmlDefaults: Plugin = (tml) => {
     typecheckStep(),
     testStep(),
     reviewStep(),
+    rebaseStep("resync"), // re-sync onto the latest base before opening the PR (base may have drifted)
     openPrStep(),
     ciWaitStep(),
   );

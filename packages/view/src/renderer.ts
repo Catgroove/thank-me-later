@@ -20,6 +20,13 @@ export interface InteractiveRenderer extends Renderer {
   ask?(prompt: string): Promise<string>;
   /** Resolve a structured `ctx.approveFindings`. */
   approveFindings?(input: ApproveFindingsInput): Promise<ApprovalDecision>;
+  /**
+   * Resolve once the user dismisses a completed Run (e.g. presses `q`). `ship()` awaits this after a
+   * `finished`/`failed` Run so the full-screen TUI stays up - showing the PR link and final state -
+   * until the human leaves, instead of tearing down the instant the pipeline ends. Renderers that
+   * exit immediately (plain / non-TTY / CI) omit it, so those paths return as soon as the Run ends.
+   */
+  awaitDismissal?(): Promise<void>;
   /** Print a compact scrollback summary after the renderer has closed and torn down. */
   epilogue?(view: ViewState): void;
 }
