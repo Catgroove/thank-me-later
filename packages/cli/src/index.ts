@@ -298,11 +298,15 @@ export interface ShipArgs {
   readonly runId?: string;
 }
 
+type JournalSelection =
+  | { readonly mode: "fresh" }
+  | { readonly mode: "auto" }
+  | { readonly mode: "exact"; readonly runId: string };
+
 export function parseShipArgs(args: string[]): ShipArgs {
   let verbose = false;
   let plain = false;
-  let journalResume: RunJournalResumeMode | undefined;
-  let runId: string | undefined;
+  let journalSelection: JournalSelection | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--verbose" || arg === "-v") {
@@ -314,26 +318,23 @@ export function parseShipArgs(args: string[]): ShipArgs {
       continue;
     }
     if (arg === "--fresh") {
-      runId = undefined;
-      journalResume = "fresh";
+      journalSelection = { mode: "fresh" };
       continue;
     }
     if (arg === "--resume") {
       const next = args[i + 1];
       if (next !== undefined && !next.startsWith("-")) {
-        runId = next;
-        journalResume = "exact";
+        journalSelection = { mode: "exact", runId: next };
         i += 1;
       } else {
-        runId = undefined;
-        journalResume = "auto";
+        journalSelection = { mode: "auto" };
       }
       continue;
     }
     if (arg.startsWith("--resume=")) {
-      runId = arg.slice("--resume=".length);
-      if (runId.length === 0) throw new Error("--resume requires a run id");
-      journalResume = "exact";
+      const exactRunId = arg.slice("--resume=".length);
+      if (exactRunId.length === 0) throw new Error("--resume requires a run id");
+      journalSelection = { mode: "exact", runId: exactRunId };
       continue;
     }
     throw new Error(`Unknown ship option: ${arg}`);
@@ -341,8 +342,8 @@ export function parseShipArgs(args: string[]): ShipArgs {
   return {
     verbose,
     plain,
-    ...(journalResume ? { journalResume } : {}),
-    ...(runId ? { runId } : {}),
+    ...(journalSelection ? { journalResume: journalSelection.mode } : {}),
+    ...(journalSelection?.mode === "exact" ? { runId: journalSelection.runId } : {}),
   };
 }
 
