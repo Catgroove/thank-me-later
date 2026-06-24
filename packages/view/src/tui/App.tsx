@@ -49,6 +49,13 @@ export function App(props: AppProps) {
   // The Run has reached a terminal state (finished/failed/cancelled). Once it has, the dashboard
   // stays up - navigation still works so the user can inspect the result - until a dismiss key leaves.
   const isTerminal = (): boolean => props.view().status !== "running";
+  type UiMode = "activity" | "prompt" | "abort" | "terminal";
+  const uiMode = (): UiMode => {
+    if (isTerminal()) return "terminal";
+    if (confirmAbort()) return "abort";
+    if (props.prompt() !== undefined) return "prompt";
+    return "activity";
+  };
 
   // The finding the action list is currently on, surfaced to the inspector so its Findings tab can
   // highlight the same finding. Undefined unless an approval is pending - nothing to point at otherwise.
@@ -144,17 +151,21 @@ export function App(props: AppProps) {
       return;
     }
 
+    const mode = uiMode();
+
     // A completed Run: a dismiss key leaves (the CLI then tears down and prints the epilogue). Other
-    // keys fall through so j/k navigation still works for inspecting the finished Run.
-    if (isTerminal()) {
+    // keys keep navigating the finished Run, and abort is no longer possible.
+    if (mode === "terminal") {
       if (isDismissKey(key)) {
         props.onDismiss?.();
         return;
       }
+      setNav(navOnKey(nav(), { name: key.name, shift: key.shift }, props.view()));
+      return;
     }
 
-    // Abort confirmation takes precedence: it can only be answered, never navigated past.
-    if (confirmAbort()) {
+    // Abort confirmation takes precedence over live prompts: it can only be answered, never navigated past.
+    if (mode === "abort") {
       if (key.name === "y" || (key.ctrl && key.name === "c")) {
         props.onAbort();
         return;
@@ -176,8 +187,8 @@ export function App(props: AppProps) {
       return;
     }
 
-    if (p?.kind === "ask") return; // the focused <input> owns typing; escape must not dismiss
-    if (p?.kind === "approval" && handleApproval(p, key)) return;
+    if (mode === "prompt" && p?.kind === "ask") return; // the focused <input> owns typing; escape must not dismiss
+    if (mode === "prompt" && p?.kind === "approval" && handleApproval(p, key)) return;
 
     // Read-only navigation, allowed even behind the approval drawer.
     setNav(navOnKey(nav(), { name: key.name, shift: key.shift }, props.view()));
@@ -202,13 +213,13 @@ export function App(props: AppProps) {
       </box>
       {/* The activity panel yields the lower region to a blocking drawer: the Run is paused on a
           decision, so no activity is flowing, and the drawer is the surface that needs the room. */}
-      <Show when={props.prompt() === undefined && !confirmAbort()}>
+      <Show when={uiMode() === "activity" || uiMode() === "terminal"}>
         <ActivityPanel view={props.view} />
       </Show>
       <Show when={nav().showHelp}>
         <KeyHelp />
       </Show>
-      <Show when={props.prompt() !== undefined}>
+      <Show when={uiMode() === "prompt"}>
         <InteractionDrawer
           prompt={props.prompt}
           approvalFocusArea={approvalFocusArea}
@@ -218,10 +229,10 @@ export function App(props: AppProps) {
           onAskSubmit={onAskSubmit}
         />
       </Show>
-      <Show when={confirmAbort()}>
+      <Show when={uiMode() === "abort"}>
         <AbortConfirm />
       </Show>
-      <Show when={isTerminal()} fallback={<FooterKeys />}>
+      <Show when={uiMode() === "terminal"} fallback={<FooterKeys />}>
         <DoneBanner view={props.view} />
       </Show>
     </box>

@@ -80,8 +80,8 @@ export async function createTuiRenderer(
   const [prompt, setPrompt] = createSignal<ActivePrompt | undefined>(undefined);
   const interactions = createInteractions(setPrompt);
 
-  // The user leaving a completed Run: `ship()` awaits `awaitDismissal()` so the TUI stays up after
-  // the pipeline ends; the App calls `onDismiss` when a dismiss key is pressed in a terminal state.
+  // The user leaving a completed Run: the renderer's completion hook keeps the TUI up after the
+  // pipeline ends; the App calls `onDismiss` when a dismiss key is pressed in a terminal state.
   let resolveDismiss: (() => void) | undefined;
   const dismissed = new Promise<void>((resolve) => {
     resolveDismiss = resolve;
@@ -144,8 +144,8 @@ export async function createTuiRenderer(
     approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision> {
       return interactions.approveFindings(input);
     },
-    awaitDismissal(): Promise<void> {
-      return dismissed;
+    complete(_view, outcome): Promise<void> | void {
+      if (outcome.status === "finished" || outcome.status === "failed") return dismissed;
     },
     close(): void {
       if (closed) return;

@@ -16,7 +16,15 @@
 import { cancel, defineStep, skip, type Step } from "@tml/core";
 import { rebaseConflictPrompt } from "../prompts.ts";
 
-export function rebaseStep(name = "rebase"): Step {
+export function rebaseStep(): Step {
+  return baseSyncStep("rebase");
+}
+
+export function resyncStep(): Step {
+  return baseSyncStep("resync");
+}
+
+function baseSyncStep(name: "rebase" | "resync"): Step {
   return defineStep({
     name,
     async run(ctx) {

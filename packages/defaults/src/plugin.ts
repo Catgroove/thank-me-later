@@ -23,7 +23,7 @@ import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts"
 import { commitStep } from "./steps/commit.ts";
 import { describeStep } from "./steps/describe.ts";
 import { openPrStep } from "./steps/open-pr.ts";
-import { rebaseStep } from "./steps/rebase.ts";
+import { rebaseStep, resyncStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
 
 export const tmlDefaults: Plugin = (tml) => {
@@ -39,7 +39,7 @@ export const tmlDefaults: Plugin = (tml) => {
     typecheckStep(),
     testStep(),
     reviewStep(),
-    rebaseStep("resync"), // re-sync onto the latest base before opening the PR (base may have drifted)
+    resyncStep(), // re-sync onto the latest base before opening the PR (base may have drifted)
     openPrStep(),
     ciWaitStep(),
   );
