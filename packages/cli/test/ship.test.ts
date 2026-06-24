@@ -118,6 +118,7 @@ describe("assembleShipConfig", () => {
       "typecheck",
       "test",
       "review",
+      "resync",
       "open-pr",
       "ci-wait",
     ]);

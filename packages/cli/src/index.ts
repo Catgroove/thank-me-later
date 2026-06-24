@@ -277,8 +277,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     console.error(errorMessage(error));
     return 1;
   } finally {
-    for (const signal of signals) process.off(signal, onSignal);
-    renderer.close(); // stop the spinner timer / clear the live region / tear down the TUI
+    try {
+      try {
+        await renderer.complete?.(view);
+      } finally {
+        renderer.close(); // stop the spinner timer / clear the live region / tear down the TUI
+      }
+    } finally {
+      for (const signal of signals) process.off(signal, onSignal);
+    }
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);
   }

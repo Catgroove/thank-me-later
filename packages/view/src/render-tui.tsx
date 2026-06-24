@@ -80,6 +80,14 @@ export async function createTuiRenderer(
   const [prompt, setPrompt] = createSignal<ActivePrompt | undefined>(undefined);
   const interactions = createInteractions(setPrompt);
 
+  // The user leaving a completed Run: the renderer's completion hook keeps the TUI up after the
+  // pipeline ends; the App calls `onDismiss` when a dismiss key is pressed in a terminal state.
+  let resolveDismiss: (() => void) | undefined;
+  const dismissed = new Promise<void>((resolve) => {
+    resolveDismiss = resolve;
+  });
+  const onDismiss = (): void => resolveDismiss?.();
+
   // ctrl-c is handled by the TUI (delivered as a keypress in raw mode), not by an automatic process
   // exit. Mouse is on so the activity panel and inspector scrollboxes take the wheel directly (the
   // scrollbox consumes scroll events itself - no per-element wiring); this is the cost of giving up
@@ -92,7 +100,15 @@ export async function createTuiRenderer(
   });
 
   await render(
-    () => App({ view, now: nowSig, prompt, onCopySelection: () => copySelectedText(cli), onAbort }),
+    () =>
+      App({
+        view,
+        now: nowSig,
+        prompt,
+        onCopySelection: () => copySelectedText(cli),
+        onAbort,
+        onDismiss,
+      }),
     cli,
   );
 
@@ -128,9 +144,13 @@ export async function createTuiRenderer(
     approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision> {
       return interactions.approveFindings(input);
     },
+    complete(finalView: ViewState): Promise<void> | void {
+      if (finalView.status === "finished" || finalView.status === "failed") return dismissed;
+    },
     close(): void {
       if (closed) return;
       closed = true;
+      resolveDismiss?.(); // a forced close (e.g. a signal) must never leave an awaiter hanging
       clearInterval(clock);
       cli.destroy(); // leaves the alternate screen and restores the terminal
     },
