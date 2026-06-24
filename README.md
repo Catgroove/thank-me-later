@@ -40,6 +40,10 @@ gate's fixes as their own commits - as it runs model-backed format, lint, and ty
 passes, tests, and reviews (the agent applies fixes), before pushing and opening a PR and
 watching CI.
 
+By default, each `tml ship` starts a fresh journaled Run. Use `tml ship --resume` to
+continue the latest compatible parked Run for the current branch, or `tml ship --resume <id>`
+to resume an exact Run id.
+
 tml is built with tml: every change to this repo ships through `tml ship`.
 
 ## Configuration

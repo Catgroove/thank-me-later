@@ -71,8 +71,8 @@ describe("tml CLI", () => {
     expect(stderr).toContain("tml ship");
   });
 
-  test("ship validates resume flags before building a run", async () => {
-    const { stderr, exitCode } = await runCli("ship", "--resume");
+  test("ship validates empty resume ids before building a run", async () => {
+    const { stderr, exitCode } = await runCli("ship", "--resume=");
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("--resume requires a run id");
   });
@@ -88,7 +88,13 @@ describe("parseShipArgs", () => {
   test("preserves --verbose, --fresh, and --resume", () => {
     expect(parseShipArgs(["--verbose"]).verbose).toBe(true);
     expect(parseShipArgs(["-v"]).verbose).toBe(true);
+    expect(parseShipArgs([]).journalResume).toBeUndefined();
     expect(parseShipArgs(["--fresh"]).journalResume).toBe("fresh");
+    expect(parseShipArgs(["--resume"])).toMatchObject({ journalResume: "auto" });
+    expect(parseShipArgs(["--resume", "--plain"])).toMatchObject({
+      journalResume: "auto",
+      plain: true,
+    });
     expect(parseShipArgs(["--resume", "run-7"])).toMatchObject({
       journalResume: "exact",
       runId: "run-7",
@@ -96,6 +102,16 @@ describe("parseShipArgs", () => {
     expect(parseShipArgs(["--resume=run-9"])).toMatchObject({
       journalResume: "exact",
       runId: "run-9",
+    });
+    expect(parseShipArgs(["--resume", "run-7", "--fresh"])).toEqual({
+      verbose: false,
+      plain: false,
+      journalResume: "fresh",
+    });
+    expect(parseShipArgs(["--resume", "run-7", "--resume"])).toEqual({
+      verbose: false,
+      plain: false,
+      journalResume: "auto",
     });
   });
 

@@ -38,7 +38,7 @@ export interface ShipDeps {
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
   /** Override or disable the local Run Journal. Production creates one per checkout. */
   journal?: RunJournal | false;
-  /** Journal selection policy when production creates the journal. Defaults to auto-resume. */
+  /** Journal selection policy when production creates the journal. Defaults to a fresh run. */
   journalResume?: RunJournalResumeMode;
   /** Exact run id for `journalResume: "exact"`, or a stable id for tests. */
   runId?: string;
@@ -188,7 +188,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       deps.journal ??
       createRunJournal({
         checkoutPath: cwd,
-        resume: deps.journalResume ?? "auto",
+        resume: deps.journalResume ?? "fresh",
         ...(deps.runId ? { runId: deps.runId } : {}),
       });
     setupJournal = journal;
@@ -298,11 +298,15 @@ export interface ShipArgs {
   readonly runId?: string;
 }
 
+type JournalSelection =
+  | { readonly mode: "fresh" }
+  | { readonly mode: "auto" }
+  | { readonly mode: "exact"; readonly runId: string };
+
 export function parseShipArgs(args: string[]): ShipArgs {
   let verbose = false;
   let plain = false;
-  let journalResume: RunJournalResumeMode | undefined;
-  let runId: string | undefined;
+  let journalSelection: JournalSelection | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--verbose" || arg === "-v") {
@@ -314,21 +318,23 @@ export function parseShipArgs(args: string[]): ShipArgs {
       continue;
     }
     if (arg === "--fresh") {
-      journalResume = "fresh";
+      journalSelection = { mode: "fresh" };
       continue;
     }
     if (arg === "--resume") {
-      runId = args[i + 1];
-      if (runId === undefined || runId.startsWith("-"))
-        throw new Error("--resume requires a run id");
-      journalResume = "exact";
-      i += 1;
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("-")) {
+        journalSelection = { mode: "exact", runId: next };
+        i += 1;
+      } else {
+        journalSelection = { mode: "auto" };
+      }
       continue;
     }
     if (arg.startsWith("--resume=")) {
-      runId = arg.slice("--resume=".length);
-      if (runId.length === 0) throw new Error("--resume requires a run id");
-      journalResume = "exact";
+      const exactRunId = arg.slice("--resume=".length);
+      if (exactRunId.length === 0) throw new Error("--resume requires a run id");
+      journalSelection = { mode: "exact", runId: exactRunId };
       continue;
     }
     throw new Error(`Unknown ship option: ${arg}`);
@@ -336,8 +342,8 @@ export function parseShipArgs(args: string[]): ShipArgs {
   return {
     verbose,
     plain,
-    ...(journalResume ? { journalResume } : {}),
-    ...(runId ? { runId } : {}),
+    ...(journalSelection ? { journalResume: journalSelection.mode } : {}),
+    ...(journalSelection?.mode === "exact" ? { runId: journalSelection.runId } : {}),
   };
 }
 
@@ -358,8 +364,10 @@ Ship options:
                       results-forward default.
       --plain         Force the append-only/inline renderer instead of the
                       full-screen TUI. (alias: --no-tui)
-      --fresh         Start a new isolated run, discarding previous journal state.
-      --resume <id>   Resume a specific run by exact run id. (also --resume=<id>)
+      --fresh         Start a new isolated run, discarding previous journal state
+                      (default).
+      --resume [id]   Resume the latest compatible run for this branch, or a
+                      specific run by exact id. (also --resume=<id>)
 
 Init options:
   -f, --force         Overwrite an existing tml.json.
