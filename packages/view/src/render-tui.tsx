@@ -69,6 +69,19 @@ function clipboardCommands(): ReadonlyArray<readonly [string, readonly string[]]
   ];
 }
 
+/** Open a URL in the user's default browser, the OS-native way. Best-effort; failure is silent. */
+function openSystemUrl(url: string): void {
+  const [command, args] = openCommand();
+  spawnSync(command, [...args, url], { stdio: "ignore" });
+}
+
+function openCommand(): readonly [string, readonly string[]] {
+  if (process.platform === "darwin") return ["open", []];
+  // `start` is a cmd builtin; the empty "" is its window-title argument so a quoted URL is not eaten.
+  if (process.platform === "win32") return ["cmd", ["/c", "start", ""]];
+  return ["xdg-open", []];
+}
+
 export async function createTuiRenderer(
   options: TuiRendererOptions = {},
 ): Promise<InteractiveRenderer> {
@@ -106,6 +119,7 @@ export async function createTuiRenderer(
         now: nowSig,
         prompt,
         onCopySelection: () => copySelectedText(cli),
+        onOpenUrl: openSystemUrl,
         onAbort,
         onDismiss,
       }),

@@ -32,6 +32,8 @@ export interface AppProps {
   readonly prompt: Accessor<ActivePrompt | undefined>;
   /** Copy the active mouse selection to the clipboard; supplied by the CLI renderer. */
   readonly onCopySelection: () => boolean;
+  /** Open a URL (the Run's PR) in the browser; supplied by the CLI renderer. */
+  readonly onOpenUrl?: (url: string) => void;
   /** Abort the Run (ends it with `run:cancelled`); supplied by the CLI. */
   readonly onAbort: () => void;
   /** Leave a completed Run; supplied by the CLI. Called when a dismiss key is pressed once terminal. */
@@ -151,6 +153,14 @@ export function App(props: AppProps) {
       return;
     }
 
+    // `o` opens the Run's PR in the browser, lazygit-style, once one exists. Available in every mode
+    // except an active ask prompt, where the focused <input> owns typed characters.
+    const prUrl = props.view().prUrl;
+    if (key.name === "o" && prUrl !== undefined && props.prompt()?.kind !== "ask") {
+      props.onOpenUrl?.(prUrl);
+      return;
+    }
+
     const mode = uiMode();
 
     // A completed Run: a dismiss key leaves (the CLI then tears down and prints the epilogue). Other
@@ -232,7 +242,7 @@ export function App(props: AppProps) {
       <Show when={uiMode() === "abort"}>
         <AbortConfirm />
       </Show>
-      <Show when={uiMode() === "terminal"} fallback={<FooterKeys />}>
+      <Show when={uiMode() === "terminal"} fallback={<FooterKeys view={props.view} />}>
         <DoneBanner view={props.view} />
       </Show>
     </box>
@@ -258,7 +268,9 @@ function DoneBanner(props: { view: Accessor<ViewState> }) {
       <text flexGrow={1} marginLeft={2} fg={status() === "failed" ? "#fca5a5" : "#22d3ee"}>
         {sanitize(detail())}
       </text>
-      <text fg="#94a3b8">press q to exit</text>
+      <text fg="#94a3b8">
+        {props.view().prUrl !== undefined ? "o open PR · " : ""}press q to exit
+      </text>
     </box>
   );
 }
@@ -372,11 +384,14 @@ function AbortConfirm() {
   );
 }
 
-function FooterKeys() {
+function FooterKeys(props: { view: Accessor<ViewState> }) {
+  // The PR-open hint only appears once a PR exists, so the key we advertise always does something.
+  const openHint = () => (props.view().prUrl !== undefined ? " · o open PR" : "");
   return (
     <box paddingLeft={1} backgroundColor="#0b1120">
       <text fg="#475569">
-        j/k move · . follow · tab tabs · enter expand · y/cmd-c copy selection · ? help · q abort
+        j/k move · . follow · tab tabs · enter expand · y/cmd-c copy selection{openHint()} · ? help
+        · q abort
       </text>
     </box>
   );
