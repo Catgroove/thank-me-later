@@ -138,7 +138,9 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // that inject an Engine keep the direct single-pass cwd path, so unit tests avoid git fixtures.
   let view = initialView;
   let workspaceToClean: string | undefined;
+  let restoreDetachedSourceBranch: string | undefined;
   let setupJournal: RunJournal | undefined;
+  let fatalErrorMessage: string | undefined;
 
   // Outcome of one engine pass. Two passes (source phase, worktree phase) fold into the same `view`
   // and the same journaled Run; the engine coalesces phase-2 replay-only events before they reach
@@ -252,7 +254,17 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       throw new Error("tml ship: could not determine the feature branch to isolate.");
     }
     await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
-    if (currentBranch === featureBranch) await sourceGit.checkout(base);
+    if (currentBranch === featureBranch) {
+      try {
+        await sourceGit.checkout(base);
+      } catch {
+        // The source checkout may itself be a linked worktree while the default branch is already
+        // checked out elsewhere. We only need to free the feature branch for the disposable
+        // workspace, so detach instead of failing the ship.
+        await sourceGit.checkoutDetached();
+        restoreDetachedSourceBranch = featureBranch;
+      }
+    }
     if (!existsSync(join(worktreePath, ".git"))) {
       await createWorktree(cwd, featureBranch, worktreePath);
     }
@@ -276,11 +288,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     if (outcome.finished && workspaceToClean !== undefined) {
       await removeWorktree(cwd, workspaceToClean);
       workspaceToClean = undefined;
+      if (restoreDetachedSourceBranch !== undefined) {
+        await sourceGit.checkout(restoreDetachedSourceBranch);
+        restoreDetachedSourceBranch = undefined;
+      }
     }
     return exitCode(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
-    console.error(errorMessage(error));
+    fatalErrorMessage = errorMessage(error);
     return 1;
   } finally {
     try {
@@ -294,6 +310,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     }
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);
+    if (fatalErrorMessage !== undefined) console.error(fatalErrorMessage);
   }
 }
 
