@@ -360,15 +360,13 @@ describe("executeRoundLoop", () => {
     ]);
   });
 
-  test("stalls when a fix leaves the findings unchanged", async () => {
+  test("stops when a fix produces no commit", async () => {
     const issue = finding();
     const git = new FakeGit();
-    git.stagedFiles = ["src/file.ts"];
     const { ctx } = fakeCtx({ git });
     let fixes = 0;
 
     const result = await executeRoundLoop(ctx, {
-      // The same finding every round: the fix never resolves it, so the first verify stalls.
       check: () => Promise.resolve({ findings: [issue] }),
       fix: () => {
         fixes += 1;
@@ -377,7 +375,7 @@ describe("executeRoundLoop", () => {
       commitMessage: "chore: fix round findings",
     });
 
-    expect(result.stopReason).toBe("stalled");
+    expect(result.stopReason).toBe("no_progress");
     expect(result.attempts).toBe(1);
     expect(fixes).toBe(1);
     expect(result.rounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);

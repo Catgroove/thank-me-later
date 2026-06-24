@@ -78,7 +78,11 @@ export function isFixAttemptRound(round: Pick<RoundRecord, "trigger" | "resoluti
 export type FindingInput = Omit<Finding, "id">;
 export type RoundRecordInput = Omit<RoundRecord, "step" | "index">;
 
-/** Deterministic ID for a finding within a Step or pass namespace. Detail text is excluded so the same issue keeps a stable id across reworded verification rounds. */
+/**
+ * Deterministic ID for addressing a finding within one round. It is best-effort across rounds only:
+ * model-authored titles and locations can change during verification, so control flow must not
+ * depend on this id as a stable issue identity.
+ */
 export function findingId(namespace: string, finding: FindingInput): string {
   const hash = createHash("sha256")
     .update(
@@ -277,10 +281,13 @@ export function hasPriorRounds(historyText: string): boolean {
 }
 
 /**
- * Fold one Step's rounds into a per-finding lifecycle, in first-seen order. A finding's status is
- * derived entirely from the round history: which check round last reported it, whether a fix round
- * ever attempted it, what the last round queued, and any terminal approval resolution. Findings that
- * vanished without ever being acted on are dropped - the list is the work that mattered, not noise.
+ * Fold one Step's rounds into a per-finding lifecycle, in first-seen order. This is best-effort
+ * display state based on finding ids, not authoritative reconciliation: a verify pass that rewords
+ * or relocates the same issue can show the old id as fixed and the new id as open. A finding's
+ * status is derived entirely from the round history: which check round last reported it, whether a
+ * fix round ever attempted it, what the last round queued, and any terminal approval resolution.
+ * Findings that vanished without ever being acted on are dropped - the list is the work that
+ * mattered, not noise.
  *
  * `settled` (the Step is no longer active) collapses any lingering `pending` to `unresolved`: a fix
  * that is queued but will never run is not in flight. Pass the Step's rounds only, ordered or not.

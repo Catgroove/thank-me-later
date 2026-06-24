@@ -39,17 +39,20 @@ describe("loadTmlConfig", () => {
     writeConfig(globalDir, {
       harness: "pi",
       branch: "auto",
+      maxFixAttempts: 2,
       models: { default: "haiku", review: "sonnet" },
       disable: ["typecheck"],
     });
     writeConfig(projectRoot, {
       branch: "require",
+      maxFixAttempts: 4,
       models: { review: "opus" },
       disable: ["lint"],
     });
     const { selection } = load(globalDir, projectRoot);
     expect(selection.harness).toBe("pi"); // global, not overridden
     expect(selection.branch).toBe("require"); // project wins
+    expect(selection.maxFixAttempts).toBe(4); // project wins
     expect(selection.models).toEqual({ default: "haiku", review: "opus" }); // merged, project key wins
     expect(selection.disable).toEqual(["typecheck", "lint"]); // union, order-preserving
   });
@@ -90,10 +93,14 @@ describe("loadTmlConfig", () => {
     expect(() => load(tempDir(), projectRoot)).toThrow(/"disable".*array of strings/);
   });
 
-  test("model ids and $schema must be strings", () => {
+  test("model ids, maxFixAttempts, and $schema have validated types", () => {
     const badModel = tempDir();
     writeConfig(badModel, { models: { review: 42 } });
     expect(() => load(tempDir(), badModel)).toThrow(/"models.review".*string model id/);
+
+    const badMax = tempDir();
+    writeConfig(badMax, { maxFixAttempts: -1 });
+    expect(() => load(tempDir(), badMax)).toThrow(/"maxFixAttempts".*non-negative integer/);
 
     const badSchema = tempDir();
     writeConfig(badSchema, { $schema: 42 });

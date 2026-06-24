@@ -212,7 +212,9 @@ _Avoid_: Prompt, confirm, question
 A normalized outcome from review, lint, typecheck, tests, or CI: severity, action, title,
 detail, optional location, and a deterministic id. Findings are records, not provider-specific
 messages. They are the shared language for deciding what can be auto-fixed, what needs a user,
-and what is informational.
+and what is informational. A finding id is reliable for addressing findings within one round, but
+not authoritative identity across rounds: verification agents may reword titles or line numbers for
+the same underlying issue.
 _Avoid_: Comment, check result, issue
 
 **Round record**:
@@ -221,6 +223,19 @@ round index, why it ran (`initial`, `auto_fix`, `user_fix`, `verify`), findings,
 ids, optional user notes, fix summary, and commit SHA. Completed rounds are appended to the
 out-of-tree journal so review, checks, and CI can be summarized from one record shape.
 _Avoid_: Pass log, report, transcript
+
+**Max fix attempts**:
+The `tml.json` knob (`maxFixAttempts`, default 3) bounding automatic repair loops in review,
+checks, and CI. Each fix round spends one attempt; verification owns reconciliation and reports only
+what remains or was newly introduced.
+_Avoid_: Retry budget, stall guard, infinite-loop detector
+
+**No progress**:
+A round-loop stop reason used when a fix round produces no commit and the following verification
+still reports findings. With a named Step it escalates through the approval gate; without one the
+loop ends. It replaces cross-round finding-id equality as the signal that another automatic pass is
+unlikely to help.
+_Avoid_: Stalled, unchanged findings
 
 **Review thread**:
 A line-anchored (`path:line`), resolvable conversation on an already-open PR. Review threads are

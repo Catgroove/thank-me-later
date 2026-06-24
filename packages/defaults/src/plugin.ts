@@ -12,8 +12,9 @@
 // `merge-gate` runs last: after CI is green it confirms the host will actually let the PR merge (no
 // conflicts, not behind, not blocked by branch protection, not a draft).
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
-// (portable by referencing nothing). The Branch mode comes from the merged `tml.json` knobs
-// (`tml.config.branch`); it defaults to `ai`. @tml/defaults is first-party and bundled into the
+// (portable by referencing nothing). Branch mode and the fix-attempt cap come from the merged
+// `tml.json` knobs (`tml.config.branch`, `tml.config.maxFixAttempts`); branch defaults to `ai` and
+// max fix attempts defaults to 3. @tml/defaults is first-party and bundled into the
 // binary, so it imports its own step factories from @tml/core - only third-party local plugins
 // are barred from importing the core.
 
@@ -30,6 +31,7 @@ import { rebaseStep, resyncStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
 
 export const tmlDefaults: Plugin = (tml) => {
+  const maxAutoFixAttempts = asMaxFixAttempts(tml.config.maxFixAttempts);
   tml.pipeline.append(
     branchStep(asBranchMode(tml.config.branch)),
     describeStep(),
@@ -37,14 +39,14 @@ export const tmlDefaults: Plugin = (tml) => {
     // host hands the feature branch to a disposable worktree where the rest of the pipeline runs.
     { ...commitStep("commit-change", prTitle), isolate: true }, // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
-    formatStep(),
-    lintStep(),
-    typecheckStep(),
-    testStep(),
-    reviewStep(),
+    formatStep(maxAutoFixAttempts),
+    lintStep(maxAutoFixAttempts),
+    typecheckStep(maxAutoFixAttempts),
+    testStep(maxAutoFixAttempts),
+    reviewStep(maxAutoFixAttempts),
     resyncStep(), // re-sync onto the latest base before opening the PR (base may have drifted)
     openPrStep(),
-    ciWaitStep(),
+    ciWaitStep(maxAutoFixAttempts),
     mergeGateStep(),
   );
 };
@@ -56,4 +58,11 @@ function asBranchMode(value: string | undefined): BranchMode {
   if (value === undefined) return "ai";
   if ((BRANCH_MODES as readonly string[]).includes(value)) return value as BranchMode;
   throw new Error(`tml.json "branch" must be one of ${BRANCH_MODES.join(", ")} (got "${value}").`);
+}
+
+/** Narrow the opaque `maxFixAttempts` knob; absent -> 3, invalid -> a clear error. */
+function asMaxFixAttempts(value: number | undefined): number {
+  if (value === undefined) return 3;
+  if (Number.isInteger(value) && value >= 0) return value;
+  throw new Error(`tml.json "maxFixAttempts" must be a non-negative integer (got ${value}).`);
 }

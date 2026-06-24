@@ -52,14 +52,16 @@ machine-wide defaults; the two deep-merge, project winning):
 {
   "$schema": "https://raw.githubusercontent.com/Catgroove/thank-me-later/master/packages/cli/schema/tml.schema.json",
   "branch": "require",                          // ai | auto | require
+  "maxFixAttempts": 3,                           // auto-fix cap per round loop
   "models": { "default": "haiku", "review": "opus" },
   "disable": ["typecheck"],                     // drop a default Step
   "plugins": ["./.tml/deep-review.ts"]          // local paths only (for now)
 }
 ```
 
-JSON only **toggles and selects** (providers by name, `branch`, `models`, `disable`). To add or
-reorder Steps, write a **local plugin** — a TypeScript file that never imports `@tml/core`:
+JSON only **toggles and selects** (providers by name, `branch`, `maxFixAttempts`, `models`,
+`disable`). To add or reorder Steps, write a **local plugin** - a TypeScript file that never
+imports `@tml/core`:
 
 ```ts
 // .tml/deep-review.ts

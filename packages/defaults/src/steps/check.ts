@@ -66,13 +66,19 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
   },
 };
 
-export function checkStep(name: string, goal: string, mode: CheckMode = "inspect"): Step {
+export function checkStep(
+  name: string,
+  goal: string,
+  mode: CheckMode = "inspect",
+  maxAutoFixAttempts?: number,
+): Step {
   return defineStep({
     name,
     async run(ctx) {
       const policy = checkPolicies[mode];
       const result = await executeRoundLoop(ctx, {
         stepName: name,
+        maxAutoFixAttempts,
         async check(input) {
           const before = await policy.before(ctx);
           let agentResult: Awaited<ReturnType<typeof ctx.agent.run>>;
@@ -128,7 +134,11 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
   return parseAgentFindingsOutput(output, { namespace: name, sourceName: name });
 }
 
-export const formatStep = (): Step => checkStep("format", formatPrompt);
-export const lintStep = (): Step => checkStep("lint", lintPrompt);
-export const typecheckStep = (): Step => checkStep("typecheck", typecheckPrompt, "run");
-export const testStep = (): Step => checkStep("test", testPrompt, "run");
+export const formatStep = (maxAutoFixAttempts?: number): Step =>
+  checkStep("format", formatPrompt, "inspect", maxAutoFixAttempts);
+export const lintStep = (maxAutoFixAttempts?: number): Step =>
+  checkStep("lint", lintPrompt, "inspect", maxAutoFixAttempts);
+export const typecheckStep = (maxAutoFixAttempts?: number): Step =>
+  checkStep("typecheck", typecheckPrompt, "run", maxAutoFixAttempts);
+export const testStep = (maxAutoFixAttempts?: number): Step =>
+  checkStep("test", testPrompt, "run", maxAutoFixAttempts);
