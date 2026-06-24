@@ -155,7 +155,7 @@ export class FakeGitProvider implements GitProvider {
   getChecks(_prNumber: number): Pending<CheckRun[]> {
     return settled(this.checks);
   }
-  getMergeability(_prNumber: number): Pending<MergeState> {
+  getMergeState(_prNumber: number): Pending<MergeState> {
     return settled(this.mergeStateStatus);
   }
 }

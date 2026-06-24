@@ -163,7 +163,7 @@ describe("public surface", () => {
     expect(typeof gitProvider.getPullRequest).toBe("function");
     expect(typeof gitProvider.updatePullRequestBody).toBe("function");
     expect(typeof gitProvider.getChecks).toBe("function");
-    expect(typeof gitProvider.getMergeability).toBe("function");
+    expect(typeof gitProvider.getMergeState).toBe("function");
     expect(typeof gitProvider.getFailedCheckLogs).toBe("function");
   });
 });
@@ -221,7 +221,7 @@ describe("getFailedCheckLogs", () => {
   });
 });
 
-describe("getMergeability polling", () => {
+describe("getMergeState polling", () => {
   test("is not done while GitHub reports unknown, then returns the mergeable state", async () => {
     const run = (() => {
       let i = 0;
@@ -232,10 +232,10 @@ describe("getMergeability polling", () => {
         );
       };
     })();
-    const pending = createGitHubProvider("/repo", { run }).getMergeability?.(42);
+    const pending = createGitHubProvider("/repo", { run }).getMergeState(42);
 
-    expect(await pending?.poll()).toEqual({ done: false });
-    expect(await pending?.poll()).toEqual({ done: true, value: "clean" });
+    expect(await pending.poll()).toEqual({ done: false });
+    expect(await pending.poll()).toEqual({ done: true, value: "clean" });
   });
 });
 
@@ -288,7 +288,7 @@ describe("error propagation", () => {
       () => gitProvider.openPullRequest({ head: "x", base: "main", title: "t", body: "b" }),
       () => gitProvider.updatePullRequestBody({ prNumber: 1, body: "b" }),
       () => gitProvider.getChecks(1).poll(),
-      () => gitProvider.getMergeability?.(1).poll(),
+      () => gitProvider.getMergeState(1).poll(),
       () => gitProvider.getFailedCheckLogs?.({ prNumber: 1 }),
     ]) {
       let err: unknown;

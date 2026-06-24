@@ -1,4 +1,4 @@
-import type { Finding, MergeState } from "@tml/core";
+import { isMergeable, type BlockingMergeState, type Finding, type MergeState } from "@tml/core";
 
 interface MergeGateBlockingPolicy {
   readonly kind: "blocking";
@@ -18,7 +18,16 @@ type MergeGateStatePolicy =
   | MergeGateBlockingPolicy
   | MergeGateUnsettledPolicy;
 
-const mergeGatePolicies = {
+const mergeablePolicy = { kind: "mergeable" } satisfies MergeGateStatePolicy;
+
+const unsettledPolicy = {
+  kind: "unsettled",
+  disposition: "should-fix",
+  detail: () =>
+    "The host returned an unsettled merge state after the merge-readiness poller completed.",
+} satisfies MergeGateUnsettledPolicy;
+
+const blockingPolicies = {
   behind: {
     kind: "blocking",
     disposition: "blocker",
@@ -49,29 +58,20 @@ const mergeGatePolicies = {
     detail: () => "The PR is a draft; mark it ready for review before it can merge.",
     guidance: () => "mark the pull request ready for review.",
   },
-  clean: { kind: "mergeable" },
-  has_hooks: { kind: "mergeable" },
-  unstable: { kind: "mergeable" },
-  unknown: {
-    kind: "unsettled",
-    disposition: "should-fix",
-    detail: () =>
-      "The host returned an unsettled merge state after the merge-readiness poller completed.",
-  },
-} satisfies Record<MergeState, MergeGateStatePolicy>;
+} satisfies Record<BlockingMergeState, MergeGateBlockingPolicy>;
 
 export function mergeGateStatePolicy(state: MergeState): MergeGateStatePolicy {
-  return mergeGatePolicies[state];
+  if (isMergeable(state)) return mergeablePolicy;
+  if (state === "unknown") return unsettledPolicy;
+  return blockingPolicies[state];
 }
 
 export function isMergeGateMergeable(state: MergeState): boolean {
-  return mergeGatePolicies[state].kind === "mergeable";
+  return isMergeable(state);
 }
 
 export function formatMergeGateGuidance(base: string): string {
-  return (Object.entries(mergeGatePolicies) as [MergeState, MergeGateStatePolicy][])
-    .flatMap(([state, policy]) =>
-      policy.kind === "blocking" ? [`- ${state}: ${policy.guidance(base)}`] : [],
-    )
+  return (Object.entries(blockingPolicies) as [BlockingMergeState, MergeGateBlockingPolicy][])
+    .map(([state, policy]) => `- ${state}: ${policy.guidance(base)}`)
     .join("\n");
 }

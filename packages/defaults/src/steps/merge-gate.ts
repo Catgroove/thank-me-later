@@ -11,7 +11,6 @@ import {
   defineStep,
   executeRoundLoop,
   makeFinding,
-  skip,
   type Ctx,
   type Finding,
   type MergeState,
@@ -58,18 +57,14 @@ export function mergeGateStep(): Step {
     async run(ctx: Ctx) {
       const pr = ctx.read(pullRequest);
       // Bind so the poller keeps its provider `this` when called detached below.
-      const getMergeability = ctx.gitProvider.getMergeability?.bind(ctx.gitProvider);
-      if (getMergeability === undefined) {
-        ctx.log("merge-gate: provider does not report merge readiness; skipping");
-        return skip();
-      }
+      const getMergeState = ctx.gitProvider.getMergeState.bind(ctx.gitProvider);
 
       let latestState: MergeState = "unknown";
       const result = await executeRoundLoop(ctx, {
         stepName: "merge-gate",
         async check() {
           try {
-            latestState = await ctx.until(getMergeability(pr.number), {
+            latestState = await ctx.until(getMergeState(pr.number), {
               every: EVERY_MS,
               timeout: TIMEOUT_MS,
             });

@@ -75,14 +75,18 @@ export {
   type RebaseResult,
 } from "./providers/git.ts";
 export type {
+  BlockingMergeState,
   CheckRun,
   GitProvider,
   Mergeable,
+  MergeableMergeState,
   MergeState,
+  MergeStateKind,
   OpenPullRequestInput,
   PullRequest,
+  UnsettledMergeState,
 } from "./providers/git-provider.ts";
-export { isMergeable } from "./providers/git-provider.ts";
+export { isMergeable, mergeStateKind } from "./providers/git-provider.ts";
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
 export type { RunEvent, RunEventInput } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions } from "./engine.ts";

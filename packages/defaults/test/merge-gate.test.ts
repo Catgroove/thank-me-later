@@ -24,7 +24,7 @@ class SequencedMergeProvider extends FakeGitProvider {
     super();
   }
 
-  override getMergeability(_prNumber: number): Pending<MergeState> {
+  override getMergeState(_prNumber: number): Pending<MergeState> {
     return {
       poll: () => {
         const next = this.sequence[this.index] ?? "clean";
@@ -86,16 +86,6 @@ describe("merge-gate step", () => {
     });
   });
 
-  test("skips when the provider cannot report merge readiness", async () => {
-    const gitProvider = Object.assign(new FakeGitProvider(), { getMergeability: undefined });
-    const { ctx, logs } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
-
-    const result = await mergeGateStep().run(ctx);
-
-    expect(result).toMatchObject({ kind: "skip" });
-    expect(logs).toEqual(["merge-gate: provider does not report merge readiness; skipping"]);
-  });
-
   test("fixes a behind branch, then verifies it is mergeable", async () => {
     const gitProvider = new SequencedMergeProvider(["behind", "clean"]);
     const agent = new FakeHarness();
@@ -127,7 +117,7 @@ describe("merge-gate step", () => {
 
   test("reports a stuck merge state through structured approval on timeout", async () => {
     class TimeoutMergeProvider extends FakeGitProvider {
-      override getMergeability(_prNumber: number): Pending<MergeState> {
+      override getMergeState(_prNumber: number): Pending<MergeState> {
         return { poll: () => Promise.reject(new TimeoutError()) };
       }
     }
