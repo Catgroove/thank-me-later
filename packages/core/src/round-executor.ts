@@ -1,9 +1,10 @@
 // A reusable fresh-round loop for Steps. The caller supplies the check and fix work; this module
 // owns the round control flow: check, select auto-fix findings, fix once, commit, verify, and
-// repeat until the work is clean or stops. When a stop needs a human decision and the Step names
-// itself (`stepName`), the findings are routed through `ctx.approveFindings`: an approve or skip
-// ends the loop with a recorded decision, a fix continues the loop with the operator's selection
-// and notes, and an abort throws.
+// repeat until the work is clean or stops. A verify round that reproduces the prior check's exact
+// findings is treated as stalled (the fix changed nothing) and escalates instead of looping. When a
+// stop needs a human decision and the Step names itself (`stepName`), the findings are routed
+// through `ctx.approveFindings`: an approve or skip ends the loop with a recorded decision, a fix
+// continues the loop with the operator's selection and notes, and an abort throws.
 
 import type { ApprovalDecision } from "./approval.ts";
 import type { Ctx } from "./context.ts";
@@ -20,6 +21,7 @@ export type RoundLoopStopReason =
   | "clean"
   | "needs_user"
   | "auto_fix_limit_hit"
+  | "stalled"
   | "remaining_findings";
 
 export interface RoundCheckInput {
@@ -69,6 +71,8 @@ export interface RoundStopPolicyInput {
   readonly selectedFindings: readonly Finding[];
   readonly rounds: readonly RoundRecordInput[];
   readonly attempts: number;
+  /** The current verify round reproduced the previous check's findings exactly. */
+  readonly stalled: boolean;
 }
 
 export interface RoundLoopOptions {
@@ -117,6 +121,8 @@ export async function executeRoundLoop(
   }
   let attempts = 0;
   let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
+  // Finding-id set from the previous check round, used to detect a fix that changed nothing.
+  let previousCheckFindingIds: ReadonlySet<string> | undefined;
 
   while (true) {
     const checkInput: RoundCheckInput = {
@@ -135,12 +141,22 @@ export async function executeRoundLoop(
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
     });
 
+    // A verify round whose findings exactly match the prior check's means the last fix changed
+    // nothing: re-running the same fix is unlikely to help, so escalate rather than loop on it.
+    const findingIds = new Set(findings.map((f) => f.id));
+    const stalled =
+      trigger === "verify" &&
+      previousCheckFindingIds !== undefined &&
+      sameIds(previousCheckFindingIds, findingIds);
+    previousCheckFindingIds = findingIds;
+
     let stopReason = stopPolicy(options, {
       check: checkInput,
       findings,
       selectedFindings: selected,
       rounds: [...rounds],
       attempts,
+      stalled,
     });
     if (stopReason === undefined && attempts >= maxAutoFixAttempts) {
       stopReason = "auto_fix_limit_hit";
@@ -258,18 +274,29 @@ function stopPolicy(
   const custom = options.stopPolicy?.(input);
   if (custom !== undefined) return custom;
   if (input.findings.length === 0) return "clean";
+  if (input.stalled) return "stalled";
   if (input.selectedFindings.length > 0) return undefined;
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
 }
 
 function requiresApproval(stopReason: RoundLoopStopReason): boolean {
-  return stopReason === "needs_user" || stopReason === "auto_fix_limit_hit";
+  return (
+    stopReason === "needs_user" || stopReason === "auto_fix_limit_hit" || stopReason === "stalled"
+  );
 }
 
 function defaultPrompt(stepName: string, stopReason: RoundLoopStopReason): string {
   if (stopReason === "needs_user") return `${stepName} has findings that need a user decision`;
   if (stopReason === "auto_fix_limit_hit") return `${stepName} hit the auto-fix limit`;
+  if (stopReason === "stalled") return `${stepName} findings did not change after the last fix`;
   return `${stepName} has unresolved findings`;
+}
+
+/** Whether two finding-id sets contain exactly the same ids. */
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
 }
 
 function currentSelectedFindingIds(

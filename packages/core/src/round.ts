@@ -69,6 +69,12 @@ export interface StepRoundSummary {
   readonly status: "clean" | "unresolved";
 }
 
+export function isFixAttemptRound(round: Pick<RoundRecord, "trigger" | "resolution">): boolean {
+  return (
+    (round.trigger === "auto_fix" || round.trigger === "user_fix") && round.resolution === undefined
+  );
+}
+
 export type FindingInput = Omit<Finding, "id">;
 export type RoundRecordInput = Omit<RoundRecord, "step" | "index">;
 
@@ -286,8 +292,6 @@ export function findingLifecycle(
   const ordered = [...rounds].sort((a, b) => a.index - b.index);
 
   const isCheck = (r: RoundRecord) => r.trigger === "initial" || r.trigger === "verify";
-  const isFix = (r: RoundRecord) =>
-    (r.trigger === "auto_fix" || r.trigger === "user_fix") && r.resolution === undefined;
 
   // The freshest re-scan decides what is still reported; fix and approval rounds are not re-scans.
   const lastCheck = ordered.filter(isCheck).at(-1);
@@ -295,14 +299,15 @@ export function findingLifecycle(
 
   // A fix round records the findings it attempted; that is what can later be confirmed fixed.
   const attempted = new Set<string>();
-  for (const r of ordered) if (isFix(r)) for (const f of r.findings) attempted.add(f.id);
+  for (const r of ordered)
+    if (isFixAttemptRound(r)) for (const f of r.findings) attempted.add(f.id);
 
   // The last round's queued/attempted set is in flight: a check that just selected fixes, or a fix
   // round awaiting its verify. Either way the fix has not yet been confirmed.
   const last = ordered.at(-1);
   const inFlight = new Set<string>();
   if (last !== undefined) {
-    if (isFix(last)) for (const f of last.findings) inFlight.add(f.id);
+    if (isFixAttemptRound(last)) for (const f of last.findings) inFlight.add(f.id);
     else if (isCheck(last)) for (const id of last.selectedFindingIds ?? []) inFlight.add(id);
   }
 

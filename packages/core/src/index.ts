@@ -31,6 +31,7 @@ export {
   findingId,
   findingLifecycle,
   hasPriorRounds,
+  isFixAttemptRound,
   makeFinding,
   parseAgentFindingsOutput,
   renderFindingForPr,
