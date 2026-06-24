@@ -10,7 +10,6 @@ import {
   TimeoutError,
   defineStep,
   executeRoundLoop,
-  isMergeable,
   makeFinding,
   skip,
   type Ctx,
@@ -19,55 +18,23 @@ import {
   type Step,
 } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";
+import { isMergeGateMergeable, mergeGateStatePolicy } from "../merge-gate-policy.ts";
 import { mergeGatePrompt } from "../prompts.ts";
 
 /** Poll cadence: every 10s, give up after 30min - mirrors `ci-wait`, since both wait on the host. */
 const EVERY_MS = 10_000;
 const TIMEOUT_MS = 30 * 60_000;
-const MAX_MERGE_FIX_ATTEMPTS = 2;
-
-/** Per-state guidance for the operator; only the non-mergeable states need a finding. */
-function mergeBlocker(
-  state: MergeState,
-  base: string,
-): { disposition: Finding["disposition"]; detail: string } | null {
-  switch (state) {
-    case "behind":
-      return {
-        disposition: "blocker",
-        detail: `The branch is behind ${base}; rebase it onto the latest base so it can merge.`,
-      };
-    case "dirty":
-      return {
-        disposition: "blocker",
-        detail: `The PR has merge conflicts with ${base}; rebase and resolve them.`,
-      };
-    case "blocked":
-      return {
-        disposition: "blocker",
-        detail:
-          "Merging is blocked by branch protection - a required review or status check is unmet.",
-      };
-    case "draft":
-      return {
-        disposition: "should-fix",
-        detail: "The PR is a draft; mark it ready for review before it can merge.",
-      };
-    default:
-      return null; // clean | has_hooks | unstable | unknown - mergeable or not yet settled
-  }
-}
 
 function mergeFinding(state: MergeState, base: string): Finding | null {
-  const blocker = mergeBlocker(state, base);
-  if (blocker === null) return null;
+  const policy = mergeGateStatePolicy(state);
+  if (policy === null) return null;
   return makeFinding("merge", {
-    disposition: blocker.disposition,
+    disposition: policy.disposition,
     // A human decides: the fixes here (rebase, force-push, marking ready) change the PR itself,
     // not just files, so they should not run unattended.
     action: "ask-user",
     title: `PR is not mergeable (${state})`,
-    detail: blocker.detail,
+    detail: policy.detail(base),
   });
 }
 
@@ -97,7 +64,6 @@ export function mergeGateStep(): Step {
       let latestState: MergeState = "unknown";
       const result = await executeRoundLoop(ctx, {
         stepName: "merge-gate",
-        maxAutoFixAttempts: MAX_MERGE_FIX_ATTEMPTS,
         async check() {
           try {
             latestState = await ctx.until(getMergeability(pr.number), {
@@ -108,7 +74,9 @@ export function mergeGateStep(): Step {
             if (error instanceof TimeoutError) return { findings: [timeoutFinding(pr.number)] };
             throw error;
           }
-          ctx.log(`merge: ${latestState}${isMergeable(latestState) ? " (mergeable)" : ""}`);
+          ctx.log(
+            `merge: ${latestState}${isMergeGateMergeable(latestState) ? " (mergeable)" : ""}`,
+          );
           const finding = mergeFinding(latestState, pr.base);
           return { findings: finding ? [finding] : [] };
         },

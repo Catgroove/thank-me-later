@@ -4,6 +4,7 @@
 // the Steps compose them into fresh check/fix/review agent rounds.
 
 import { hasPriorRounds, type CheckRun, type Finding, type RoundTrigger } from "@tml/core";
+import { formatMergeGateGuidance } from "./merge-gate-policy.ts";
 
 /** The finding fields the fix prompts quote back to the agent. */
 type PromptFinding = Pick<
@@ -362,12 +363,8 @@ export function mergeGatePrompt(input: MergeGatePromptInput): string {
   return (
     `The host reports this pull request as not mergeable (merge state: ${input.state}). Make it ` +
     "mergeable, then stop. Choose the action that fits the reported state:\n" +
-    `- behind: rebase the branch onto origin/${input.base} and push with --force-with-lease.\n` +
-    `- dirty: rebase onto origin/${input.base}, resolve every conflict preserving both sides' ` +
-    "intent, then push with --force-with-lease.\n" +
-    "- draft: mark the pull request ready for review.\n" +
-    "- blocked: a required review or status check is unmet; report what is missing - do not try " +
-    "to bypass branch protection.\n\n" +
+    formatMergeGateGuidance(input.base) +
+    "\n\n" +
     "Never weaken branch protection, dismiss reviews, or skip required checks to force a merge. " +
     "Summarise what you did in one short line." +
     prior +
