@@ -27,14 +27,17 @@ const TIMEOUT_MS = 30 * 60_000;
 
 function mergeFinding(state: MergeState, base: string): Finding | null {
   const policy = mergeGateStatePolicy(state);
-  if (policy === null) return null;
+  if (policy.kind === "mergeable") return null;
   return makeFinding("merge", {
     disposition: policy.disposition,
     // A human decides: the fixes here (rebase, force-push, marking ready) change the PR itself,
     // not just files, so they should not run unattended.
     action: "ask-user",
-    title: `PR is not mergeable (${state})`,
-    detail: policy.detail(base),
+    title:
+      policy.kind === "blocking"
+        ? `PR is not mergeable (${state})`
+        : `Merge readiness is not settled (${state})`,
+    detail: policy.kind === "blocking" ? policy.detail(base) : policy.detail(),
   });
 }
 

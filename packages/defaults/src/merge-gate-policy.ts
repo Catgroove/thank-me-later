@@ -1,19 +1,33 @@
-import { isMergeable, type Finding, type MergeState } from "@tml/core";
+import type { Finding, MergeState } from "@tml/core";
 
-interface MergeGateStatePolicy {
+interface MergeGateBlockingPolicy {
+  readonly kind: "blocking";
   readonly disposition: Finding["disposition"];
   readonly detail: (base: string) => string;
   readonly guidance: (base: string) => string;
 }
 
+interface MergeGateUnsettledPolicy {
+  readonly kind: "unsettled";
+  readonly disposition: Finding["disposition"];
+  readonly detail: () => string;
+}
+
+type MergeGateStatePolicy =
+  | { readonly kind: "mergeable" }
+  | MergeGateBlockingPolicy
+  | MergeGateUnsettledPolicy;
+
 const mergeGatePolicies = {
   behind: {
+    kind: "blocking",
     disposition: "blocker",
     detail: (base) =>
       `The branch is behind ${base}; rebase it onto the latest base so it can merge.`,
     guidance: (base) => `rebase the branch onto origin/${base} and push with --force-with-lease.`,
   },
   dirty: {
+    kind: "blocking",
     disposition: "blocker",
     detail: (base) => `The PR has merge conflicts with ${base}; rebase and resolve them.`,
     guidance: (base) =>
@@ -21,6 +35,7 @@ const mergeGatePolicies = {
       "push with --force-with-lease.",
   },
   blocked: {
+    kind: "blocking",
     disposition: "blocker",
     detail: () =>
       "Merging is blocked by branch protection - a required review or status check is unmet.",
@@ -29,28 +44,34 @@ const mergeGatePolicies = {
       "bypass branch protection.",
   },
   draft: {
+    kind: "blocking",
     disposition: "should-fix",
     detail: () => "The PR is a draft; mark it ready for review before it can merge.",
     guidance: () => "mark the pull request ready for review.",
   },
-} satisfies Partial<Record<MergeState, MergeGateStatePolicy>>;
+  clean: { kind: "mergeable" },
+  has_hooks: { kind: "mergeable" },
+  unstable: { kind: "mergeable" },
+  unknown: {
+    kind: "unsettled",
+    disposition: "should-fix",
+    detail: () =>
+      "The host returned an unsettled merge state after the merge-readiness poller completed.",
+  },
+} satisfies Record<MergeState, MergeGateStatePolicy>;
 
-type MergeGateBlockingState = keyof typeof mergeGatePolicies;
-
-function isMergeGateBlockingState(state: MergeState): state is MergeGateBlockingState {
-  return Object.hasOwn(mergeGatePolicies, state);
-}
-
-export function mergeGateStatePolicy(state: MergeState): MergeGateStatePolicy | null {
-  return isMergeGateBlockingState(state) ? mergeGatePolicies[state] : null;
+export function mergeGateStatePolicy(state: MergeState): MergeGateStatePolicy {
+  return mergeGatePolicies[state];
 }
 
 export function isMergeGateMergeable(state: MergeState): boolean {
-  return isMergeable(state);
+  return mergeGatePolicies[state].kind === "mergeable";
 }
 
 export function formatMergeGateGuidance(base: string): string {
-  return (Object.entries(mergeGatePolicies) as [MergeGateBlockingState, MergeGateStatePolicy][])
-    .map(([state, policy]) => `- ${state}: ${policy.guidance(base)}`)
+  return (Object.entries(mergeGatePolicies) as [MergeState, MergeGateStatePolicy][])
+    .flatMap(([state, policy]) =>
+      policy.kind === "blocking" ? [`- ${state}: ${policy.guidance(base)}`] : [],
+    )
     .join("\n");
 }
