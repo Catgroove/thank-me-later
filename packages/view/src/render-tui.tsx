@@ -144,8 +144,8 @@ export async function createTuiRenderer(
     approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision> {
       return interactions.approveFindings(input);
     },
-    complete(_view, outcome): Promise<void> | void {
-      if (outcome.status === "finished" || outcome.status === "failed") return dismissed;
+    complete(finalView: ViewState): Promise<void> | void {
+      if (finalView.status === "finished" || finalView.status === "failed") return dismissed;
     },
     close(): void {
       if (closed) return;

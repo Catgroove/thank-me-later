@@ -24,7 +24,6 @@ import {
   type InteractiveRenderer,
   present,
   type Renderer,
-  type RendererRunOutcome,
 } from "@tml/view";
 import { assembleShipConfig } from "./config.ts";
 import { errorMessage } from "./error.ts";
@@ -165,13 +164,6 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     return outcome;
   };
   const exitCode = (o: PassOutcome): number => (o.cancelled ? 130 : o.failed ? 1 : 0);
-  let runOutcome: RendererRunOutcome | undefined;
-  const rememberOutcome = (o: PassOutcome): number => {
-    if (o.cancelled) runOutcome = { status: "cancelled", exitCode: exitCode(o) };
-    else if (o.failed) runOutcome = { status: "failed", exitCode: exitCode(o) };
-    else if (o.finished) runOutcome = { status: "finished", exitCode: exitCode(o) };
-    return exitCode(o);
-  };
 
   try {
     // Test seam: a single engine pass directly in the checkout.
@@ -185,7 +177,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         signal: abortController.signal,
         ...(journal ? { journal } : {}),
       });
-      return rememberOutcome(await runPass(engine));
+      return exitCode(await runPass(engine));
     }
 
     if (deps.journal === false) {
@@ -218,7 +210,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         signal: abortController.signal,
         journal,
       });
-      return rememberOutcome(await runPass(engine));
+      return exitCode(await runPass(engine));
     }
     const boundaryName = boundary.step.name;
     const sourcePhase = new Set(boundary.sourceSteps.map((step) => step.name));
@@ -235,7 +227,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         stopAfter: boundaryName,
       });
       const outcome = await runPass(phase1);
-      if (outcome.finished || outcome.failed || outcome.cancelled) return rememberOutcome(outcome);
+      if (outcome.finished || outcome.failed || outcome.cancelled) return exitCode(outcome);
       if (!outcome.paused)
         throw new Error("tml ship: engine stopped before the isolation handoff.");
     }
@@ -279,17 +271,20 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       await removeWorktree(cwd, workspaceToClean);
       workspaceToClean = undefined;
     }
-    return rememberOutcome(outcome);
+    return exitCode(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
     console.error(errorMessage(error));
     return 1;
   } finally {
-    for (const signal of signals) process.off(signal, onSignal);
     try {
-      if (runOutcome !== undefined) await renderer.complete?.(view, runOutcome);
+      try {
+        await renderer.complete?.(view);
+      } finally {
+        renderer.close(); // stop the spinner timer / clear the live region / tear down the TUI
+      }
     } finally {
-      renderer.close(); // stop the spinner timer / clear the live region / tear down the TUI
+      for (const signal of signals) process.off(signal, onSignal);
     }
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);

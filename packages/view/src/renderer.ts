@@ -11,14 +11,9 @@
 import type { ApprovalDecision, ApproveFindingsInput, RunEvent } from "@tml/core";
 import type { ViewState } from "./present.ts";
 
-export interface RendererRunOutcome {
-  readonly status: "finished" | "failed" | "cancelled";
-  readonly exitCode: number;
-}
-
 export interface Renderer {
   render(view: ViewState, event: RunEvent): void;
-  complete?(view: ViewState, outcome: RendererRunOutcome): Promise<void> | void;
+  complete?(view: ViewState): Promise<void> | void;
   close(): void;
 }
 

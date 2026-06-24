@@ -5,6 +5,6 @@
 // this package peer-depends on core and imports only its public `RunEvent`.
 
 export { initialView, present, type ViewState } from "./present.ts";
-export type { InteractiveRenderer, Renderer, RendererRunOutcome } from "./renderer.ts";
+export type { InteractiveRenderer, Renderer } from "./renderer.ts";
 export { failingApproveResponder, failingAskResponder } from "./responders.ts";
 export { createTerminalRenderer, type TerminalRendererOptions } from "./render-terminal.ts";
