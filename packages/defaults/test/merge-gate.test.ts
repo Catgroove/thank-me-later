@@ -66,6 +66,32 @@ describe("merge-gate step", () => {
     });
   });
 
+  test("passes a blocked PR when the current user may bypass the rules", async () => {
+    const gitProvider = new FakeGitProvider();
+    gitProvider.mergeStateStatus = "blocked";
+    gitProvider.mergeBypass = true;
+    const { ctx, logs, approvals } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await mergeGateStep().run(ctx);
+
+    expect(approvals).toHaveLength(0); // no nag - the maintainer can merge despite the rule
+    expect(logs).toEqual(["merge: blocked (blocked, but you may bypass)"]);
+    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "initial", findings: [] }] });
+  });
+
+  test("still flags a dirty PR even when the user may bypass (a conflict is not bypassable)", async () => {
+    const gitProvider = new FakeGitProvider();
+    gitProvider.mergeStateStatus = "dirty";
+    gitProvider.mergeBypass = true;
+    const { ctx } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await mergeGateStep().run(ctx);
+
+    expect(result).toMatchObject({
+      rounds: [{ trigger: "initial", findings: [{ title: "PR is not mergeable (dirty)" }] }, {}],
+    });
+  });
+
   test("flags a draft PR as should-fix", async () => {
     const gitProvider = new FakeGitProvider();
     gitProvider.mergeStateStatus = "draft";

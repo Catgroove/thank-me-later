@@ -86,6 +86,13 @@ export interface GitProvider {
   getChecks(prNumber: number): Pending<CheckRun[]>;
   /** Merge-readiness poller; settles once the host's {@link MergeState} leaves `unknown`. */
   getMergeState(prNumber: number): Pending<MergeState>;
+  /**
+   * Optional: whether the current user may bypass the rules that gate merges into `branch`. A
+   * `blocking` merge state (e.g. an unmet required review) reflects the rule, not the viewer's
+   * privileges, so a maintainer who can bypass still sees `blocked`. This answers the second
+   * question - "but may *I* merge anyway?" - so the merge gate can pass instead of nagging.
+   */
+  canBypassMerge?(branch: string): Promise<boolean>;
   /** Optional host-specific CI log retrieval for failed checks. */
   getFailedCheckLogs?(input: { prNumber: number; checkNames?: string[] }): Promise<string>;
 }

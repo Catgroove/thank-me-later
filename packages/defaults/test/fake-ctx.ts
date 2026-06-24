@@ -121,6 +121,8 @@ export class FakeGitProvider implements GitProvider {
   checks: CheckRun[] = [{ name: "ci", status: "completed", conclusion: "success" }];
   /** Merge-readiness the merge gate polls; `clean` is mergeable by default. */
   mergeStateStatus: MergeState = "clean";
+  /** Whether the current user may bypass merge rules; the gate consults this for blocked/behind. */
+  mergeBypass = false;
   private nextNumber = 1;
 
   findPullRequest(_head: string): Promise<PullRequest | null> {
@@ -157,6 +159,9 @@ export class FakeGitProvider implements GitProvider {
   }
   getMergeState(_prNumber: number): Pending<MergeState> {
     return settled(this.mergeStateStatus);
+  }
+  canBypassMerge(_branch: string): Promise<boolean> {
+    return Promise.resolve(this.mergeBypass);
   }
 }
 

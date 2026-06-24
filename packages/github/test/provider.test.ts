@@ -239,6 +239,49 @@ describe("getMergeState polling", () => {
   });
 });
 
+describe("canBypassMerge", () => {
+  const isBranchRules = (args: string[]) =>
+    args[0] === "api" && (args[1] ?? "").includes("/rules/branches/");
+  const isRuleset = (args: string[]) => args[0] === "api" && /\/rulesets\/\d+$/.test(args[1] ?? "");
+
+  test("permits merge when the user can bypass every gating ruleset (fetched once each)", async () => {
+    const { gitProvider, calls } = gitProviderWith((args) => {
+      if (isBranchRules(args))
+        return JSON.stringify([
+          { type: "deletion", ruleset_id: 1 },
+          { type: "pull_request", ruleset_id: 1 },
+          { type: "required_status_checks", ruleset_id: 1 },
+        ]);
+      if (isRuleset(args)) return JSON.stringify({ current_user_can_bypass: "always" });
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    expect(await gitProvider.canBypassMerge?.("master")).toBe(true);
+    expect(calls[0]).toEqual(["api", "repos/{owner}/{repo}/rules/branches/master"]);
+    expect(calls.filter(isRuleset)).toHaveLength(1); // ruleset 1 deduped across its rules
+  });
+
+  test("denies merge when a gating ruleset cannot be bypassed", async () => {
+    const { gitProvider } = gitProviderWith((args) => {
+      if (isBranchRules(args)) return JSON.stringify([{ type: "pull_request", ruleset_id: 7 }]);
+      if (isRuleset(args)) return JSON.stringify({ current_user_can_bypass: "never" });
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    expect(await gitProvider.canBypassMerge?.("master")).toBe(false);
+  });
+
+  test("denies merge when no merge-gating rule applies to the branch", async () => {
+    const { gitProvider, calls } = gitProviderWith((args) => {
+      if (isBranchRules(args)) return JSON.stringify([{ type: "non_fast_forward", ruleset_id: 1 }]);
+      throw new Error(`unexpected args: ${args.join(" ")}`);
+    });
+
+    expect(await gitProvider.canBypassMerge?.("master")).toBe(false);
+    expect(calls.filter(isRuleset)).toHaveLength(0); // never fetches a ruleset it needn't
+  });
+});
+
 describe("getChecks polling", () => {
   /** A runner that walks `responses`, repeating the last once exhausted. */
   function advancingRunner(responses: string[]): GhRunner {

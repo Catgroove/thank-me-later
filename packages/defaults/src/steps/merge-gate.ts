@@ -17,7 +17,11 @@ import {
   type Step,
 } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";
-import { isMergeGateMergeable, mergeGateStatePolicy } from "../merge-gate-policy.ts";
+import {
+  isBypassEligibleMergeState,
+  isMergeGateMergeable,
+  mergeGateStatePolicy,
+} from "../merge-gate-policy.ts";
 import { mergeGatePrompt } from "../prompts.ts";
 
 /** Poll cadence: every 10s, give up after 30min - mirrors `ci-wait`, since both wait on the host. */
@@ -56,8 +60,23 @@ export function mergeGateStep(): Step {
     resume: "reconcile",
     async run(ctx: Ctx) {
       const pr = ctx.read(pullRequest);
-      // Bind so the poller keeps its provider `this` when called detached below.
+      // Bind so the pollers keep their provider `this` when called detached below.
       const getMergeState = ctx.gitProvider.getMergeState.bind(ctx.gitProvider);
+      const canBypassMerge = ctx.gitProvider.canBypassMerge?.bind(ctx.gitProvider);
+
+      // When a blocking state is one a bypass actor could merge through, ask the host whether *this*
+      // user may. A maintainer who can bypass shouldn't be nagged about a rule they can override;
+      // for everyone else (and for genuinely unmergeable states) the finding stands.
+      async function bypassPermitted(state: MergeState): Promise<boolean> {
+        if (canBypassMerge === undefined || !isBypassEligibleMergeState(state)) return false;
+        try {
+          return await canBypassMerge(pr.base);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.log(`merge-gate: could not determine bypass permission: ${message}`);
+          return false;
+        }
+      }
 
       let latestState: MergeState = "unknown";
       const result = await executeRoundLoop(ctx, {
@@ -72,11 +91,18 @@ export function mergeGateStep(): Step {
             if (error instanceof TimeoutError) return { findings: [timeoutFinding(pr.number)] };
             throw error;
           }
-          ctx.log(
-            `merge: ${latestState}${isMergeGateMergeable(latestState) ? " (mergeable)" : ""}`,
-          );
           const finding = mergeFinding(latestState, pr.base);
-          return { findings: finding ? [finding] : [] };
+          const bypassed = finding !== null && (await bypassPermitted(latestState));
+          ctx.log(
+            `merge: ${latestState}${
+              isMergeGateMergeable(latestState)
+                ? " (mergeable)"
+                : bypassed
+                  ? " (blocked, but you may bypass)"
+                  : ""
+            }`,
+          );
+          return { findings: bypassed ? [] : finding ? [finding] : [] };
         },
         async fix(input) {
           const agentResult = await ctx.agent.run(

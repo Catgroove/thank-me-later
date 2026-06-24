@@ -560,6 +560,7 @@ function makeContext(
   // Provider keeps its prototype methods).
   const base = providers.gitProvider;
   const getMergeState = base.getMergeState.bind(base);
+  const canBypassMerge = base.canBypassMerge?.bind(base);
   const getFailedCheckLogs = base.getFailedCheckLogs?.bind(base);
   const gitProvider: GitProvider = {
     async openPullRequest(input) {
@@ -576,6 +577,7 @@ function makeContext(
     updatePullRequestBody: (input) => base.updatePullRequestBody(input),
     getChecks: (prNumber) => base.getChecks(prNumber),
     getMergeState,
+    ...(canBypassMerge ? { canBypassMerge } : {}),
     ...(getFailedCheckLogs ? { getFailedCheckLogs } : {}),
   };
 
