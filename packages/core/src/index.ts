@@ -4,6 +4,7 @@
 
 export {
   type ApprovalDecision,
+  type ApprovalDecisionSource,
   type ApproveDecision,
   type ApproveFindingsInput,
   type AbortDecision,

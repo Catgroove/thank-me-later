@@ -135,6 +135,7 @@ describe("merge-gate step", () => {
     expect(result).toMatchObject({
       rounds: [
         { trigger: "initial", findings: [{ title: "PR is not mergeable (behind)" }] },
+        { trigger: "approval", findings: [{ title: "PR is not mergeable (behind)" }] },
         { trigger: "user_fix" },
         { trigger: "verify", findings: [] },
       ],

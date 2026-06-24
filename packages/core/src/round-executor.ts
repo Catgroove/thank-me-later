@@ -197,6 +197,7 @@ export async function executeRoundLoop(
       throw new Error(`${options.stepName}: approval fix selected no current findings`);
     }
     const userFindings = decision.userFindings ?? [];
+    await appendRound(ctx, options, rounds, approvalRound(findings, decision));
     attempts += 1;
     lastFixProgress = await applyFix(ctx, options, {
       trigger: "user_fix",
@@ -312,12 +313,15 @@ function currentSelectedFindingIds(
 function approvalRound(findings: readonly Finding[], decision: ApprovalDecision): RoundRecordInput {
   const userFindings = decision.userFindings ?? [];
   const userNotes = cleanNotes(decision.notes);
-  const resolution = decision.action === "skip" ? "skipped" : "approved";
+  const resolution =
+    decision.action === "fix" ? undefined : decision.action === "skip" ? "skipped" : "approved";
   return {
     trigger: "approval",
     findings: [...findings, ...userFindings],
+    ...(decision.action === "fix" ? { selectedFindingIds: [...decision.selectedFindingIds] } : {}),
     ...(userNotes ? { userNotes } : {}),
-    resolution,
+    ...(decision.source ? { approvalSource: decision.source } : {}),
+    ...(resolution ? { resolution } : {}),
   };
 }
 

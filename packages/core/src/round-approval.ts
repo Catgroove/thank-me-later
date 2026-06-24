@@ -37,7 +37,9 @@ export function isRoundApproveFindingsInput(
   return typeof stopReason === "string" && ROUND_LOOP_STOP_REASONS.has(stopReason);
 }
 
-export function autoApproveResponder(): (input: ApprovalFindingsInput) => Promise<ApprovalDecision> {
+export function autoApproveResponder(): (
+  input: ApprovalFindingsInput,
+) => Promise<ApprovalDecision> {
   return (input) => Promise.resolve(autoApproveFindings(input));
 }
 
@@ -51,7 +53,7 @@ export function autoApproveFindings(input: ApprovalFindingsInput): ApprovalDecis
     const selectedFindingIds = input.findings
       .filter((finding) => finding.action === "ask-user")
       .map((finding) => finding.id);
-    if (selectedFindingIds.length > 0) return { action: "fix", selectedFindingIds };
+    if (selectedFindingIds.length > 0) return { action: "fix", selectedFindingIds, source: "auto" };
     return approveOptionalOrAbort(input, stopReason);
   }
 
@@ -66,10 +68,11 @@ function approveOptionalOrAbort(
   const required = input.findings.filter((finding) =>
     REQUIRED_DISPOSITIONS.has(finding.disposition),
   );
-  if (required.length === 0) return { action: "approve" };
+  if (required.length === 0) return { action: "approve", source: "auto" };
   const where = stopReason === undefined ? "" : ` at ${stopReason}`;
   return {
     action: "abort",
+    source: "auto",
     reason: `auto approval stopped${where}: unresolved ${describeFindings(required)}`,
   };
 }
