@@ -359,13 +359,13 @@ describe("engine - flow signals, ask, and failure", () => {
     expect(events).toContainEqual({
       type: "approval:pending",
       step: "approval",
-      input: {
+      input: expect.objectContaining({
         prompt: "Review findings",
         stopReason: "needs_user",
         findings: [finding],
         suggestedFindingIds: [finding.id],
         context: "round history",
-      },
+      }),
     });
     expect(events).toContainEqual({ type: "step:log", step: "approval", message: "decision=fix" });
   });

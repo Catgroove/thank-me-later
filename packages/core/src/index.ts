@@ -7,7 +7,11 @@ export {
   type ApproveDecision,
   type ApproveFindingsInput,
   type AbortDecision,
+  autoApproveFindings,
+  autoApproveResponder,
   type FixDecision,
+  isRoundApproveFindingsInput,
+  type RoundApproveFindingsInput,
   type RoundLoopStopReason,
   type SkipDecision,
 } from "./approval.ts";

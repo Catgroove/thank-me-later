@@ -98,7 +98,6 @@ describe("TUI App (no real terminal)", () => {
       kind: "approval",
       input: {
         prompt: "Approve these findings",
-        stopReason: "needs_user",
         findings: [
           makeFinding("x", {
             disposition: "should-fix",

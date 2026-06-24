@@ -405,7 +405,6 @@ describe("present", () => {
   test("approval:pending sets a structured pending interaction", () => {
     const input = {
       prompt: "Review findings",
-      stopReason: "needs_user" as const,
       findings: [finding],
     };
     const view = fold([
@@ -423,7 +422,7 @@ describe("present", () => {
       {
         type: "approval:pending",
         step: "review",
-        input: { prompt: "p", stopReason: "needs_user", findings: [] },
+        input: { prompt: "p", findings: [] },
       },
       { type: "run:finished" },
     ]);

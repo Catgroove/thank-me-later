@@ -104,14 +104,11 @@ describe("tui approval helpers", () => {
     expect(
       suggestedSelection({
         prompt: "p",
-        stopReason: "needs_user",
         findings: [f1, f2],
         suggestedFindingIds: [f1.id, "stale"],
       }),
     ).toEqual([f1.id]);
-    expect(
-      suggestedSelection({ prompt: "p", stopReason: "needs_user", findings: [f1, f2] }),
-    ).toEqual([]);
+    expect(suggestedSelection({ prompt: "p", findings: [f1, f2] })).toEqual([]);
   });
 
   test("toggleSelection toggles one visible finding id", () => {
@@ -172,7 +169,6 @@ describe("tui interaction controller", () => {
     });
     const decision = interactions.approveFindings({
       prompt: "review",
-      stopReason: "needs_user",
       findings: [],
     });
     if (active?.kind !== "approval") throw new Error("expected approval prompt");

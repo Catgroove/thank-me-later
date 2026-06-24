@@ -5,6 +5,15 @@
 
 import type { Finding } from "./round.ts";
 
+const REQUIRED_DISPOSITIONS = new Set<Finding["disposition"]>(["blocker", "should-fix"]);
+const ROUND_LOOP_STOP_REASONS: ReadonlySet<string> = new Set([
+  "clean",
+  "needs_user",
+  "auto_fix_limit_hit",
+  "no_progress",
+  "remaining_findings",
+]);
+
 export type RoundLoopStopReason =
   | "clean"
   | "needs_user"
@@ -15,14 +24,16 @@ export type RoundLoopStopReason =
 export interface ApproveFindingsInput {
   /** Human prompt shown above the structured findings. */
   readonly prompt: string;
-  /** Structural reason the round loop stopped and needs an approval decision. */
-  readonly stopReason: RoundLoopStopReason;
   /** Findings awaiting a decision. */
   readonly findings: readonly Finding[];
   /** Optional suggested selection, usually the auto-fixable findings. The UI may change it. */
   readonly suggestedFindingIds?: readonly string[];
   /** Optional context such as previous round history or policy notes. */
   readonly context?: string;
+}
+
+export interface RoundApproveFindingsInput extends ApproveFindingsInput {
+  readonly stopReason: RoundLoopStopReason;
 }
 
 interface ApprovalDecisionBase {
@@ -52,3 +63,50 @@ export interface AbortDecision extends ApprovalDecisionBase {
 }
 
 export type ApprovalDecision = ApproveDecision | FixDecision | SkipDecision | AbortDecision;
+
+export function isRoundApproveFindingsInput(
+  input: ApproveFindingsInput,
+): input is RoundApproveFindingsInput {
+  const stopReason = (input as { readonly stopReason?: unknown }).stopReason;
+  return typeof stopReason === "string" && ROUND_LOOP_STOP_REASONS.has(stopReason);
+}
+
+export function autoApproveResponder(): (input: ApproveFindingsInput) => Promise<ApprovalDecision> {
+  return (input) => Promise.resolve(autoApproveFindings(input));
+}
+
+export function autoApproveFindings(input: ApproveFindingsInput): ApprovalDecision {
+  const stopReason = isRoundApproveFindingsInput(input) ? input.stopReason : undefined;
+
+  if (stopReason === "needs_user") {
+    const selectedFindingIds = input.findings
+      .filter((finding) => finding.action === "ask-user")
+      .map((finding) => finding.id);
+    if (selectedFindingIds.length > 0) return { action: "fix", selectedFindingIds };
+    return approveOptionalOrAbort(input, stopReason);
+  }
+
+  if (stopReason === "clean") return { action: "approve" };
+  return approveOptionalOrAbort(input, stopReason);
+}
+
+function approveOptionalOrAbort(
+  input: ApproveFindingsInput,
+  stopReason: RoundLoopStopReason | undefined,
+): ApprovalDecision {
+  const required = input.findings.filter((finding) =>
+    REQUIRED_DISPOSITIONS.has(finding.disposition),
+  );
+  if (required.length === 0) return { action: "approve" };
+  const where = stopReason === undefined ? "" : ` at ${stopReason}`;
+  return {
+    action: "abort",
+    reason: `auto approval stopped${where}: unresolved ${describeFindings(required)}`,
+  };
+}
+
+function describeFindings(findings: readonly Finding[]): string {
+  return findings
+    .map((finding) => `${finding.disposition} "${finding.title}" (${finding.id})`)
+    .join(", ");
+}

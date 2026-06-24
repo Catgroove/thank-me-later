@@ -6,7 +6,11 @@
 // through `ctx.approveFindings`: an approve or skip ends the loop with a recorded decision, a fix
 // continues the loop with the operator's selection and notes, and an abort throws.
 
-import type { ApprovalDecision, RoundLoopStopReason } from "./approval.ts";
+import type {
+  ApprovalDecision,
+  RoundApproveFindingsInput,
+  RoundLoopStopReason,
+} from "./approval.ts";
 import type { Ctx } from "./context.ts";
 import {
   type Finding,
@@ -169,13 +173,14 @@ export async function executeRoundLoop(
     }
 
     const suggestedFindingIds = currentSelectedFindingIds(findings, rounds);
-    const decision = await ctx.approveFindings({
+    const approvalInput: RoundApproveFindingsInput = {
       prompt: defaultPrompt(options.stepName, stopReason),
       stopReason,
       findings,
       ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
       context: renderRoundsForPrompt(rounds),
-    });
+    };
+    const decision = await ctx.approveFindings(approvalInput);
 
     if (decision.action === "abort") {
       throw new Error(decision.reason ?? "approval aborted by operator");

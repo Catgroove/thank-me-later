@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Config,
+  autoApproveResponder,
   createEngine,
   createGit,
   type Engine,
@@ -17,7 +18,6 @@ import {
   type RunJournalResumeMode,
 } from "@tml/core";
 import {
-  autoApproveResponder,
   createTerminalRenderer,
   failingApproveResponder,
   failingAskResponder,

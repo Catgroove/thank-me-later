@@ -355,7 +355,6 @@ describe("ship() run lifecycle", () => {
 
     const approveError = await approveFindings({
       prompt: "Review findings",
-      stopReason: "needs_user",
       findings: [
         makeFinding("test", {
           disposition: "should-fix",
@@ -392,7 +391,7 @@ describe("ship() run lifecycle", () => {
     const { ask, approveFindings } = captured ?? {};
     if (ask === undefined || approveFindings === undefined) throw new Error("missing responders");
     expect(await ask("ok?")).toBe("answered: ok?");
-    expect(await approveFindings({ prompt: "p", stopReason: "needs_user", findings: [] })).toEqual({
+    expect(await approveFindings({ prompt: "p", findings: [] })).toEqual({
       action: "approve",
     });
   });

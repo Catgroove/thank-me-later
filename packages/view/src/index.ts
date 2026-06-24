@@ -4,7 +4,6 @@
 // fold, so they cannot drift. No presentation logic lives in `@tml/core`;
 // this package peer-depends on core and imports only its public `RunEvent`.
 
-export { autoApproveResponder } from "./auto-approve.ts";
 export { initialView, present, type ViewState } from "./present.ts";
 export type { InteractiveRenderer, Renderer } from "./renderer.ts";
 export { failingApproveResponder, failingAskResponder } from "./responders.ts";

@@ -357,7 +357,6 @@ describe("createTerminalRenderer (TTY)", () => {
         step: "review",
         input: {
           prompt: "Review findings",
-          stopReason: "needs_user",
           findings: [
             {
               id: "review:1",
@@ -496,7 +495,6 @@ describe("createTerminalRenderer (plain)", () => {
         step: "review",
         input: {
           prompt: "Review findings",
-          stopReason: "needs_user",
           findings: [
             {
               id: "review:1",

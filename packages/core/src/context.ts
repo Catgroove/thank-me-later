@@ -44,7 +44,7 @@ export interface Ctx<
   ask(prompt: string): Promise<string>;
 
   /** Escalate a finding-based gate; resolves to a structured approval decision. */
-  approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision>;
+  approveFindings<I extends ApproveFindingsInput>(input: I): Promise<ApprovalDecision>;
 
   /** Completed rounds from earlier Steps in this Run, including journal-replayed rounds. */
   rounds(step?: string): readonly RoundRecord[];
