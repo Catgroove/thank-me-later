@@ -88,6 +88,8 @@ describe("parseShipArgs", () => {
   test("preserves --verbose, --fresh, and --resume", () => {
     expect(parseShipArgs(["--verbose"]).verbose).toBe(true);
     expect(parseShipArgs(["-v"]).verbose).toBe(true);
+    expect(parseShipArgs([]).auto).toBe(false);
+    expect(parseShipArgs(["--auto"]).auto).toBe(true);
     expect(parseShipArgs([]).journalResume).toBeUndefined();
     expect(parseShipArgs(["--fresh"]).journalResume).toBe("fresh");
     expect(parseShipArgs(["--resume"])).toMatchObject({ journalResume: "auto" });
@@ -105,11 +107,13 @@ describe("parseShipArgs", () => {
     });
     expect(parseShipArgs(["--resume", "run-7", "--fresh"])).toEqual({
       verbose: false,
+      auto: false,
       plain: false,
       journalResume: "fresh",
     });
     expect(parseShipArgs(["--resume", "run-7", "--resume"])).toEqual({
       verbose: false,
+      auto: false,
       plain: false,
       journalResume: "auto",
     });
@@ -351,6 +355,7 @@ describe("ship() run lifecycle", () => {
 
     const approveError = await approveFindings({
       prompt: "Review findings",
+      stopReason: "needs_user",
       findings: [
         makeFinding("test", {
           disposition: "should-fix",
@@ -387,7 +392,9 @@ describe("ship() run lifecycle", () => {
     const { ask, approveFindings } = captured ?? {};
     if (ask === undefined || approveFindings === undefined) throw new Error("missing responders");
     expect(await ask("ok?")).toBe("answered: ok?");
-    expect(await approveFindings({ prompt: "p", findings: [] })).toEqual({ action: "approve" });
+    expect(await approveFindings({ prompt: "p", stopReason: "needs_user", findings: [] })).toEqual({
+      action: "approve",
+    });
   });
 
   test("a TTY default selects the TUI through the createTui seam; non-TTY and --plain do not", async () => {

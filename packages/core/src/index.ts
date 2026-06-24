@@ -8,6 +8,7 @@ export {
   type ApproveFindingsInput,
   type AbortDecision,
   type FixDecision,
+  type RoundLoopStopReason,
   type SkipDecision,
 } from "./approval.ts";
 export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
@@ -53,7 +54,6 @@ export {
   type RoundFixResult,
   type RoundLoopOptions,
   type RoundLoopResult,
-  type RoundLoopStopReason,
   type RoundStopPolicyInput,
 } from "./round-executor.ts";
 export { defineStep, type Step, type StepResult, type StepRun } from "./step.ts";

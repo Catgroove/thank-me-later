@@ -403,7 +403,11 @@ describe("present", () => {
   });
 
   test("approval:pending sets a structured pending interaction", () => {
-    const input = { prompt: "Review findings", findings: [finding] };
+    const input = {
+      prompt: "Review findings",
+      stopReason: "needs_user" as const,
+      findings: [finding],
+    };
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
@@ -416,7 +420,11 @@ describe("present", () => {
     const view = fold([
       { type: "run:started", pipeline: ["review"] },
       { type: "step:started", step: "review" },
-      { type: "approval:pending", step: "review", input: { prompt: "p", findings: [] } },
+      {
+        type: "approval:pending",
+        step: "review",
+        input: { prompt: "p", stopReason: "needs_user", findings: [] },
+      },
       { type: "run:finished" },
     ]);
     expect(view.pendingInteraction).toBeUndefined();

@@ -5,9 +5,18 @@
 
 import type { Finding } from "./round.ts";
 
+export type RoundLoopStopReason =
+  | "clean"
+  | "needs_user"
+  | "auto_fix_limit_hit"
+  | "no_progress"
+  | "remaining_findings";
+
 export interface ApproveFindingsInput {
   /** Human prompt shown above the structured findings. */
   readonly prompt: string;
+  /** Structural reason the round loop stopped and needs an approval decision. */
+  readonly stopReason: RoundLoopStopReason;
   /** Findings awaiting a decision. */
   readonly findings: readonly Finding[];
   /** Optional suggested selection, usually the auto-fixable findings. The UI may change it. */
@@ -38,6 +47,8 @@ export interface SkipDecision extends ApprovalDecisionBase {
 
 export interface AbortDecision extends ApprovalDecisionBase {
   readonly action: "abort";
+  /** Optional abort explanation surfaced by non-interactive policies. */
+  readonly reason?: string;
 }
 
 export type ApprovalDecision = ApproveDecision | FixDecision | SkipDecision | AbortDecision;

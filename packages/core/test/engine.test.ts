@@ -335,6 +335,7 @@ describe("engine - flow signals, ask, and failure", () => {
       async run(ctx) {
         const decision = await ctx.approveFindings({
           prompt: "Review findings",
+          stopReason: "needs_user",
           findings: [finding],
           suggestedFindingIds: [finding.id],
           context: "round history",
@@ -360,6 +361,7 @@ describe("engine - flow signals, ask, and failure", () => {
       step: "approval",
       input: {
         prompt: "Review findings",
+        stopReason: "needs_user",
         findings: [finding],
         suggestedFindingIds: [finding.id],
         context: "round history",
@@ -372,7 +374,9 @@ describe("engine - flow signals, ask, and failure", () => {
     const approvals = defineStep({
       name: "approvals",
       run: (ctx) =>
-        ctx.approveFindings({ prompt: "Review findings", findings: [] }).then(() => ({})),
+        ctx
+          .approveFindings({ prompt: "Review findings", stopReason: "needs_user", findings: [] })
+          .then(() => ({})),
     });
     const events = await collect(engineFor([approvals]));
     const last = events.at(-1);

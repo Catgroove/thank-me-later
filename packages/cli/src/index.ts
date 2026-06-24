@@ -17,6 +17,7 @@ import {
   type RunJournalResumeMode,
 } from "@tml/core";
 import {
+  autoApproveResponder,
   createTerminalRenderer,
   failingApproveResponder,
   failingAskResponder,
@@ -44,6 +45,8 @@ export interface ShipDeps {
   runId?: string;
   /** Seal the full per-step trail instead of the quiet, results-forward default (`--verbose`). */
   verbose?: boolean;
+  /** Force non-interactive finding approvals through the bounded auto policy (`--auto`). */
+  auto?: boolean;
   /** Force the append-only/inline terminal renderer instead of the full-screen TUI (`--plain`). */
   plain?: boolean;
   /** Whether stdout is a TTY. Defaults to `process.stdout.isTTY`; injected by tests. */
@@ -85,8 +88,10 @@ const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 14
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
+  const auto = deps.auto ?? false;
   const buildConfig =
-    deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
+    deps.buildConfig ??
+    ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir), { autoApprove: auto }));
   const engineFor = deps.engineFor ?? createEngine;
   const verbose = deps.verbose ?? false;
   // Closing the TUI while the Run is active aborts it through this controller (ending the Run with
@@ -103,12 +108,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     }));
 
   // The renderer may also be the Run's interactive responder (the TUI is). When it is not (plain /
-  // non-TTY), wire clear failing responders so an Ask/approval fails with an actionable message
-  // instead of the engine's internal headless-suspend error.
+  // non-TTY), wire clear failing responders so an Ask/approval fails with an actionable message.
+  // `--auto` replaces only the approval responder; Ask remains interactive or explicitly failing.
   const interactive = renderer as InteractiveRenderer;
   const ask = interactive.ask?.bind(interactive) ?? failingAskResponder();
-  const approveFindings =
-    interactive.approveFindings?.bind(interactive) ?? failingApproveResponder();
+  const approveFindings = auto
+    ? autoApproveResponder()
+    : (interactive.approveFindings?.bind(interactive) ?? failingApproveResponder());
 
   // On a signal (Ctrl-C, kill) Bun terminates the process without running the `finally`
   // below, so the renderer's teardown never fires and the terminal is left with a hidden
@@ -293,6 +299,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
 
 export interface ShipArgs {
   readonly verbose: boolean;
+  readonly auto: boolean;
   readonly plain: boolean;
   readonly journalResume?: RunJournalResumeMode;
   readonly runId?: string;
@@ -305,12 +312,17 @@ type JournalSelection =
 
 export function parseShipArgs(args: string[]): ShipArgs {
   let verbose = false;
+  let auto = false;
   let plain = false;
   let journalSelection: JournalSelection | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--verbose" || arg === "-v") {
       verbose = true;
+      continue;
+    }
+    if (arg === "--auto") {
+      auto = true;
       continue;
     }
     if (arg === "--plain" || arg === "--no-tui") {
@@ -341,6 +353,7 @@ export function parseShipArgs(args: string[]): ShipArgs {
   }
   return {
     verbose,
+    auto,
     plain,
     ...(journalSelection ? { journalResume: journalSelection.mode } : {}),
     ...(journalSelection?.mode === "exact" ? { runId: journalSelection.runId } : {}),
@@ -362,6 +375,9 @@ Commands:
 Ship options:
   -v, --verbose       Seal the full per-step trail instead of the quiet,
                       results-forward default.
+      --auto          Resolve review finding gates without prompting: fix
+                      ask-user findings, approve optional findings, and abort
+                      unresolved blockers.
       --plain         Force the append-only/inline renderer instead of the
                       full-screen TUI. (alias: --no-tui)
       --fresh         Start a new isolated run, discarding previous journal state
