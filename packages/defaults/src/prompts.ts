@@ -50,9 +50,10 @@ export function checkPrompt(input: CheckPromptInput): string {
   const history = input.historyText.trim();
   const prior =
     input.trigger === "verify" && hasPriorRounds(history)
-      ? "\n\nPrior check round history from this run. Use it explicitly: verify that previous " +
-        "auto-fix findings were actually fixed, do not re-report resolved findings, and report " +
-        "any remaining or newly introduced findings against the current worktree.\n" +
+      ? "\n\nPrior check round history from this run. You own reconciliation for this verify " +
+        "pass: compare the current worktree against prior findings, confirm which selected " +
+        "auto-fix findings are resolved, do not re-report resolved findings, and report only " +
+        "issues still present or newly introduced.\n" +
         history
       : "";
   return (
@@ -88,8 +89,9 @@ export function checkFixPrompt(input: CheckFixPromptInput): string {
     "\n\nApply fixes in place for the selected findings below. Use repository context and the " +
     "selected finding details; do not add repo-specific command detection to tml and do not " +
     "install dependencies. Start by double-checking that each finding is legitimate, skip any " +
-    "that are not, and prefer the smallest correct root-cause fix. After editing, run the most " +
-    "relevant verification command only when it is already available without setup. Do not " +
+    "that are not, and prefer the smallest correct root-cause fix. If you cannot make further " +
+    "progress, leave the worktree unchanged and say why in the summary. After editing, run the " +
+    "most relevant verification command only when it is already available without setup. Do not " +
     "commit. Summarise what you changed in one short line." +
     prior +
     "\n\nSelected findings:\n" +
@@ -163,8 +165,9 @@ export function ciFixPrompt(input: CiFixPromptInput): string {
   return (
     "The pull request CI checks below failed after the branch was pushed. Diagnose and fix the " +
     "selected findings in place. Prefer the smallest root-cause fix in the repository over " +
-    "papering over CI. Run the most relevant local verification command when practical. Do not " +
-    "commit or push. Summarise what you changed in one short line." +
+    "papering over CI. If you cannot make further progress, leave the worktree unchanged and " +
+    "say why in the summary. Run the most relevant local verification command when practical. " +
+    "Do not commit or push. Summarise what you changed in one short line." +
     prior +
     "\n\nSelected findings and latest check statuses:\n" +
     metadata +
@@ -289,7 +292,8 @@ export function fixPrompt(findings: readonly FixPromptFinding[], historyText?: s
     "A review of this branch produced the findings below. Apply fixes for them in place. Always " +
     "start by double-checking that each finding is legitimate, and skip any that are not. Prefer " +
     "the smallest correct root-cause fix within the changed area over patching only the reported " +
-    "line. Do not revert the author's intentional changes, and do not add code comments " +
+    "line. If you cannot make further progress, leave the worktree unchanged and say why in the " +
+    "summary. Do not revert the author's intentional changes, and do not add code comments " +
     "explaining your fixes. Summarise what you changed in one short line." +
     prior +
     "\n\nFindings:\n" +

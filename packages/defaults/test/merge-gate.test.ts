@@ -61,7 +61,7 @@ describe("merge-gate step", () => {
     expect(result).toMatchObject({
       rounds: [
         { trigger: "initial", findings: [{ title: "PR is not mergeable (blocked)" }] },
-        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
+        { trigger: "approval", resolution: "approved" },
       ],
     });
   });
@@ -162,7 +162,7 @@ describe("merge-gate step", () => {
           trigger: "initial",
           findings: [{ title: "Merge readiness did not settle before the timeout" }],
         },
-        { trigger: "user_fix" },
+        { trigger: "approval", resolution: "approved" },
       ],
     });
   });

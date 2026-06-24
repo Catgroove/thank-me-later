@@ -22,6 +22,11 @@
       "enum": ["ai", "auto", "require"],
       "description": "How the branch Step gets a feature branch when you aren't on one. Default: \"ai\"."
     },
+    "maxFixAttempts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Maximum automatic fix attempts per round-loop Step. Default: 3."
+    },
     "models": {
       "type": "object",
       "description": "Per-Step model overrides, keyed by Step name; the reserved key \"default\" is the run-wide floor. Values are raw, harness-specific model ids.",

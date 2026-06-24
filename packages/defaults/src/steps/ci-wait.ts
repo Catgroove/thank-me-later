@@ -16,11 +16,11 @@ import {
 } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";
 import { ciFixPrompt } from "../prompts.ts";
+import type { FixLoopPolicy } from "./fix-loop.ts";
 
 /** CI poll cadence, in milliseconds: poll every 10s, give up after 30min. Tune as runs inform us. */
 const EVERY_MS = 10_000;
 const TIMEOUT_MS = 30 * 60_000;
-const MAX_CI_AUTO_FIX_ATTEMPTS = 3;
 /**
  * How many consecutive empty rollups to tolerate before concluding the PR has no CI. Right after a
  * PR opens, GitHub reports an empty status-check rollup for the first few seconds - before the
@@ -107,7 +107,7 @@ async function failedLogsForFindings(
   }
 }
 
-export function ciWaitStep(): Step {
+export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
   return defineStep({
     name: "ci-wait",
     consumes: [pullRequest],
@@ -119,7 +119,7 @@ export function ciWaitStep(): Step {
 
       const result = await executeRoundLoop(ctx, {
         stepName: "ci-wait",
-        maxAutoFixAttempts: MAX_CI_AUTO_FIX_ATTEMPTS,
+        maxAutoFixAttempts: policy.maxAutoFixAttempts,
         async check(input) {
           try {
             const requireChecks = input.trigger === "verify" && pushedFixCommit;
@@ -166,12 +166,12 @@ export function ciWaitStep(): Step {
           const { staged } = await ctx.git.status();
           if (staged.length === 0) {
             ctx.log("ci-wait: fix produced no commit");
-            return {};
+            return { progress: "no_progress" };
           }
           const commit = await ctx.git.commit(subject);
           await ctx.git.push({ branch: pr.head });
           pushedFixCommit = true;
-          return { commitSha: commit.sha };
+          return { progress: "progressed", commitSha: commit.sha };
         },
       });
 

@@ -179,7 +179,7 @@ describe("ci-wait step", () => {
           trigger: "initial",
           findings: [{ disposition: "blocker", action: "ask-user", title: "build did not pass" }],
         },
-        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
+        { trigger: "approval", resolution: "approved" },
       ],
     });
   });
@@ -206,7 +206,7 @@ describe("ci-wait step", () => {
     expect(result).toMatchObject({
       rounds: [
         { trigger: "initial", findings: [{ title: "CI did not settle before the timeout" }] },
-        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
+        { trigger: "approval", resolution: "approved" },
       ],
     });
   });

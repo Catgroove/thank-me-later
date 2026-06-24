@@ -149,7 +149,7 @@ describe("finding lifecycle", () => {
       status(
         findingLifecycle([
           base,
-          round(1, { trigger: "user_fix", findings: [d], resolution: "approved" }),
+          round(1, { trigger: "approval", findings: [d], resolution: "approved" }),
         ]),
       ),
     ).toEqual({ d: "accepted" });
@@ -157,7 +157,7 @@ describe("finding lifecycle", () => {
       status(
         findingLifecycle([
           base,
-          round(1, { trigger: "user_fix", findings: [d], resolution: "skipped" }),
+          round(1, { trigger: "approval", findings: [d], resolution: "skipped" }),
         ]),
       ),
     ).toEqual({ d: "skipped" });

@@ -7,8 +7,8 @@
 // This is what lets a Plugin extend tml WITHOUT importing `@tml/core`: `defineStep`,
 // `defineArtifact`, flow signals, the pipeline patch ops, and `register{GitProvider,Harness}` are
 // all reachable off the injected `tml`. The declarative knobs (`tml.json`) arrive as `Selection`; JSON may only
-// toggle/select (provider names, `branch`, `models`, `disable`) — reshaping the pipeline
-// (insert/replace/reorder) is a Plugin's job.
+// toggle/select (provider names, `branch`, `maxFixAttempts`, `models`, `disable`) - reshaping the
+// pipeline (insert/replace/reorder) is a Plugin's job.
 
 import { defineArtifact } from "./artifact.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
@@ -25,20 +25,22 @@ export type HarnessFactory = (cwd: string) => Harness;
 
 /**
  * The declarative knobs from `tml.json` (merged global + project). Provider names default at
- * `build()` (`pi`/`github`). `branch` is an opaque string here — its meaning (the Branch mode)
- * belongs to `@tml/defaults`, not the core.
+ * `build()` (`pi`/`github`). `branch` and `maxFixAttempts` are opaque here; their meaning belongs
+ * to `@tml/defaults`, not the core.
  */
 export interface Selection {
   readonly harness?: string;
   readonly gitProvider?: string;
   readonly branch?: string;
+  readonly maxFixAttempts?: number;
   readonly models?: ModelMap;
   readonly disable?: readonly string[];
 }
 
-/** The read-only subset of `Selection` a Plugin may consult (e.g. the default pipeline reads `branch`). */
+/** The read-only subset of `Selection` a Plugin may consult. */
 export interface ResolvedKnobs {
   readonly branch?: string;
+  readonly maxFixAttempts?: number;
 }
 
 /** The pipeline patch surface. Every reference to a Step by name throws `AssemblyError` if absent. */
@@ -111,7 +113,10 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
   };
 
   const tml: Tml = {
-    config: { branch: selection.branch },
+    config: {
+      branch: selection.branch,
+      maxFixAttempts: selection.maxFixAttempts,
+    },
     defineStep,
     defineArtifact,
     skip,

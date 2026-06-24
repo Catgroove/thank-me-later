@@ -2,7 +2,7 @@
 //   • global   — $XDG_CONFIG_HOME/tml/tml.json  (or ~/.config/tml/tml.json)
 //   • project  — <git-root>/tml.json            (walking up from cwd; falls back to cwd)
 // They deep-merge with the project winning per key; the `plugins` arrays concatenate (global
-// then project) and `disable` unions; provider/branch scalars are project-over-global. Plugin
+// then project) and `disable` unions; provider/branch/maxFixAttempts scalars are project-over-global. Plugin
 // entries are resolved to absolute paths against *their own* config file's directory (so a
 // global plugin path isn't reinterpreted relative to the repo). Missing files → empty config,
 // which is the zero-config path: `tml ship` then runs the bundled defaults unchanged.
@@ -23,6 +23,7 @@ const ALLOWED_KEYS = new Set([
   "harness",
   "gitProvider",
   "branch",
+  "maxFixAttempts",
   "models",
   "disable",
   "plugins",
@@ -48,6 +49,7 @@ interface RawConfig {
   harness?: string;
   gitProvider?: string;
   branch?: string;
+  maxFixAttempts?: number;
   models?: ModelMap;
   disable?: string[];
   plugins?: string[];
@@ -120,6 +122,7 @@ function validate(data: unknown, path: string): RawConfig {
   assertString(obj, "harness", path);
   assertString(obj, "gitProvider", path);
   assertString(obj, "branch", path);
+  assertNonNegativeInteger(obj, "maxFixAttempts", path);
   assertModels(obj, path);
   assertStringArray(obj, "disable", path);
   assertStringArray(obj, "plugins", path);
@@ -129,6 +132,14 @@ function validate(data: unknown, path: string): RawConfig {
 function assertString(obj: Record<string, unknown>, key: string, path: string): void {
   if (obj[key] !== undefined && typeof obj[key] !== "string") {
     throw new Error(`tml: "${key}" in ${path} must be a string.`);
+  }
+}
+
+function assertNonNegativeInteger(obj: Record<string, unknown>, key: string, path: string): void {
+  const value = obj[key];
+  if (value === undefined) return;
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new Error(`tml: "${key}" in ${path} must be a non-negative integer.`);
   }
 }
 
@@ -170,12 +181,14 @@ function mergeSelection(global: RawConfig | undefined, project: RawConfig | unde
   const harness = project?.harness ?? global?.harness;
   const gitProvider = project?.gitProvider ?? global?.gitProvider;
   const branch = project?.branch ?? global?.branch;
+  const maxFixAttempts = project?.maxFixAttempts ?? global?.maxFixAttempts;
   const models = mergeModels(global?.models, project?.models);
   const disable = union(global?.disable, project?.disable);
   return {
     ...(harness !== undefined ? { harness } : {}),
     ...(gitProvider !== undefined ? { gitProvider } : {}),
     ...(branch !== undefined ? { branch } : {}),
+    ...(maxFixAttempts !== undefined ? { maxFixAttempts } : {}),
     ...(models !== undefined ? { models } : {}),
     ...(disable !== undefined ? { disable } : {}),
   };

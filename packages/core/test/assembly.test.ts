@@ -93,9 +93,14 @@ describe("createAssembly", () => {
     expect(a.tml.retry("again").kind).toBe("retry");
   });
 
-  test("models flow into the Config; branch flows into tml.config for plugins to read", () => {
-    const a = seeded({ models: { default: "haiku", review: "opus" }, branch: "require" });
+  test("models flow into the Config; knobs flow into tml.config for plugins to read", () => {
+    const a = seeded({
+      models: { default: "haiku", review: "opus" },
+      branch: "require",
+      maxFixAttempts: 4,
+    });
     expect(a.tml.config.branch).toBe("require");
+    expect(a.tml.config.maxFixAttempts).toBe(4);
     a.tml.pipeline.append(step("review"));
     expect(a.build().models).toEqual({ default: "haiku", review: "opus" });
   });

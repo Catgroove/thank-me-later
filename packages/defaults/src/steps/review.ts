@@ -16,6 +16,7 @@ import {
 } from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
+import type { FixLoopPolicy } from "./fix-loop.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 
@@ -43,9 +44,10 @@ function withRoundHistory(prompt: string, input: RoundCheckInput): string {
   if (input.trigger === "initial" || !hasPriorRounds(input.historyText)) return prompt;
   return (
     prompt +
-    "\n\nPrior review round history from this run. Use it explicitly: verify that previous " +
-    "auto-fix findings were actually fixed, do not re-report resolved findings, and explain any " +
-    "remaining or newly introduced findings against the current diff.\n" +
+    "\n\nPrior review round history from this run. You own reconciliation for this verify " +
+    "pass: compare the current diff against the prior findings, confirm which selected " +
+    "auto-fix findings are resolved, do not re-report resolved findings, and report only " +
+    "issues still present or newly introduced.\n" +
     input.historyText.trim()
   );
 }
@@ -76,7 +78,7 @@ function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): stri
     .join("; ");
 }
 
-export function reviewStep(): Step {
+export function reviewStep(policy: FixLoopPolicy = {}): Step {
   return defineStep({
     name: "review",
     consumes: [prBody],
@@ -101,6 +103,7 @@ export function reviewStep(): Step {
           );
         },
         commitMessage: "chore: apply fixes from review",
+        maxAutoFixAttempts: policy.maxAutoFixAttempts,
         recordRounds: "live",
       });
 

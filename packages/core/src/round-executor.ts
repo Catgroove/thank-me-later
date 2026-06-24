@@ -1,8 +1,8 @@
 // A reusable fresh-round loop for Steps. The caller supplies the check and fix work; this module
 // owns the round control flow: check, select auto-fix findings, fix once, commit, verify, and
-// repeat until the work is clean or stops. A verify round that reproduces the prior check's exact
-// findings is treated as stalled (the fix changed nothing) and escalates instead of looping. When a
-// stop needs a human decision and the Step names itself (`stepName`), the findings are routed
+// repeat until the work is clean or stops. The loop is bounded by an attempt cap and by a no-progress
+// signal when a fix attempt produces no commit; cross-round finding ids are not used for control.
+// When a stop needs a human decision and the Step names itself (`stepName`), the findings are routed
 // through `ctx.approveFindings`: an approve or skip ends the loop with a recorded decision, a fix
 // continues the loop with the operator's selection and notes, and an abort throws.
 
@@ -21,7 +21,7 @@ export type RoundLoopStopReason =
   | "clean"
   | "needs_user"
   | "auto_fix_limit_hit"
-  | "stalled"
+  | "no_progress"
   | "remaining_findings";
 
 export interface RoundCheckInput {
@@ -54,6 +54,9 @@ export interface RoundFixResult {
   readonly summary: string;
 }
 
+export type RoundCommitProgress = "progressed" | "no_progress";
+export type RoundFixProgress = RoundCommitProgress | "untracked";
+
 export interface RoundCommitInput {
   readonly ctx: Ctx;
   readonly fix: RoundFixInput;
@@ -61,9 +64,13 @@ export interface RoundCommitInput {
   readonly message?: string;
 }
 
-export interface RoundCommitResult {
-  readonly commitSha?: string;
-}
+export type RoundCommitResult =
+  | { readonly progress: "progressed"; readonly commitSha?: string }
+  | { readonly progress: "no_progress"; readonly commitSha?: never };
+
+type CommitFixResult =
+  | RoundCommitResult
+  | { readonly progress: "untracked"; readonly commitSha?: never };
 
 export interface RoundStopPolicyInput {
   readonly check: RoundCheckInput;
@@ -71,8 +78,7 @@ export interface RoundStopPolicyInput {
   readonly selectedFindings: readonly Finding[];
   readonly rounds: readonly RoundRecordInput[];
   readonly attempts: number;
-  /** The current verify round reproduced the previous check's findings exactly. */
-  readonly stalled: boolean;
+  readonly lastFixProgress?: RoundFixProgress;
 }
 
 export interface RoundLoopOptions {
@@ -121,8 +127,7 @@ export async function executeRoundLoop(
   }
   let attempts = 0;
   let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
-  // Finding-id set from the previous check round, used to detect a fix that changed nothing.
-  let previousCheckFindingIds: ReadonlySet<string> | undefined;
+  let lastFixProgress: RoundFixProgress | undefined;
 
   while (true) {
     const checkInput: RoundCheckInput = {
@@ -141,22 +146,13 @@ export async function executeRoundLoop(
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
     });
 
-    // A verify round whose findings exactly match the prior check's means the last fix changed
-    // nothing: re-running the same fix is unlikely to help, so escalate rather than loop on it.
-    const findingIds = new Set(findings.map((f) => f.id));
-    const stalled =
-      trigger === "verify" &&
-      previousCheckFindingIds !== undefined &&
-      sameIds(previousCheckFindingIds, findingIds);
-    previousCheckFindingIds = findingIds;
-
     let stopReason = stopPolicy(options, {
       check: checkInput,
       findings,
       selectedFindings: selected,
       rounds: [...rounds],
       attempts,
-      stalled,
+      lastFixProgress,
     });
     if (stopReason === undefined && attempts >= maxAutoFixAttempts) {
       stopReason = "auto_fix_limit_hit";
@@ -164,7 +160,7 @@ export async function executeRoundLoop(
 
     if (stopReason === undefined) {
       attempts += 1;
-      await applyFix(ctx, options, {
+      lastFixProgress = await applyFix(ctx, options, {
         trigger: "auto_fix",
         attempt: attempts,
         fixFindings: selected,
@@ -199,7 +195,7 @@ export async function executeRoundLoop(
     }
     const userFindings = decision.userFindings ?? [];
     attempts += 1;
-    await applyFix(ctx, options, {
+    lastFixProgress = await applyFix(ctx, options, {
       trigger: "user_fix",
       attempt: attempts,
       fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
@@ -222,7 +218,11 @@ interface ApplyFixArgs {
   readonly userNotes?: Record<string, string>;
 }
 
-async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs): Promise<void> {
+async function applyFix(
+  ctx: Ctx,
+  options: RoundLoopOptions,
+  args: ApplyFixArgs,
+): Promise<RoundFixProgress> {
   const fixInput: RoundFixInput = {
     attempt: args.attempt,
     findings: [...args.fixFindings],
@@ -230,7 +230,7 @@ async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs)
     historyText: renderRoundsForPrompt(args.rounds),
   };
   const fix = await options.fix(fixInput);
-  const commitSha = await commitFix(ctx, options, fixInput, fix);
+  const commit = await commitFix(ctx, options, fixInput, fix);
   const fixSummary = fix.summary.trim();
 
   await appendRound(ctx, options, args.rounds, {
@@ -239,8 +239,9 @@ async function applyFix(ctx: Ctx, options: RoundLoopOptions, args: ApplyFixArgs)
     selectedFindingIds: args.recordFindings.map((f) => f.id),
     ...(args.userNotes ? { userNotes: args.userNotes } : {}),
     ...(fixSummary.length > 0 ? { fixSummary } : {}),
-    ...(commitSha !== undefined ? { commitSha } : {}),
+    ...(commit.commitSha !== undefined ? { commitSha: commit.commitSha } : {}),
   });
+  return commit.progress;
 }
 
 async function appendRound(
@@ -274,29 +275,24 @@ function stopPolicy(
   const custom = options.stopPolicy?.(input);
   if (custom !== undefined) return custom;
   if (input.findings.length === 0) return "clean";
-  if (input.stalled) return "stalled";
+  if (input.lastFixProgress === "no_progress") return "no_progress";
   if (input.selectedFindings.length > 0) return undefined;
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
 }
 
 function requiresApproval(stopReason: RoundLoopStopReason): boolean {
   return (
-    stopReason === "needs_user" || stopReason === "auto_fix_limit_hit" || stopReason === "stalled"
+    stopReason === "needs_user" ||
+    stopReason === "auto_fix_limit_hit" ||
+    stopReason === "no_progress"
   );
 }
 
 function defaultPrompt(stepName: string, stopReason: RoundLoopStopReason): string {
   if (stopReason === "needs_user") return `${stepName} has findings that need a user decision`;
   if (stopReason === "auto_fix_limit_hit") return `${stepName} hit the auto-fix limit`;
-  if (stopReason === "stalled") return `${stepName} findings did not change after the last fix`;
+  if (stopReason === "no_progress") return `${stepName} fix attempt produced no commit`;
   return `${stepName} has unresolved findings`;
-}
-
-/** Whether two finding-id sets contain exactly the same ids. */
-function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const id of a) if (!b.has(id)) return false;
-  return true;
 }
 
 function currentSelectedFindingIds(
@@ -315,11 +311,10 @@ function approvalRound(findings: readonly Finding[], decision: ApprovalDecision)
   const userNotes = cleanNotes(decision.notes);
   const resolution = decision.action === "skip" ? "skipped" : "approved";
   return {
-    trigger: "user_fix",
+    trigger: "approval",
     findings: [...findings, ...userFindings],
     ...(userNotes ? { userNotes } : {}),
     resolution,
-    fixSummary: `Operator ${resolution} unresolved findings.`,
   };
 }
 
@@ -359,12 +354,14 @@ async function commitFix(
   options: RoundLoopOptions,
   input: RoundFixInput,
   result: RoundFixResult,
-): Promise<string | undefined> {
-  if (options.commit === false) return undefined;
+): Promise<CommitFixResult> {
+  if (options.commit === false) return { progress: "untracked" };
 
   const message = commitMessage(options, input, result);
   if (options.commit !== undefined) {
-    return (await options.commit({ ctx, fix: input, result, message })).commitSha;
+    const commit = await options.commit({ ctx, fix: input, result, message });
+    assertCommitResult(commit);
+    return commit;
   }
 
   const subject = message?.trim() ?? "";
@@ -374,9 +371,23 @@ async function commitFix(
   const { staged } = await ctx.git.status();
   if (staged.length === 0) {
     ctx.log("round executor: fix produced no commit");
-    return undefined;
+    return { progress: "no_progress" };
   }
-  return (await ctx.git.commit(subject)).sha;
+  const commit = await ctx.git.commit(subject);
+  return { progress: "progressed", commitSha: commit.sha };
+}
+
+function assertCommitResult(commit: RoundCommitResult): void {
+  if (commit.progress !== "progressed" && commit.progress !== "no_progress") {
+    throw new Error(
+      'round executor: custom commit must return progress "progressed" or "no_progress"',
+    );
+  }
+  if (commit.progress === "no_progress" && commit.commitSha !== undefined) {
+    throw new Error(
+      'round executor: custom commit must not return commitSha when progress is "no_progress"',
+    );
+  }
 }
 
 function commitMessage(
