@@ -14,6 +14,7 @@ import {
   type Step,
 } from "@tml/core";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
+import type { FixLoopPolicy } from "./fix-loop.ts";
 import {
   type CheckMode,
   checkFindingsSchema,
@@ -29,6 +30,10 @@ interface CheckPolicy {
   readonly groundRules: string;
   before(ctx: Ctx): Promise<GitStatus>;
   after(ctx: Ctx, before: GitStatus): Promise<void>;
+}
+
+export interface CheckStepOptions extends FixLoopPolicy {
+  readonly mode?: CheckMode;
 }
 
 const checkPolicies: Record<CheckMode, CheckPolicy> = {
@@ -66,19 +71,14 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
   },
 };
 
-export function checkStep(
-  name: string,
-  goal: string,
-  mode: CheckMode = "inspect",
-  maxAutoFixAttempts?: number,
-): Step {
+export function checkStep(name: string, goal: string, options: CheckStepOptions = {}): Step {
   return defineStep({
     name,
     async run(ctx) {
-      const policy = checkPolicies[mode];
+      const policy = checkPolicies[options.mode ?? "inspect"];
       const result = await executeRoundLoop(ctx, {
         stepName: name,
-        maxAutoFixAttempts,
+        maxAutoFixAttempts: options.maxAutoFixAttempts,
         async check(input) {
           const before = await policy.before(ctx);
           let agentResult: Awaited<ReturnType<typeof ctx.agent.run>>;
@@ -134,11 +134,11 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
   return parseAgentFindingsOutput(output, { namespace: name, sourceName: name });
 }
 
-export const formatStep = (maxAutoFixAttempts?: number): Step =>
-  checkStep("format", formatPrompt, "inspect", maxAutoFixAttempts);
-export const lintStep = (maxAutoFixAttempts?: number): Step =>
-  checkStep("lint", lintPrompt, "inspect", maxAutoFixAttempts);
-export const typecheckStep = (maxAutoFixAttempts?: number): Step =>
-  checkStep("typecheck", typecheckPrompt, "run", maxAutoFixAttempts);
-export const testStep = (maxAutoFixAttempts?: number): Step =>
-  checkStep("test", testPrompt, "run", maxAutoFixAttempts);
+export const formatStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("format", formatPrompt, { ...policy, mode: "inspect" });
+export const lintStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("lint", lintPrompt, { ...policy, mode: "inspect" });
+export const typecheckStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("typecheck", typecheckPrompt, { ...policy, mode: "run" });
+export const testStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("test", testPrompt, { ...policy, mode: "run" });

@@ -24,6 +24,7 @@ import { BRANCH_MODES, type BranchMode, branchStep } from "./steps/branch.ts";
 import { ciWaitStep } from "./steps/ci-wait.ts";
 import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
 import { commitStep } from "./steps/commit.ts";
+import type { FixLoopPolicy } from "./steps/fix-loop.ts";
 import { describeStep } from "./steps/describe.ts";
 import { mergeGateStep } from "./steps/merge-gate.ts";
 import { openPrStep } from "./steps/open-pr.ts";
@@ -31,7 +32,9 @@ import { rebaseStep, resyncStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
 
 export const tmlDefaults: Plugin = (tml) => {
-  const maxAutoFixAttempts = asMaxFixAttempts(tml.config.maxFixAttempts);
+  const fixLoopPolicy: FixLoopPolicy = {
+    maxAutoFixAttempts: asMaxFixAttempts(tml.config.maxFixAttempts),
+  };
   tml.pipeline.append(
     branchStep(asBranchMode(tml.config.branch)),
     describeStep(),
@@ -39,14 +42,14 @@ export const tmlDefaults: Plugin = (tml) => {
     // host hands the feature branch to a disposable worktree where the rest of the pipeline runs.
     { ...commitStep("commit-change", prTitle), isolate: true }, // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
-    formatStep(maxAutoFixAttempts),
-    lintStep(maxAutoFixAttempts),
-    typecheckStep(maxAutoFixAttempts),
-    testStep(maxAutoFixAttempts),
-    reviewStep(maxAutoFixAttempts),
+    formatStep(fixLoopPolicy),
+    lintStep(fixLoopPolicy),
+    typecheckStep(fixLoopPolicy),
+    testStep(fixLoopPolicy),
+    reviewStep(fixLoopPolicy),
     resyncStep(), // re-sync onto the latest base before opening the PR (base may have drifted)
     openPrStep(),
-    ciWaitStep(maxAutoFixAttempts),
+    ciWaitStep(fixLoopPolicy),
     mergeGateStep(),
   );
 };

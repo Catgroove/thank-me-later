@@ -16,6 +16,7 @@ import {
 } from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { revertIfWorktreeChanged } from "../git-guard.ts";
+import type { FixLoopPolicy } from "./fix-loop.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 
@@ -77,7 +78,7 @@ function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): stri
     .join("; ");
 }
 
-export function reviewStep(maxAutoFixAttempts?: number): Step {
+export function reviewStep(policy: FixLoopPolicy = {}): Step {
   return defineStep({
     name: "review",
     consumes: [prBody],
@@ -102,7 +103,7 @@ export function reviewStep(maxAutoFixAttempts?: number): Step {
           );
         },
         commitMessage: "chore: apply fixes from review",
-        maxAutoFixAttempts,
+        maxAutoFixAttempts: policy.maxAutoFixAttempts,
         recordRounds: "live",
       });
 

@@ -482,7 +482,7 @@ describe("executeRoundLoop", () => {
         commits.push(
           `${input.message}|${input.fix.attempt}|${input.result.summary}|${input.ctx === ctx}`,
         );
-        return Promise.resolve({ commitSha: "custom-sha" });
+        return Promise.resolve({ progress: "progressed", commitSha: "custom-sha" });
       },
     });
 

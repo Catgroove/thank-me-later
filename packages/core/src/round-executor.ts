@@ -54,6 +54,9 @@ export interface RoundFixResult {
   readonly summary: string;
 }
 
+export type RoundCommitProgress = "progressed" | "no_progress";
+export type RoundFixProgress = RoundCommitProgress | "untracked";
+
 export interface RoundCommitInput {
   readonly ctx: Ctx;
   readonly fix: RoundFixInput;
@@ -62,6 +65,7 @@ export interface RoundCommitInput {
 }
 
 export interface RoundCommitResult {
+  readonly progress: RoundCommitProgress;
   readonly commitSha?: string;
 }
 
@@ -71,6 +75,7 @@ export interface RoundStopPolicyInput {
   readonly selectedFindings: readonly Finding[];
   readonly rounds: readonly RoundRecordInput[];
   readonly attempts: number;
+  readonly lastFixProgress?: RoundFixProgress;
 }
 
 export interface RoundLoopOptions {
@@ -119,7 +124,7 @@ export async function executeRoundLoop(
   }
   let attempts = 0;
   let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
-  let lastFixProducedCommit: boolean | undefined;
+  let lastFixProgress: RoundFixProgress | undefined;
 
   while (true) {
     const checkInput: RoundCheckInput = {
@@ -144,17 +149,15 @@ export async function executeRoundLoop(
       selectedFindings: selected,
       rounds: [...rounds],
       attempts,
+      lastFixProgress,
     });
-    if (stopReason === undefined && lastFixProducedCommit === false) {
-      stopReason = "no_progress";
-    }
     if (stopReason === undefined && attempts >= maxAutoFixAttempts) {
       stopReason = "auto_fix_limit_hit";
     }
 
     if (stopReason === undefined) {
       attempts += 1;
-      lastFixProducedCommit = await applyFix(ctx, options, {
+      lastFixProgress = await applyFix(ctx, options, {
         trigger: "auto_fix",
         attempt: attempts,
         fixFindings: selected,
@@ -189,7 +192,7 @@ export async function executeRoundLoop(
     }
     const userFindings = decision.userFindings ?? [];
     attempts += 1;
-    lastFixProducedCommit = await applyFix(ctx, options, {
+    lastFixProgress = await applyFix(ctx, options, {
       trigger: "user_fix",
       attempt: attempts,
       fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
@@ -216,7 +219,7 @@ async function applyFix(
   ctx: Ctx,
   options: RoundLoopOptions,
   args: ApplyFixArgs,
-): Promise<boolean | undefined> {
+): Promise<RoundFixProgress> {
   const fixInput: RoundFixInput = {
     attempt: args.attempt,
     findings: [...args.fixFindings],
@@ -235,7 +238,7 @@ async function applyFix(
     ...(fixSummary.length > 0 ? { fixSummary } : {}),
     ...(commit.commitSha !== undefined ? { commitSha: commit.commitSha } : {}),
   });
-  return commit.committed;
+  return commit.progress;
 }
 
 async function appendRound(
@@ -269,7 +272,9 @@ function stopPolicy(
   const custom = options.stopPolicy?.(input);
   if (custom !== undefined) return custom;
   if (input.findings.length === 0) return "clean";
-  if (input.selectedFindings.length > 0) return undefined;
+  if (input.selectedFindings.length > 0) {
+    return input.lastFixProgress === "no_progress" ? "no_progress" : undefined;
+  }
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
 }
 
@@ -348,13 +353,14 @@ async function commitFix(
   options: RoundLoopOptions,
   input: RoundFixInput,
   result: RoundFixResult,
-): Promise<{ readonly committed?: boolean; readonly commitSha?: string }> {
-  if (options.commit === false) return {};
+): Promise<{ readonly progress: RoundFixProgress; readonly commitSha?: string }> {
+  if (options.commit === false) return { progress: "untracked" };
 
   const message = commitMessage(options, input, result);
   if (options.commit !== undefined) {
     const commit = await options.commit({ ctx, fix: input, result, message });
-    return { committed: commit.commitSha !== undefined, commitSha: commit.commitSha };
+    assertCommitProgress(commit.progress);
+    return { progress: commit.progress, commitSha: commit.commitSha };
   }
 
   const subject = message?.trim() ?? "";
@@ -364,10 +370,17 @@ async function commitFix(
   const { staged } = await ctx.git.status();
   if (staged.length === 0) {
     ctx.log("round executor: fix produced no commit");
-    return { committed: false };
+    return { progress: "no_progress" };
   }
   const commit = await ctx.git.commit(subject);
-  return { committed: true, commitSha: commit.sha };
+  return { progress: "progressed", commitSha: commit.sha };
+}
+
+function assertCommitProgress(progress: RoundCommitProgress): void {
+  if (progress === "progressed" || progress === "no_progress") return;
+  throw new Error(
+    'round executor: custom commit must return progress "progressed" or "no_progress"',
+  );
 }
 
 function commitMessage(
