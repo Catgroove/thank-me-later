@@ -57,6 +57,9 @@ export interface RoundRecord {
   readonly userNotes?: Record<string, string>;
   readonly fixSummary?: string;
   readonly commitSha?: string;
+  readonly testingSummary?: string;
+  readonly tested?: boolean;
+  readonly artifacts?: string[];
   /** Set on the terminal round of an approval gate that the operator approved or skipped. */
   readonly resolution?: RoundResolution;
   /** Source of an approval gate decision. Omitted means a human operator. */
@@ -69,7 +72,7 @@ export interface StepRoundSummary {
   readonly autoFixes: number;
   readonly finalTrigger: RoundTrigger;
   readonly finalFindings: number;
-  readonly status: "clean" | "unresolved";
+  readonly status: "clean" | "unresolved" | "accepted" | "skipped";
 }
 
 export function isFixAttemptRound(round: Pick<RoundRecord, "trigger" | "resolution">): boolean {
@@ -220,6 +223,7 @@ export function renderRoundForPr(round: RoundRecord): string {
   const lines = [`### ${round.step} round ${round.index}`, `Trigger: ${round.trigger}`, ""];
   if (round.commitSha) lines.push(`Commit: \`${round.commitSha}\``, "");
   if (round.fixSummary?.trim()) lines.push(`Fixes applied: ${round.fixSummary.trim()}`, "");
+  if (round.testingSummary?.trim()) lines.push(`Testing: ${round.testingSummary.trim()}`, "");
   if (round.findings.length === 0) {
     lines.push("No findings.");
   } else {
@@ -246,6 +250,110 @@ export function renderRoundsForPr(rounds: readonly RoundRecord[]): string {
   return rounds.map(renderRoundForPr).join("\n\n");
 }
 
+export interface RoundNarrativeOptions {
+  readonly commitBaseUrl?: string;
+}
+
+/** Deterministic issue -> fix -> verification narrative for PR audit sections. */
+export function renderRoundNarrativeForPr(
+  rounds: readonly RoundRecord[],
+  options: RoundNarrativeOptions = {},
+): string {
+  const steps = roundsByStep(rounds);
+  if (steps.length === 0) return "No local rounds recorded.";
+  return steps.map(([step, records]) => renderStepNarrative(step, records, options)).join("\n\n");
+}
+
+function renderStepNarrative(
+  step: string,
+  rounds: readonly RoundRecord[],
+  options: RoundNarrativeOptions,
+): string {
+  const ordered = [...rounds].sort((a, b) => a.index - b.index);
+  const summary = summarizeStepRounds(ordered)[0];
+  const lifecycle = findingLifecycle(ordered, { settled: true });
+  const statusByFinding = new Map(lifecycle.map((item) => [item.finding.id, item.status]));
+  const title = summary
+    ? `${step} - ${summary.status} (${summary.rounds} rounds, ${summary.autoFixes} auto-fixes)`
+    : step;
+  const lines = [`<details>`, `<summary>${escapeHtml(title)}</summary>`, ""];
+  for (const round of ordered)
+    lines.push(renderNarrativeRound(round, statusByFinding, options), "");
+  lines.push(`</details>`);
+  return lines.join("\n").trim();
+}
+
+function renderNarrativeRound(
+  round: RoundRecord,
+  statusByFinding: ReadonlyMap<string, FindingStatus>,
+  options: RoundNarrativeOptions,
+): string {
+  const lines = [`#### Round ${round.index}: ${roundLabel(round)}`];
+  if (round.fixSummary?.trim()) lines.push(`- Fix summary: ${round.fixSummary.trim()}`);
+  if (round.commitSha) lines.push(`- Fix commit: ${commitReference(round.commitSha, options)}`);
+  if (round.testingSummary?.trim()) lines.push(`- Testing summary: ${round.testingSummary.trim()}`);
+  if (round.tested !== undefined) lines.push(`- Tested: ${round.tested ? "yes" : "no"}`);
+  if (round.artifacts && round.artifacts.length > 0) {
+    lines.push("- Artifacts:");
+    for (const artifact of round.artifacts) lines.push(`  - ${artifact}`);
+  }
+  if (round.resolution === "approved")
+    lines.push("- Operator resolution: accepted remaining findings.");
+  if (round.resolution === "skipped") lines.push("- Operator resolution: skipped this step.");
+
+  if (round.findings.length === 0) {
+    lines.push("- Findings: none.");
+  } else {
+    lines.push("- Findings:");
+    for (const finding of round.findings) {
+      const status = statusByFinding.get(finding.id);
+      lines.push(`  - ${status ? `**${status}:** ` : ""}${renderFindingForPr(finding).slice(2)}`);
+    }
+  }
+
+  if (round.selectedFindingIds && round.selectedFindingIds.length > 0) {
+    const selected = renderSelectedFindings(round);
+    lines.push(`- Selected for fix: ${selected}`);
+  }
+  if (round.userNotes && Object.keys(round.userNotes).length > 0) {
+    lines.push("- Operator notes:");
+    for (const [id, note] of Object.entries(round.userNotes)) lines.push(`  - \`${id}\`: ${note}`);
+  }
+  return lines.join("\n");
+}
+
+function roundLabel(round: RoundRecord): string {
+  if (round.trigger === "initial") return "initial check";
+  if (round.trigger === "verify") return "verification";
+  if (round.trigger === "auto_fix") return "auto-fix";
+  if (round.trigger === "user_fix") return "operator-requested fix";
+  return "operator approval";
+}
+
+function renderSelectedFindings(round: RoundRecord): string {
+  const byId = new Map(round.findings.map((finding) => [finding.id, finding]));
+  return round
+    .selectedFindingIds!.map((id) => {
+      const finding = byId.get(id);
+      return finding ? `${finding.title} (\`${id}\`)` : `\`${id}\``;
+    })
+    .join(", ");
+}
+
+function commitReference(sha: string, options: RoundNarrativeOptions): string {
+  const short = sha.slice(0, 12);
+  if (options.commitBaseUrl === undefined) return `\`${short}\``;
+  return `[\`${short}\`](${options.commitBaseUrl.replace(/\/$/, "")}/${sha})`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /**
  * Compact rendering of one completed round for a fresh-agent prompt. Unlike the
  * PR renderer this is the flat, heading-free form fed back to agents (round
@@ -265,6 +373,8 @@ function renderRoundForPrompt(round: RoundRecordInput, index: number): string {
   }
   if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
   if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
+  if (round.testingSummary?.trim()) lines.push(`Testing summary: ${round.testingSummary.trim()}`);
+  if (round.tested !== undefined) lines.push(`Tested: ${round.tested ? "yes" : "no"}`);
   return lines.join("\n");
 }
 
@@ -388,14 +498,7 @@ export function currentFindings(rounds: readonly RoundRecord[]): Finding[] {
 
 /** Deterministic, compact per-Step summary for PR bodies and other audit surfaces. */
 export function summarizeStepRounds(rounds: readonly RoundRecord[]): StepRoundSummary[] {
-  const byStep = new Map<string, RoundRecord[]>();
-  for (const round of rounds) {
-    const group = byStep.get(round.step) ?? [];
-    group.push(round);
-    byStep.set(round.step, group);
-  }
-
-  return [...byStep.entries()].map(([step, records]) => {
+  return roundsByStep(rounds).map(([step, records]) => {
     const latest = records.reduce((a, b) => (b.index > a.index ? b : a));
     const finalFindings = latest.findings.length;
     return {
@@ -404,9 +507,25 @@ export function summarizeStepRounds(rounds: readonly RoundRecord[]): StepRoundSu
       autoFixes: records.filter((r) => r.trigger === "auto_fix").length,
       finalTrigger: latest.trigger,
       finalFindings,
-      status: finalFindings === 0 ? "clean" : "unresolved",
+      status: stepStatus(latest, finalFindings),
     };
   });
+}
+
+function roundsByStep(rounds: readonly RoundRecord[]): [string, RoundRecord[]][] {
+  const byStep = new Map<string, RoundRecord[]>();
+  for (const round of rounds) {
+    const group = byStep.get(round.step) ?? [];
+    group.push(round);
+    byStep.set(round.step, group);
+  }
+  return [...byStep.entries()];
+}
+
+function stepStatus(latest: RoundRecord, finalFindings: number): StepRoundSummary["status"] {
+  if (latest.resolution === "approved") return "accepted";
+  if (latest.resolution === "skipped") return "skipped";
+  return finalFindings === 0 ? "clean" : "unresolved";
 }
 
 /** Pure Markdown rendering for a deterministic PR pipeline summary table. */
@@ -425,9 +544,20 @@ export function renderPipelineSummaryForPr(rounds: readonly RoundRecord[]): stri
   return lines.join("\n");
 }
 
-/** Pure Markdown rendering for findings still present in the latest round of each Step. */
+/** Findings that are still open after excluding fixed and operator-accepted outcomes. */
+export function unresolvedFindings(rounds: readonly RoundRecord[]): Finding[] {
+  return roundsByStep(rounds).flatMap(([, records]) =>
+    findingLifecycle(records, { settled: true })
+      .filter(
+        (item) =>
+          item.status === "open" || item.status === "pending" || item.status === "unresolved",
+      )
+      .map((item) => item.finding),
+  );
+}
+
 export function renderUnresolvedFindingsForPr(rounds: readonly RoundRecord[]): string {
-  const findings = currentFindings(rounds);
+  const findings = unresolvedFindings(rounds);
   if (findings.length === 0) return "No unresolved findings.";
   return findings.map(renderFindingForPr).join("\n");
 }

@@ -50,7 +50,7 @@ describe("open-pr step", () => {
     expect(gitProvider.opened[0]?.base).toBe("main");
     expect(gitProvider.opened[0]?.title).toBe("fix: off-by-one in pager");
     expect(gitProvider.opened[0]?.body).toContain("<!-- tml:summary:start -->");
-    expect(gitProvider.opened[0]?.body).toContain("## Pipeline summary");
+    expect(gitProvider.opened[0]?.body).toContain("## Pipeline");
     expect(gitProvider.opened[0]?.body).toContain("| review | unresolved | 1 | 0 | initial | 1 |");
     expect(gitProvider.opened[0]?.body).toContain("fixed an off-by-one");
     expect(result.pullRequest.number).toBe(1);

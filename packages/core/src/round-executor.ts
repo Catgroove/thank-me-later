@@ -31,6 +31,9 @@ export interface RoundCheckInput {
 
 export interface RoundCheckResult {
   readonly findings: readonly Finding[];
+  readonly testingSummary?: string;
+  readonly tested?: boolean;
+  readonly artifacts?: readonly string[];
 }
 
 export interface RoundFixInput {
@@ -46,6 +49,7 @@ export interface RoundFixInput {
 
 export interface RoundFixResult {
   readonly summary: string;
+  readonly commitSubject?: string;
 }
 
 export type RoundCommitProgress = "progressed" | "no_progress";
@@ -138,6 +142,9 @@ export async function executeRoundLoop(
       trigger,
       findings,
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
+      ...(check.testingSummary?.trim() ? { testingSummary: check.testingSummary.trim() } : {}),
+      ...(check.tested !== undefined ? { tested: check.tested } : {}),
+      ...(check.artifacts && check.artifacts.length > 0 ? { artifacts: [...check.artifacts] } : {}),
     });
 
     let stopReason = stopPolicy(options, {

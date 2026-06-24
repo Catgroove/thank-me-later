@@ -54,7 +54,18 @@ describe("ci-wait step", () => {
 
     const result = await ciWaitStep().run(ctx);
 
-    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "initial", findings: [] }] });
+    expect(result).toEqual({
+      artifacts: {},
+      rounds: [
+        {
+          trigger: "initial",
+          findings: [],
+          testingSummary: "2 green, 0 failed, 0 pending CI checks.",
+          tested: true,
+          artifacts: ["build: success", "lint: success"],
+        },
+      ],
+    });
     expect(logs).toEqual(["ci: build -> success", "ci: lint -> success"]);
   });
 
@@ -77,7 +88,7 @@ describe("ci-wait step", () => {
     expect(agent.tasks[0]).toContain("The pull request CI checks below failed");
     expect(agent.tasks[0]).toContain("failed log");
     expect(gitProvider.logRequests).toEqual([{ prNumber: 3, checkNames: ["build"] }]);
-    expect(git.calls).toContain("commit chore: apply fixes from CI");
+    expect(git.calls).toContain("commit chore(ci): fixed build");
     expect(git.calls).toContain("push tml/ship-abc1234");
     expect(logs).toContain("ci: build -> failure");
     expect(logs).toContain("ci: build -> success");

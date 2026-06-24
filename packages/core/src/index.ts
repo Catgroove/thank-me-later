@@ -46,10 +46,12 @@ export {
   parseAgentFindingsOutput,
   renderFindingForPr,
   renderPipelineSummaryForPr,
+  renderRoundNarrativeForPr,
   renderRoundsForPr,
   renderRoundsForPrompt,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
+  unresolvedFindings,
 } from "./round.ts";
 export {
   executeRoundLoop,

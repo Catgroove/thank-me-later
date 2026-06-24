@@ -25,10 +25,11 @@ describe("default PR body", () => {
     });
 
     expect(body).toContain("<!-- tml:summary:start -->");
-    expect(body).toContain("## Intent\nFixes the boundary case.");
+    expect(body).toContain("## What changed\nFixes the boundary case.");
     expect(body).toContain("## Risk assessment");
     expect(body).toContain("Review found one behavior question.");
     expect(body).toContain("| quality | clean | 3 | 1 | verify | 0 |");
+    expect(body).toContain("### Rounds");
     expect(body).toContain("Confirm behavior");
     expect(body).toContain("<!-- tml:summary:end -->");
   });

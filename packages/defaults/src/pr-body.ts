@@ -3,10 +3,11 @@
 // block so human edits around it survive. The block is not a PR comment or review thread.
 
 import {
-  currentFindings,
   renderPipelineSummaryForPr,
+  renderRoundNarrativeForPr,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
+  unresolvedFindings,
   type RoundRecord,
 } from "@tml/core";
 
@@ -40,14 +41,11 @@ export function updateDefaultPrBody(existingBody: string, input: DefaultPrBodyIn
 }
 
 function generatedBlock(input: DefaultPrBodyInput): string {
-  const unresolved = currentFindings(input.rounds);
+  const unresolved = unresolvedFindings(input.rounds);
   return [
     START,
-    "## Intent",
-    cleanDescription(input.description),
-    "",
     "## What changed",
-    "See the branch diff and commits for the concrete changes.",
+    cleanDescription(input.description),
     "",
     "## Risk assessment",
     riskAssessment(unresolved, input.reviewSummary),
@@ -55,8 +53,12 @@ function generatedBlock(input: DefaultPrBodyInput): string {
     "## Testing",
     testingSummary(input.rounds),
     "",
-    "## Pipeline summary",
+    "## Pipeline",
+    "### Summary",
     renderPipelineSummaryForPr(input.rounds),
+    "",
+    "### Rounds",
+    renderRoundNarrativeForPr(input.rounds),
     "",
     "## Unresolved findings",
     renderUnresolvedFindingsForPr(input.rounds),
@@ -86,12 +88,47 @@ function riskAssessment(
 }
 
 function testingSummary(rounds: readonly RoundRecord[]): string {
-  const checkSteps = new Set(["quality", "test"]);
+  const checkSteps = new Set(["quality", "test", "ci-wait"]);
   const summaries = summarizeStepRounds(rounds).filter((summary) => checkSteps.has(summary.step));
-  if (summaries.length === 0) return "No local check rounds recorded.";
-  return summaries
-    .map(
-      (summary) => `- ${summary.step}: ${summary.status === "clean" ? "clean" : "findings remain"}`,
-    )
-    .join("\n");
+  const evidence = latestTestingEvidence(rounds, checkSteps);
+  if (summaries.length === 0 && evidence.length === 0) return "No local check rounds recorded.";
+
+  const lines: string[] = [];
+  if (summaries.length > 0) {
+    lines.push(
+      ...summaries.map((summary) => `- ${summary.step}: ${testingStatus(summary.status)}`),
+    );
+  }
+  if (evidence.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("Evidence:");
+    for (const round of evidence) {
+      const status = round.tested === undefined ? "unknown" : round.tested ? "tested" : "not run";
+      const summary = round.testingSummary?.trim() ?? "No testing summary recorded.";
+      lines.push(`- ${round.step} round ${round.index}: ${status} - ${summary}`);
+      for (const artifact of round.artifacts ?? []) lines.push(`  - ${artifact}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function latestTestingEvidence(
+  rounds: readonly RoundRecord[],
+  checkSteps: ReadonlySet<string>,
+): RoundRecord[] {
+  const latest = new Map<string, RoundRecord>();
+  for (const round of rounds) {
+    if (!checkSteps.has(round.step)) continue;
+    if (!round.testingSummary && round.tested === undefined && !round.artifacts?.length) continue;
+    const prior = latest.get(round.step);
+    if (prior === undefined || round.index > prior.index) latest.set(round.step, round);
+  }
+  return [...latest.values()];
+}
+
+function testingStatus(status: ReturnType<typeof summarizeStepRounds>[number]["status"]): string {
+  if (status === "clean") return "clean";
+  if (status === "accepted") return "accepted by operator";
+  if (status === "skipped") return "skipped by operator";
+  return "findings remain";
 }

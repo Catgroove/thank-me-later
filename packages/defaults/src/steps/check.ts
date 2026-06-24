@@ -23,6 +23,7 @@ import {
   qualityPrompt,
   testPrompt,
 } from "../prompts.ts";
+import { fixCommitResult, fixCommitSubject } from "../semantic-commit.ts";
 
 interface CheckPolicy {
   readonly groundRules: string;
@@ -120,6 +121,8 @@ export function checkStep(
               agentResult.summary,
               agentResult.ok,
             ),
+            testingSummary: agentResult.summary,
+            tested: policy === checkPolicies.run,
           };
         },
         async fix(input) {
@@ -131,9 +134,10 @@ export function checkStep(
               historyText: input.historyText,
             }),
           );
-          return { summary: agentResult.summary };
+          return fixCommitResult(name, agentResult.summary);
         },
-        commitMessage: `chore: apply fixes from ${name}`,
+        commitMessage: (_input, result) =>
+          result.commitSubject ?? fixCommitSubject(name, result.summary),
       });
 
       return { artifacts: {}, rounds: result.rounds };
