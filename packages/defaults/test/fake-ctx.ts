@@ -16,6 +16,7 @@ import {
   type Git,
   type GitStatus,
   type Harness,
+  type MergeState,
   type OpenPullRequestInput,
   type Pending,
   type PullRequest,
@@ -118,6 +119,8 @@ export class FakeGitProvider implements GitProvider {
   /** When set, `findPullRequest` returns this (the idempotent-skip path). */
   existing: PullRequest | null = null;
   checks: CheckRun[] = [{ name: "ci", status: "completed", conclusion: "success" }];
+  /** Merge-readiness the merge gate polls; `clean` is mergeable by default. */
+  mergeStateStatus: MergeState = "clean";
   private nextNumber = 1;
 
   findPullRequest(_head: string): Promise<PullRequest | null> {
@@ -135,6 +138,7 @@ export class FakeGitProvider implements GitProvider {
       body: input.body,
       state: "open",
       mergeable: "mergeable",
+      mergeStateStatus: this.mergeStateStatus,
       checks: this.checks,
     });
   }
@@ -150,6 +154,9 @@ export class FakeGitProvider implements GitProvider {
   }
   getChecks(_prNumber: number): Pending<CheckRun[]> {
     return settled(this.checks);
+  }
+  getMergeability(_prNumber: number): Pending<MergeState> {
+    return settled(this.mergeStateStatus);
   }
 }
 

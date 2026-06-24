@@ -54,7 +54,7 @@ describe("argv builders", () => {
       "view",
       "42",
       "--json",
-      "number,url,headRefName,baseRefName,title,body,state,mergeable,statusCheckRollup",
+      "number,url,headRefName,baseRefName,title,body,state,mergeable,mergeStateStatus,statusCheckRollup",
     ]);
   });
 

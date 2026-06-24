@@ -61,6 +61,7 @@ export class FakeGitProvider implements GitProvider {
       body: input.body,
       state: "open",
       mergeable: "mergeable",
+      mergeStateStatus: "clean",
       checks: this.checks,
     };
     this.prs.set(number, pr);

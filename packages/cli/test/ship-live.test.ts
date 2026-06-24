@@ -15,7 +15,8 @@ describe("tml ship — live smoke (opt-in)", () => {
     console.log(
       "[ship live.test] skipped — set TML_SHIP_LIVE=1 and TML_SHIP_LIVE_REPO=<disposable repo " +
         "with an authenticated gh remote + pi> to run a real `tml ship` end-to-end (branch → " +
-        "describe → commits/checks/review → push → open PR → ci-wait). It mutates that repo " +
+        "describe → commits/checks/review → push → open PR → ci-wait → merge-gate). It mutates " +
+        "that repo " +
         "and opens a PR.",
     );
     test.skip("set TML_SHIP_LIVE=1 + TML_SHIP_LIVE_REPO to run a real ship", () => {});

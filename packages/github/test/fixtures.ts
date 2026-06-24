@@ -2,7 +2,7 @@
 //
 // Refresh against a real repo with:
 //   gh pr list --head <branch> --state all --json number,state
-//   gh pr view <n> --json number,url,headRefName,baseRefName,title,body,state,mergeable,statusCheckRollup
+//   gh pr view <n> --json number,url,headRefName,baseRefName,title,body,state,mergeable,mergeStateStatus,statusCheckRollup
 //   gh pr view <n> --json statusCheckRollup
 //   gh pr create --head <branch> --base main --title t --body b   (prints the PR URL)
 
@@ -71,6 +71,7 @@ export const prOpen: GhPullRequestNode = {
   body: "Does x.",
   state: "OPEN",
   mergeable: "MERGEABLE",
+  mergeStateStatus: "CLEAN",
   statusCheckRollup: [checkSuccess, statusContextSuccess],
 };
 
@@ -83,6 +84,7 @@ export const prConflicted: GhPullRequestNode = {
   body: "Does y.",
   state: "OPEN",
   mergeable: "CONFLICTING",
+  mergeStateStatus: "DIRTY",
   statusCheckRollup: [checkFailure],
 };
 
@@ -95,6 +97,7 @@ export const prMerged: GhPullRequestNode = {
   body: "Does z.",
   state: "MERGED",
   mergeable: "UNKNOWN",
+  mergeStateStatus: "UNKNOWN",
   statusCheckRollup: null,
 };
 

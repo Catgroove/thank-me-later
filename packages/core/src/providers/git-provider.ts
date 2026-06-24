@@ -10,6 +10,28 @@ import type { Pending } from "../pending.ts";
 
 export type Mergeable = "mergeable" | "conflicted" | "unknown";
 
+// The PR's overall merge readiness, derived by the host from every gating factor at once:
+// merge conflicts, branch protection, required reviews, and required status checks. This is the
+// host's own verdict, distinct from `mergeable` (which is conflicts only). `clean`/`has_hooks`/
+// `unstable` all permit merging; `behind` (out of date with base), `dirty` (conflict), `blocked`
+// (a required review or status check is unmet), and `draft` do not; `unknown` means the host has
+// not finished computing it yet (poll again). Note `blocked`/`unstable` only reflect CI when the
+// repo's branch protection makes those checks required - the CI gate must not lean on this alone.
+export type MergeState =
+  | "clean"
+  | "has_hooks"
+  | "unstable"
+  | "behind"
+  | "dirty"
+  | "blocked"
+  | "draft"
+  | "unknown";
+
+/** Whether a settled {@link MergeState} permits merging. `unknown` is unsettled and returns false. */
+export function isMergeable(state: MergeState): boolean {
+  return state === "clean" || state === "has_hooks" || state === "unstable";
+}
+
 export interface CheckRun {
   readonly name: string;
   readonly status: "queued" | "in_progress" | "completed";
@@ -25,6 +47,8 @@ export interface PullRequest {
   readonly body: string;
   readonly state: "open" | "closed" | "merged";
   readonly mergeable: Mergeable;
+  /** The host's overall merge-readiness verdict; the merge gate polls this to a terminal value. */
+  readonly mergeStateStatus: MergeState;
   readonly checks: CheckRun[];
 }
 
@@ -45,8 +69,8 @@ export interface GitProvider {
   updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void>;
   /** Cheap and pollable — the ci-wait loop calls this through `until`. */
   getChecks(prNumber: number): Pending<CheckRun[]>;
-  /** Optional host-specific mergeability poller when a snapshot can initially report unknown. */
-  getMergeability?(prNumber: number): Pending<Mergeable>;
+  /** Optional merge-readiness poller; settles once the host's {@link MergeState} leaves `unknown`. */
+  getMergeability?(prNumber: number): Pending<MergeState>;
   /** Optional host-specific CI log retrieval for failed checks. */
   getFailedCheckLogs?(input: { prNumber: number; checkNames?: string[] }): Promise<string>;
 }

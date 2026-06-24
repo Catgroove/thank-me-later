@@ -12,6 +12,7 @@ const pr: PullRequest = {
   body: "b",
   state: "open",
   mergeable: "mergeable",
+  mergeStateStatus: "clean",
   checks: [],
 };
 
@@ -89,6 +90,21 @@ describe("ci-wait step", () => {
       { disposition: "blocker", action: "auto-fix", title: "build did not pass" },
     ]);
     expect(stepResult.rounds?.[2]?.findings).toEqual([]);
+  });
+
+  test("waits for the initial rollup to populate instead of passing on an empty one", async () => {
+    // Right after a PR opens, GitHub reports an empty rollup before the workflow's checks
+    // register. The gate must keep polling, not treat that empty set as "all green".
+    const gitProvider = new SequencedGitProvider([
+      [],
+      [{ name: "build", status: "completed", conclusion: "success" }],
+    ]);
+    const { ctx, logs } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await ciWaitStep().run(ctx);
+
+    expect(logs).toContain("ci: build -> success");
+    expect(result).toMatchObject({ rounds: [{ trigger: "initial", findings: [] }] });
   });
 
   test("waits for post-fix checks instead of accepting an empty rollup", async () => {

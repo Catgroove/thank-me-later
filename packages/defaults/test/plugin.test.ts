@@ -33,6 +33,7 @@ describe("tmlDefaults plugin", () => {
       "resync",
       "open-pr",
       "ci-wait",
+      "merge-gate",
     ]);
   });
 

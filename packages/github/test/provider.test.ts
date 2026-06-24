@@ -235,7 +235,7 @@ describe("getMergeability polling", () => {
     const pending = createGitHubProvider("/repo", { run }).getMergeability?.(42);
 
     expect(await pending?.poll()).toEqual({ done: false });
-    expect(await pending?.poll()).toEqual({ done: true, value: "mergeable" });
+    expect(await pending?.poll()).toEqual({ done: true, value: "clean" });
   });
 });
 

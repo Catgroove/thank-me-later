@@ -66,6 +66,7 @@ describe("open-pr step", () => {
       body: "prior body",
       state: "open",
       mergeable: "mergeable",
+      mergeStateStatus: "clean",
       checks: [],
     };
     gitProvider.existing = prior;
@@ -93,6 +94,7 @@ describe("open-pr step", () => {
         body: "prior body",
         state,
         mergeable: "unknown",
+        mergeStateStatus: "unknown",
         checks: [],
       };
       const { ctx } = fakeCtx({ git, gitProvider, reads });

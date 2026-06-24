@@ -13,6 +13,7 @@ const PR_VIEW_FIELDS = [
   "body",
   "state",
   "mergeable",
+  "mergeStateStatus",
   "statusCheckRollup",
 ].join(",");
 

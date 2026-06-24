@@ -121,11 +121,16 @@ export function createGitHubProvider(cwd: string, opts: GitHubProviderOptions = 
       };
     },
 
+    // Pollable: settles once the host's merge-readiness verdict leaves `unknown` (it reports
+    // `unknown` right after a PR opens, until it has folded in conflicts, branch protection,
+    // required reviews, and required checks). The consuming step decides mergeable vs blocked.
     getMergeability(prNumber: number) {
       return {
         async poll() {
           const pr = await getPullRequest(prNumber);
-          return pr.mergeable === "unknown" ? { done: false } : { done: true, value: pr.mergeable };
+          return pr.mergeStateStatus === "unknown"
+            ? { done: false }
+            : { done: true, value: pr.mergeStateStatus };
         },
       };
     },

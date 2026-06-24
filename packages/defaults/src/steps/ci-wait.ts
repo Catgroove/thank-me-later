@@ -21,6 +21,14 @@ import { ciFixPrompt } from "../prompts.ts";
 const EVERY_MS = 10_000;
 const TIMEOUT_MS = 30 * 60_000;
 const MAX_CI_AUTO_FIX_ATTEMPTS = 3;
+/**
+ * How many consecutive empty rollups to tolerate before concluding the PR has no CI. Right after a
+ * PR opens, GitHub reports an empty status-check rollup for the first few seconds - before the
+ * workflow's check runs register against the head commit. Polling at {@link EVERY_MS}, this is the
+ * grace window (~1 min) we give those checks to appear; only once it elapses still-empty do we
+ * accept "no CI" and let the gate pass.
+ */
+const EMPTY_POLLS_BEFORE_NO_CI = 6;
 
 function isGreen(check: CheckRun): boolean {
   return (
@@ -57,13 +65,25 @@ function failedCheckNames(findings: readonly Finding[]): string[] {
     .filter((name): name is string => name !== undefined && name.trim().length > 0);
 }
 
-function checksAfterFix(ctx: Ctx, prNumber: number): Pending<CheckRun[]> {
+/**
+ * Wait for the status-check rollup to settle, guarding against the empty-rollup race: GitHub
+ * reports no checks for the first seconds after a push, and the raw provider poller treats that
+ * empty set as "settled, all green" - a false pass that resolves the gate in a fraction of a
+ * second. So while the rollup is empty we keep polling. When `requireChecks` is set (a fix commit
+ * just landed, so the checks we saw must re-run) we never accept an empty rollup and lean on the
+ * outer timeout. Otherwise - the initial wait, where the repo may genuinely have no CI - we accept
+ * empty only after it persists across {@link EMPTY_POLLS_BEFORE_NO_CI} polls.
+ */
+function waitForChecks(ctx: Ctx, prNumber: number, requireChecks: boolean): Pending<CheckRun[]> {
   const pending = ctx.gitProvider.getChecks(prNumber);
+  let emptyPolls = 0;
   return {
     async poll() {
       const result = await pending.poll();
-      if (!result.done) return result;
-      return result.value.length === 0 ? { done: false } : result;
+      if (!result.done || result.value.length > 0) return result;
+      emptyPolls += 1;
+      if (requireChecks) return { done: false };
+      return emptyPolls >= EMPTY_POLLS_BEFORE_NO_CI ? result : { done: false };
     },
   };
 }
@@ -102,10 +122,8 @@ export function ciWaitStep(): Step {
         maxAutoFixAttempts: MAX_CI_AUTO_FIX_ATTEMPTS,
         async check(input) {
           try {
-            const pendingChecks =
-              input.trigger === "verify" && pushedFixCommit
-                ? checksAfterFix(ctx, pr.number)
-                : ctx.gitProvider.getChecks(pr.number);
+            const requireChecks = input.trigger === "verify" && pushedFixCommit;
+            const pendingChecks = waitForChecks(ctx, pr.number, requireChecks);
             latestChecks = await ctx.until(pendingChecks, {
               every: EVERY_MS,
               timeout: TIMEOUT_MS,
