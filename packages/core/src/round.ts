@@ -10,13 +10,13 @@ export type FindingAction = "auto-fix" | "ask-user" | "no-op";
 // clear improvement the author should make; `consider` is an optional suggestion; `nit` is a
 // trivial take-it-or-leave-it remark.
 export type FindingDisposition = "blocker" | "should-fix" | "consider" | "nit";
-export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify";
+export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify" | "approval";
 
 /**
- * How a round resolved an operator decision, set only on the terminal round of an approval gate.
+ * How a round resolved an operator decision, set only on the terminal approval round.
  * `approved` means the operator accepted the round's findings as-is; `skipped` means they skipped the
- * Step leaving them. Distinguishes a real fix round (no resolution) from an accept/skip so the
- * finding checklist can show "accepted as-is"/"skipped" instead of "still open".
+ * Step leaving them. Distinguishes a real fix round from an accept/skip so the finding checklist can
+ * show "accepted as-is"/"skipped" instead of "still open".
  */
 export type RoundResolution = "approved" | "skipped";
 

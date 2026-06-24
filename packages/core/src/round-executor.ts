@@ -311,11 +311,10 @@ function approvalRound(findings: readonly Finding[], decision: ApprovalDecision)
   const userNotes = cleanNotes(decision.notes);
   const resolution = decision.action === "skip" ? "skipped" : "approved";
   return {
-    trigger: "user_fix",
+    trigger: "approval",
     findings: [...findings, ...userFindings],
     ...(userNotes ? { userNotes } : {}),
     resolution,
-    fixSummary: `Operator ${resolution} unresolved findings.`,
   };
 }
 

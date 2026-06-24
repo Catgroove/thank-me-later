@@ -280,10 +280,9 @@ describe("executeRoundLoop", () => {
     expect(result.rounds).toEqual([
       { trigger: "initial", findings: [issue] },
       {
-        trigger: "user_fix",
+        trigger: "approval",
         findings: [issue],
         resolution: "approved",
-        fixSummary: "Operator approved unresolved findings.",
       },
     ]);
   });

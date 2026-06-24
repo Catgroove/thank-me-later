@@ -219,9 +219,10 @@ _Avoid_: Comment, check result, issue
 
 **Round record**:
 One completed pass by a Step over a set of Findings. A Round record names the Step, the Step-local
-round index, why it ran (`initial`, `auto_fix`, `user_fix`, `verify`), findings, selected finding
-ids, optional user notes, fix summary, and commit SHA. Completed rounds are appended to the
-out-of-tree journal so review, checks, and CI can be summarized from one record shape.
+round index, why it ran (`initial`, `auto_fix`, `user_fix`, `verify`, `approval`), findings,
+selected finding ids, optional user notes, fix summary, and commit SHA. Completed rounds are
+appended to the out-of-tree journal so review, checks, and CI can be summarized from one record
+shape.
 _Avoid_: Pass log, report, transcript
 
 **Max fix attempts**:

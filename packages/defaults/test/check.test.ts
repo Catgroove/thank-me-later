@@ -52,8 +52,8 @@ describe("checkStep", () => {
           ],
         },
         {
-          trigger: "user_fix",
-          fixSummary: "Operator approved unresolved findings.",
+          trigger: "approval",
+          resolution: "approved",
         },
       ],
     });
@@ -286,7 +286,7 @@ describe("checkStep", () => {
         { trigger: "initial", findings: [{ title: "Choose contract" }] },
         { trigger: "user_fix", fixSummary: "fixed selected finding" },
         { trigger: "verify", findings: [{ title: "Confirm follow-up" }] },
-        { trigger: "user_fix", fixSummary: "Operator approved unresolved findings." },
+        { trigger: "approval", resolution: "approved" },
       ],
     });
   });
