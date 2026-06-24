@@ -71,7 +71,14 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
   },
 };
 
-export function checkStep(name: string, goal: string, options: CheckStepOptions = {}): Step {
+export function checkStep(name: string, goal: string, mode: CheckMode): Step;
+export function checkStep(name: string, goal: string, options?: CheckStepOptions): Step;
+export function checkStep(
+  name: string,
+  goal: string,
+  modeOrOptions: CheckMode | CheckStepOptions = {},
+): Step {
+  const options = normalizeCheckStepOptions(modeOrOptions);
   return defineStep({
     name,
     async run(ctx) {
@@ -116,6 +123,10 @@ export function checkStep(name: string, goal: string, options: CheckStepOptions 
       return { artifacts: {}, rounds: result.rounds };
     },
   });
+}
+
+function normalizeCheckStepOptions(modeOrOptions: CheckMode | CheckStepOptions): CheckStepOptions {
+  return typeof modeOrOptions === "string" ? { mode: modeOrOptions } : modeOrOptions;
 }
 
 function parseCheckResult(name: string, output: unknown, summary: string, ok: boolean): Finding[] {
