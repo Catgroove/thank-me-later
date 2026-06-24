@@ -18,7 +18,7 @@ import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
-import { until } from "./pending.ts";
+import { AbortError, until } from "./pending.ts";
 import { type EventQueue, createEventQueue } from "./queue.ts";
 import type { RoundRecord, RoundRecordInput } from "./round.ts";
 import { createRunJournal, type RunJournal, type RunJournalSnapshot } from "./run-journal.ts";
@@ -259,8 +259,8 @@ async function drive(
     try {
       result = await step.run(ctx);
     } catch (error) {
-      // An abort surfaces here as a thrown AbortError (from until / the agent);
-      // report it as a cancellation, not a failure.
+      // An abort surfaces here as a thrown AbortError (from until, the agent, or an open
+      // ask/approval gate); report it as a cancellation, not a failure.
       if (signal.aborted) return cancelled(run, step.name);
       return failed(run, error, step.name);
     }
@@ -587,13 +587,17 @@ function makeContext(
     signal,
     until: (pending, untilOpts) =>
       until(pending, { ...untilOpts, signal: untilOpts?.signal ?? signal }),
+    // A Step parked on a human decision is otherwise unreachable by the abort signal: the responder
+    // Promise only settles when the operator answers. Race it against the signal so a cancel while a
+    // gate is open rejects with AbortError - the drive loop's catch then ends the Run as cancelled,
+    // the same way an aborted `until`/agent does.
     ask(prompt: string) {
       pushEvent({ type: "ask:pending", step: step.name, prompt });
-      return ask(prompt);
+      return abortable(ask(prompt), signal);
     },
     approveFindings(input: ApproveFindingsInput) {
       pushEvent({ type: "approval:pending", step: step.name, input });
-      return approveFindings(input);
+      return abortable(approveFindings(input), signal);
     },
     rounds(stepName?: string) {
       return stepName === undefined
@@ -639,6 +643,31 @@ function makeContext(
       }
     },
   };
+}
+
+/**
+ * Reject as soon as `signal` aborts, even while `promise` is still pending. Used to make the human
+ * gates (`ctx.ask`/`ctx.approveFindings`) abort-aware: their responder Promises never settle on
+ * their own, so without this a cancel issued while a gate is open would hang the Run. The underlying
+ * Promise is left to settle on its own (it has no cancel path); we just stop awaiting it.
+ */
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new AbortError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new AbortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    const done = () => signal.removeEventListener("abort", onAbort);
+    promise.then(
+      (value) => {
+        done();
+        resolve(value);
+      },
+      (error: unknown) => {
+        done();
+        reject(error as Error);
+      },
+    );
+  });
 }
 
 function errorMessage(error: unknown): string {
