@@ -17,8 +17,15 @@ export type RoundLoopStopReason =
   | "no_progress"
   | "remaining_findings";
 
+export interface RoundApprovalFixBudget {
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly remainingAttempts: number;
+}
+
 export interface RoundApproveFindingsInput extends ApproveFindingsInput {
   readonly stopReason: RoundLoopStopReason;
+  readonly fixBudget?: RoundApprovalFixBudget;
 }
 
 export type ApprovalFindingsInput = ApproveFindingsInput | RoundApproveFindingsInput;
@@ -38,6 +45,9 @@ export function autoApproveFindings(input: ApprovalFindingsInput): ApprovalDecis
   const stopReason = isRoundApproveFindingsInput(input) ? input.stopReason : undefined;
 
   if (stopReason === "needs_user") {
+    if (isRoundApproveFindingsInput(input) && input.fixBudget?.remainingAttempts === 0) {
+      return approveOptionalOrAbort(input, "auto_fix_limit_hit");
+    }
     const selectedFindingIds = input.findings
       .filter((finding) => finding.action === "ask-user")
       .map((finding) => finding.id);

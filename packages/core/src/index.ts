@@ -15,6 +15,7 @@ export {
   autoApproveFindings,
   autoApproveResponder,
   isRoundApproveFindingsInput,
+  type RoundApprovalFixBudget,
   type RoundApproveFindingsInput,
   type RoundLoopStopReason,
 } from "./round-approval.ts";

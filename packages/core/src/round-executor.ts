@@ -176,6 +176,11 @@ export async function executeRoundLoop(
       findings,
       ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
       context: renderRoundsForPrompt(rounds),
+      fixBudget: {
+        attempts,
+        maxAttempts: maxAutoFixAttempts,
+        remainingAttempts: Math.max(0, maxAutoFixAttempts - attempts),
+      },
     };
     const decision = await ctx.approveFindings(approvalInput);
 
