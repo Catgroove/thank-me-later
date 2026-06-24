@@ -13,8 +13,8 @@
 // conflicts, not behind, not blocked by branch protection, not a draft).
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
 // (portable by referencing nothing). Branch mode and the fix-attempt cap come from the merged
-// `tml.json` knobs (`tml.config.branch`, `tml.config.maxFixAttempts`); branch defaults to `ai` and
-// max fix attempts defaults to 3. @tml/defaults is first-party and bundled into the
+// `tml.json` knobs (`tml.config.branch`, `tml.config.maxFixAttempts`); branch defaults to `ai`, and
+// the round executor owns the max fix attempt default. @tml/defaults is first-party and bundled into the
 // binary, so it imports its own step factories from @tml/core - only third-party local plugins
 // are barred from importing the core.
 
@@ -32,9 +32,9 @@ import { rebaseStep, resyncStep } from "./steps/rebase.ts";
 import { reviewStep } from "./steps/review.ts";
 
 export const tmlDefaults: Plugin = (tml) => {
-  const fixLoopPolicy: FixLoopPolicy = {
-    maxAutoFixAttempts: asMaxFixAttempts(tml.config.maxFixAttempts),
-  };
+  const maxAutoFixAttempts = asMaxFixAttempts(tml.config.maxFixAttempts);
+  const fixLoopPolicy: FixLoopPolicy =
+    maxAutoFixAttempts === undefined ? {} : { maxAutoFixAttempts };
   tml.pipeline.append(
     branchStep(asBranchMode(tml.config.branch)),
     describeStep(),
@@ -63,9 +63,9 @@ function asBranchMode(value: string | undefined): BranchMode {
   throw new Error(`tml.json "branch" must be one of ${BRANCH_MODES.join(", ")} (got "${value}").`);
 }
 
-/** Narrow the opaque `maxFixAttempts` knob; absent -> 3, invalid -> a clear error. */
-function asMaxFixAttempts(value: number | undefined): number {
-  if (value === undefined) return 3;
+/** Narrow the opaque `maxFixAttempts` knob; absent -> the round executor default. */
+function asMaxFixAttempts(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
   if (Number.isInteger(value) && value >= 0) return value;
   throw new Error(`tml.json "maxFixAttempts" must be a non-negative integer (got ${value}).`);
 }

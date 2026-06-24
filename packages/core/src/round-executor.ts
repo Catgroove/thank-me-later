@@ -64,10 +64,13 @@ export interface RoundCommitInput {
   readonly message?: string;
 }
 
-export interface RoundCommitResult {
-  readonly progress: RoundCommitProgress;
-  readonly commitSha?: string;
-}
+export type RoundCommitResult =
+  | { readonly progress: "progressed"; readonly commitSha?: string }
+  | { readonly progress: "no_progress"; readonly commitSha?: never };
+
+type CommitFixResult =
+  | RoundCommitResult
+  | { readonly progress: "untracked"; readonly commitSha?: never };
 
 export interface RoundStopPolicyInput {
   readonly check: RoundCheckInput;
@@ -352,14 +355,14 @@ async function commitFix(
   options: RoundLoopOptions,
   input: RoundFixInput,
   result: RoundFixResult,
-): Promise<{ readonly progress: RoundFixProgress; readonly commitSha?: string }> {
+): Promise<CommitFixResult> {
   if (options.commit === false) return { progress: "untracked" };
 
   const message = commitMessage(options, input, result);
   if (options.commit !== undefined) {
     const commit = await options.commit({ ctx, fix: input, result, message });
-    assertCommitProgress(commit.progress);
-    return { progress: commit.progress, commitSha: commit.commitSha };
+    assertCommitResult(commit);
+    return commit;
   }
 
   const subject = message?.trim() ?? "";
@@ -375,11 +378,17 @@ async function commitFix(
   return { progress: "progressed", commitSha: commit.sha };
 }
 
-function assertCommitProgress(progress: RoundCommitProgress): void {
-  if (progress === "progressed" || progress === "no_progress") return;
-  throw new Error(
-    'round executor: custom commit must return progress "progressed" or "no_progress"',
-  );
+function assertCommitResult(commit: RoundCommitResult): void {
+  if (commit.progress !== "progressed" && commit.progress !== "no_progress") {
+    throw new Error(
+      'round executor: custom commit must return progress "progressed" or "no_progress"',
+    );
+  }
+  if (commit.progress === "no_progress" && commit.commitSha !== undefined) {
+    throw new Error(
+      'round executor: custom commit must not return commitSha when progress is "no_progress"',
+    );
+  }
 }
 
 function commitMessage(
