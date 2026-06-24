@@ -38,7 +38,7 @@ export interface ShipDeps {
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
   /** Override or disable the local Run Journal. Production creates one per checkout. */
   journal?: RunJournal | false;
-  /** Journal selection policy when production creates the journal. Defaults to auto-resume. */
+  /** Journal selection policy when production creates the journal. Defaults to a fresh run. */
   journalResume?: RunJournalResumeMode;
   /** Exact run id for `journalResume: "exact"`, or a stable id for tests. */
   runId?: string;
@@ -188,7 +188,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       deps.journal ??
       createRunJournal({
         checkoutPath: cwd,
-        resume: deps.journalResume ?? "auto",
+        resume: deps.journalResume ?? "fresh",
         ...(deps.runId ? { runId: deps.runId } : {}),
       });
     setupJournal = journal;
@@ -314,15 +314,20 @@ export function parseShipArgs(args: string[]): ShipArgs {
       continue;
     }
     if (arg === "--fresh") {
+      runId = undefined;
       journalResume = "fresh";
       continue;
     }
     if (arg === "--resume") {
-      runId = args[i + 1];
-      if (runId === undefined || runId.startsWith("-"))
-        throw new Error("--resume requires a run id");
-      journalResume = "exact";
-      i += 1;
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("-")) {
+        runId = next;
+        journalResume = "exact";
+        i += 1;
+      } else {
+        runId = undefined;
+        journalResume = "auto";
+      }
       continue;
     }
     if (arg.startsWith("--resume=")) {
@@ -358,8 +363,10 @@ Ship options:
                       results-forward default.
       --plain         Force the append-only/inline renderer instead of the
                       full-screen TUI. (alias: --no-tui)
-      --fresh         Start a new isolated run, discarding previous journal state.
-      --resume <id>   Resume a specific run by exact run id. (also --resume=<id>)
+      --fresh         Start a new isolated run, discarding previous journal state
+                      (default).
+      --resume [id]   Resume the latest compatible run for this branch, or a
+                      specific run by exact id. (also --resume=<id>)
 
 Init options:
   -f, --force         Overwrite an existing tml.json.
