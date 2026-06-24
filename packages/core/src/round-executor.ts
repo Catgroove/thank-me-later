@@ -6,11 +6,8 @@
 // through `ctx.approveFindings`: an approve or skip ends the loop with a recorded decision, a fix
 // continues the loop with the operator's selection and notes, and an abort throws.
 
-import type {
-  ApprovalDecision,
-  RoundApproveFindingsInput,
-  RoundLoopStopReason,
-} from "./approval.ts";
+import type { ApprovalDecision } from "./approval.ts";
+import type { RoundApproveFindingsInput, RoundLoopStopReason } from "./round-approval.ts";
 import type { Ctx } from "./context.ts";
 import {
   type Finding,

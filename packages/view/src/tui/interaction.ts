@@ -4,7 +4,7 @@
 // the Promise and clears the prompt. Pure and OpenTUI-free, so the resolution path is unit-testable
 // without a terminal: drive it with a `setPrompt` spy, then call the captured `submit`.
 
-import type { ApprovalDecision, ApproveFindingsInput } from "@tml/core";
+import type { ApprovalDecision, ApprovalFindingsInput } from "@tml/core";
 
 export interface AskPrompt {
   readonly kind: "ask";
@@ -14,7 +14,7 @@ export interface AskPrompt {
 
 export interface ApprovalPrompt {
   readonly kind: "approval";
-  readonly input: ApproveFindingsInput;
+  readonly input: ApprovalFindingsInput;
   readonly submit: (decision: ApprovalDecision) => void;
 }
 
@@ -22,7 +22,7 @@ export type ActivePrompt = AskPrompt | ApprovalPrompt;
 
 export interface Interactions {
   ask(prompt: string): Promise<string>;
-  approveFindings(input: ApproveFindingsInput): Promise<ApprovalDecision>;
+  approveFindings(input: ApprovalFindingsInput): Promise<ApprovalDecision>;
 }
 
 export function createInteractions(

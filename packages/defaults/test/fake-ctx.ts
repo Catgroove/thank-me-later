@@ -7,7 +7,7 @@ import {
   type AgentResult,
   type AgentRunOpts,
   type ApprovalDecision,
-  type ApproveFindingsInput,
+  type ApprovalFindingsInput,
   type Artifact,
   type CheckRun,
   type CommitResult,
@@ -188,7 +188,7 @@ export interface FakeCtxParts {
   /** Artifact-name → value, for `ctx.read`. */
   reads?: Record<string, unknown>;
   ask?: (prompt: string) => Promise<string>;
-  approveFindings?: (input: ApproveFindingsInput) => Promise<ApprovalDecision>;
+  approveFindings?: (input: ApprovalFindingsInput) => Promise<ApprovalDecision>;
   rounds?: readonly RoundRecord[];
   signal?: AbortSignal;
   until?: Ctx["until"];
@@ -204,7 +204,7 @@ export interface FakeCtxResult {
   ctx: Ctx;
   logs: string[];
   asks: string[];
-  approvals: ApproveFindingsInput[];
+  approvals: ApprovalFindingsInput[];
   phases: PhaseCall[];
   recordedRounds: RoundRecord[];
 }
@@ -212,7 +212,7 @@ export interface FakeCtxResult {
 export function fakeCtx(parts: FakeCtxParts = {}): FakeCtxResult {
   const logs: string[] = [];
   const asks: string[] = [];
-  const approvals: ApproveFindingsInput[] = [];
+  const approvals: ApprovalFindingsInput[] = [];
   const phases: PhaseCall[] = [];
   const recordedRounds: RoundRecord[] = [];
   const reads = parts.reads ?? {};

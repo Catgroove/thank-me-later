@@ -10,7 +10,8 @@
 // Run is cancellable via an `AbortSignal`; an aborted Run ends with
 // `run:cancelled`, distinct from the `cancel()` flow signal a Step returns.
 
-import type { ApprovalDecision, ApproveFindingsInput } from "./approval.ts";
+import type { ApprovalDecision } from "./approval.ts";
+import type { ApprovalFindingsInput } from "./round-approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
 import type { RunEvent, RunEventInput } from "./events.ts";
@@ -50,7 +51,7 @@ export interface EngineOptions {
   /** Inline responder for `ctx.ask`. Defaults to the unimplemented headless path. */
   ask?: (prompt: string) => Promise<string>;
   /** Inline responder for `ctx.approveFindings`. Defaults to the unimplemented headless path. */
-  approveFindings?: (input: ApproveFindingsInput) => Promise<ApprovalDecision>;
+  approveFindings?: (input: ApprovalFindingsInput) => Promise<ApprovalDecision>;
   /** External abort: cancels the Run, ending it with `run:cancelled`. */
   signal?: AbortSignal;
   /** Local execution journal. Defaults to the out-of-tree file Run Journal; `false` disables. */
@@ -503,7 +504,7 @@ function makeContext(
   git: Git,
   run: EngineRun,
   ask: (prompt: string) => Promise<string>,
-  approveFindings: (input: ApproveFindingsInput) => Promise<ApprovalDecision>,
+  approveFindings: (input: ApprovalFindingsInput) => Promise<ApprovalDecision>,
   signal: AbortSignal,
   models: ModelMap | undefined,
   visibleRounds: readonly RoundRecord[],
@@ -597,7 +598,7 @@ function makeContext(
       pushEvent({ type: "ask:pending", step: step.name, prompt });
       return abortable(ask(prompt), signal);
     },
-    approveFindings(input: ApproveFindingsInput) {
+    approveFindings(input: ApprovalFindingsInput) {
       pushEvent({ type: "approval:pending", step: step.name, input });
       return abortable(approveFindings(input), signal);
     },

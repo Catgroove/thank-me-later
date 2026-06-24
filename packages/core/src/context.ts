@@ -5,7 +5,8 @@
 // `until` is the engine-owned temporal primitive; `ask` escalates a
 // free-text decision; `approveFindings` escalates a structured finding gate.
 
-import type { ApprovalDecision, ApproveFindingsInput } from "./approval.ts";
+import type { ApprovalDecision } from "./approval.ts";
+import type { ApprovalFindingsInput } from "./round-approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Pending } from "./pending.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
@@ -44,7 +45,7 @@ export interface Ctx<
   ask(prompt: string): Promise<string>;
 
   /** Escalate a finding-based gate; resolves to a structured approval decision. */
-  approveFindings<I extends ApproveFindingsInput>(input: I): Promise<ApprovalDecision>;
+  approveFindings(input: ApprovalFindingsInput): Promise<ApprovalDecision>;
 
   /** Completed rounds from earlier Steps in this Run, including journal-replayed rounds. */
   rounds(step?: string): readonly RoundRecord[];

@@ -12,7 +12,7 @@
 // display, but completed Step durations derive from these timestamps - never from a
 // renderer-local guess. The engine is the single source of timing truth.
 
-import type { ApproveFindingsInput } from "./approval.ts";
+import type { ApprovalFindingsInput } from "./round-approval.ts";
 import type { AgentProgress } from "./providers/harness.ts";
 import type { Finding, RoundRecord } from "./round.ts";
 
@@ -59,7 +59,7 @@ export type RunEvent =
   | { type: "step:skipped"; at: number; step: string }
   | { type: "step:finished"; at: number; step: string }
   | { type: "ask:pending"; at: number; step: string; prompt: string }
-  | { type: "approval:pending"; at: number; step: string; input: ApproveFindingsInput }
+  | { type: "approval:pending"; at: number; step: string; input: ApprovalFindingsInput }
   | { type: "run:finished"; at: number }
   | { type: "run:paused"; at: number; step: string }
   | { type: "run:cancelled"; at: number; step?: string }

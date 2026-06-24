@@ -3,7 +3,7 @@
 // supplies no responder), `ship()` wires these in so the Run fails with a clear, actionable message
 // instead of bubbling up the engine's internal "not implemented" headless-suspend error.
 
-import type { ApprovalDecision, ApproveFindingsInput } from "@tml/core";
+import type { ApprovalDecision, ApprovalFindingsInput } from "@tml/core";
 
 export function failingAskResponder(): (prompt: string) => Promise<string> {
   return () =>
@@ -15,7 +15,7 @@ export function failingAskResponder(): (prompt: string) => Promise<string> {
 }
 
 export function failingApproveResponder(): (
-  input: ApproveFindingsInput,
+  input: ApprovalFindingsInput,
 ) => Promise<ApprovalDecision> {
   return () =>
     Promise.reject(
