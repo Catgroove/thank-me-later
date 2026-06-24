@@ -272,9 +272,8 @@ function stopPolicy(
   const custom = options.stopPolicy?.(input);
   if (custom !== undefined) return custom;
   if (input.findings.length === 0) return "clean";
-  if (input.selectedFindings.length > 0) {
-    return input.lastFixProgress === "no_progress" ? "no_progress" : undefined;
-  }
+  if (input.lastFixProgress === "no_progress") return "no_progress";
+  if (input.selectedFindings.length > 0) return undefined;
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
 }
 
