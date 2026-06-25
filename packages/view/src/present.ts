@@ -113,6 +113,12 @@ export interface ViewState {
   readonly finishedAt?: number;
   readonly status: "running" | "finished" | "cancelled" | "failed";
   readonly error?: string;
+  /**
+   * The branch core's git view reports for the active checkout, from `branch:changed`. Undefined
+   * until the first event, or when HEAD is detached/unreadable. Generic over the pipeline — it is
+   * the engine's own branch reading, not any plugin's branch-name artifact.
+   */
+  readonly currentBranch?: string;
   /** The Run's pull request URL, once opened — surfaced on the final line. */
   readonly prUrl?: string;
   /** The interaction blocking the Run, awaiting a human decision; cleared on the terminal event. */
@@ -393,6 +399,9 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
         tool: undefined,
         pendingInteraction: undefined,
       };
+    case "branch:changed":
+      // Set or clear the displayed branch; an absent `branch` (detached/unreadable HEAD) clears it.
+      return { ...view, currentBranch: event.branch };
     case "pr:opened":
       return { ...view, prUrl: event.url };
     case "step:log": {

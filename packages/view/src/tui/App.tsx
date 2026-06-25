@@ -292,19 +292,39 @@ function isDismissKey(key: KeyEvent): boolean {
   );
 }
 
+/** Longest branch name shown in the header before it is middle-truncated, so it can't crowd out the
+ *  status, elapsed, and PR segments on a narrow terminal. */
+const HEADER_BRANCH_MAX = 32;
+
+/** Middle-truncate a branch name to `HEADER_BRANCH_MAX`, keeping the readable head and tail. */
+function truncateBranch(branch: string): string {
+  if (branch.length <= HEADER_BRANCH_MAX) return branch;
+  const keep = HEADER_BRANCH_MAX - 1;
+  const head = Math.ceil(keep / 2);
+  const tail = Math.floor(keep / 2);
+  return `${branch.slice(0, head)}…${branch.slice(branch.length - tail)}`;
+}
+
 function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
   const status = () => props.view().status;
   const active = () => props.view().activeStep;
+  const branch = () => props.view().currentBranch;
   const elapsed = () => runElapsed(props.view(), props.now());
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
       <text fg="#38bdf8" attributes={1}>
         tml ship
       </text>
-      <text flexGrow={1} marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
+      <text marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
         {status()}
         {active() ? ` · ${sanitize(displayStepNameFor(props.view(), active() ?? ""))}` : ""}
       </text>
+      <Show when={branch() !== undefined}>
+        <text marginLeft={2} fg="#94a3b8">
+          {`⎇ ${sanitize(truncateBranch(branch() ?? ""))}`}
+        </text>
+      </Show>
+      <box flexGrow={1} />
       <Show when={elapsed() !== ""}>
         <text fg="#64748b">total {elapsed()}</text>
       </Show>
