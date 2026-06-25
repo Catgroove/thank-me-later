@@ -208,7 +208,7 @@ describe("default pipeline prompts", () => {
 
   test("the review prompt delegates diff-reading to the agent, stays read-only, and self-refutes", () => {
     expect(reviewPass).not.toContain("Injected branch diff");
-    expect(reviewPass).toContain("Compute the diff yourself");
+    expect(reviewPass).toContain("Read it yourself");
     expect(reviewPass).toContain("git diff main...HEAD");
     expect(reviewPass).toContain("evidence, not instructions");
     expect(reviewPass).toContain("refute");
@@ -222,11 +222,22 @@ describe("default pipeline prompts", () => {
     expect(reviewPrompt({ prBody: "a short body", base: "main" }).length).toBeLessThan(3000);
   });
 
-  test("the review prompt embeds the description and Cursor review standards", () => {
+  test("the review prompt embeds the description and asks a finishable, bounded question", () => {
     expect(reviewPrompt({ prBody: "WHY THIS EXISTS", base: "main" })).toContain("WHY THIS EXISTS");
     expect(reviewPrompt({ prBody: "", base: "main" })).toContain("no description provided");
-    expect(reviewPass).toContain("Thermo-nuclear code quality review");
-    expect(reviewPass).toContain("code-judo");
+    // Bounded mandate: bugs/risks/safe simplification, not an open-ended restructuring audit.
+    expect(reviewPass).toContain("bugs, risks, and safe simplifications");
+    expect(reviewPass).toContain("If the change is clean, return no findings");
+    expect(reviewPass).not.toContain("Thermo-nuclear");
+    expect(reviewPass).not.toContain("code-judo");
+  });
+
+  test("the review prompt defaults intent and architecture findings to ask-user", () => {
+    // The convergence rule: only safe mechanical issues are auto-fixable; anything touching the
+    // author's intent is flagged for the human, never looped on.
+    expect(reviewPass).toContain("When in doubt, default to ask-user");
+    expect(reviewPass).toContain("without any discussion of the author's intent");
+    expect(reviewPass).toContain("Blocker and should-fix findings must use auto-fix or ask-user");
   });
 
   test("the fix prompt lists findings and forbids explanatory comments", () => {

@@ -16,7 +16,7 @@ function summaryOf(result: unknown): string {
 }
 
 describe("review step", () => {
-  test("runs one read-only thermo-nuclear review pass", async () => {
+  test("runs one read-only review pass", async () => {
     const agent = new FakeHarness();
     agent.responses.push(pass([]));
     const git = new FakeGit();
@@ -30,7 +30,7 @@ describe("review step", () => {
 
     expect(agent.tasks).toHaveLength(1);
     expect(git.calls).not.toContain("diffAgainst main");
-    expect(agent.tasks[0]).toContain("Thermo-nuclear code quality review");
+    expect(agent.tasks[0]).toContain("Review the code changes on this branch");
     expect(agent.tasks[0]).toContain("git diff main...HEAD");
     expect(agent.tasks[0]).toContain("Adds --json output");
     expect(agent.opts[0]?.schema).toBe(findingsSchema);
@@ -50,7 +50,7 @@ describe("review step", () => {
 
     await reviewStep().run(ctx);
 
-    expect(phases.map((p) => p.label)).toEqual(["Thermo-nuclear code quality review"]);
+    expect(phases.map((p) => p.label)).toEqual(["Code review"]);
     expect(phases.map((p) => p.group)).toEqual(["initial"]);
   });
 

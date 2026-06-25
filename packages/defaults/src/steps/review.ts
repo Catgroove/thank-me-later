@@ -1,8 +1,10 @@
-// `review` - a pre-push thermo-nuclear maintainability audit of the branch's diff. The check is
-// one read-only agent pass based on Cursor's thermo-nuclear code quality review skill, followed by
-// the shared round loop for safe auto-fixes and verification. The before/after worktree check
-// reverts any edits the read-only pass makes anyway, so only the fix callback can change files.
-// The resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR body.
+// `review` - a pre-push read-only review of the branch's diff for bugs, risks, and safe
+// simplifications. One agent pass triages findings by action; only safe auto-fix findings enter the
+// bounded fix loop (one attempt by default), while findings that touch the author's intent are
+// flagged for the human approval gate, so the loop converges instead of churning on judgement calls.
+// The before/after worktree check reverts any edits the read-only pass makes anyway, so only the fix
+// callback can change files. The resulting markdown becomes the `reviewSummary` artifact `open-pr`
+// folds into the PR body.
 
 import {
   defineStep,
@@ -21,7 +23,7 @@ import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 import { fixCommitSubject } from "../semantic-commit.ts";
 
-const REVIEW_PASS_TITLE = "Thermo-nuclear code quality review";
+const REVIEW_PASS_TITLE = "Code review";
 
 /** Run the read-only review pass: structured reply against the findings schema, validated. */
 async function runPass(agent: Harness, prompt: string): Promise<Finding[]> {
