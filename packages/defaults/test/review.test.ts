@@ -31,7 +31,7 @@ describe("review step", () => {
     expect(agent.tasks).toHaveLength(1);
     expect(git.calls).not.toContain("diffAgainst main");
     expect(agent.tasks[0]).toContain("Review the code changes on this branch");
-    expect(agent.tasks[0]).toContain("git diff main...HEAD");
+    expect(agent.tasks[0]).toContain("git diff origin/main...HEAD");
     expect(agent.tasks[0]).toContain("Adds --json output");
     expect(agent.opts[0]?.schema).toBe(findingsSchema);
     expect(asks).toHaveLength(0);

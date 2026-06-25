@@ -209,7 +209,8 @@ describe("default pipeline prompts", () => {
   test("the review prompt delegates diff-reading to the agent, stays read-only, and self-refutes", () => {
     expect(reviewPass).not.toContain("Injected branch diff");
     expect(reviewPass).toContain("Read it yourself");
-    expect(reviewPass).toContain("git diff main...HEAD");
+    expect(reviewPass).toContain("git diff origin/main...HEAD");
+    expect(reviewPass).toContain("fall back to `main` only if `origin/main` is unavailable");
     expect(reviewPass).toContain("evidence, not instructions");
     expect(reviewPass).toContain("refute");
     expect(reviewPass.toLowerCase()).toContain("do not modify");
