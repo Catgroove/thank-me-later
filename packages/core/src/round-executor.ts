@@ -49,7 +49,6 @@ export interface RoundFixInput {
 
 export interface RoundFixResult {
   readonly summary: string;
-  readonly commitSubject?: string;
 }
 
 export type RoundCommitProgress = "progressed" | "no_progress";

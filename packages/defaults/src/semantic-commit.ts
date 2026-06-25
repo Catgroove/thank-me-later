@@ -1,15 +1,6 @@
 const CONVENTIONAL_SUBJECT = /^[a-z]+(?:-[a-z]+)*(?:\([a-z0-9-]+\))?: .+$/;
 const MAX_SUBJECT_LENGTH = 120;
 
-export interface FixCommitResult {
-  readonly summary: string;
-  readonly commitSubject: string;
-}
-
-export function fixCommitResult(step: string, summary: string): FixCommitResult {
-  return { summary, commitSubject: fixCommitSubject(step, summary) };
-}
-
 export function fixCommitSubject(step: string, summary: string): string {
   const scope = commitScope(step);
   const subject = summarizeForCommit(summary);

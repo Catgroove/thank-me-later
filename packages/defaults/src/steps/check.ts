@@ -23,7 +23,7 @@ import {
   qualityPrompt,
   testPrompt,
 } from "../prompts.ts";
-import { fixCommitResult, fixCommitSubject } from "../semantic-commit.ts";
+import { fixCommitSubject } from "../semantic-commit.ts";
 
 interface CheckPolicy {
   readonly groundRules: string;
@@ -134,10 +134,9 @@ export function checkStep(
               historyText: input.historyText,
             }),
           );
-          return fixCommitResult(name, agentResult.summary);
+          return { summary: agentResult.summary };
         },
-        commitMessage: (_input, result) =>
-          result.commitSubject ?? fixCommitSubject(name, result.summary),
+        commitMessage: (_input, result) => fixCommitSubject(name, result.summary),
       });
 
       return { artifacts: {}, rounds: result.rounds };

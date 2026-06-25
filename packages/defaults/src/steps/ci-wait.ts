@@ -16,7 +16,7 @@ import {
 } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";
 import { ciFixPrompt } from "../prompts.ts";
-import { fixCommitResult, fixCommitSubject } from "../semantic-commit.ts";
+import { fixCommitSubject } from "../semantic-commit.ts";
 import type { FixLoopPolicy } from "./fix-loop.ts";
 
 /** CI poll cadence, in milliseconds: poll every 10s, give up after 30min. Tune as runs inform us. */
@@ -169,10 +169,9 @@ export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
               historyText: input.historyText,
             }),
           );
-          return fixCommitResult("ci", agentResult.summary);
+          return { summary: agentResult.summary };
         },
-        commitMessage: (_input, result) =>
-          result.commitSubject ?? fixCommitSubject("ci", result.summary),
+        commitMessage: (_input, result) => fixCommitSubject("ci", result.summary),
         async commit({ ctx, message }) {
           const subject = message?.trim() ?? "";
           if (subject.length === 0)
