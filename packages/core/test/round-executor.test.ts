@@ -75,6 +75,9 @@ class FakeGit implements Git {
   diffAgainst(_base: string): Promise<string> {
     return Promise.resolve("diff --git a/file.ts b/file.ts\n+changed");
   }
+  diffAgainstInstructions(_base: string): Promise<string> {
+    return Promise.resolve("");
+  }
   discardChanges(): Promise<void> {
     this.calls.push("discardChanges");
     return Promise.resolve();

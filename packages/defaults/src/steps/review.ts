@@ -53,9 +53,10 @@ async function runReviewPass(
   ctx: Ctx<readonly [typeof prBody]>,
   input: RoundCheckInput,
 ): Promise<Finding[]> {
+  const base = await ctx.git.defaultBranch();
   const prompt = reviewPrompt({
     prBody: ctx.read(prBody),
-    base: await ctx.git.defaultBranch(),
+    diffScope: await ctx.git.diffAgainstInstructions(base),
   });
   return ctx.phase(
     REVIEW_PASS_TITLE,

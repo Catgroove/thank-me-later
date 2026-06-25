@@ -82,6 +82,9 @@ export class FakeGit implements Git {
   diffAgainst(): Promise<string> {
     return Promise.resolve("");
   }
+  diffAgainstInstructions(): Promise<string> {
+    return Promise.resolve("");
+  }
   discardChanges(): Promise<void> {
     return Promise.resolve();
   }
