@@ -200,7 +200,7 @@ export const checkFindingsSchema = findingsResultSchema({
 
 /** Instruct the agent to read the branch diff itself, against the resolved base ref. */
 function reviewDiffScope(base: string): string {
-  const baseRef = base.includes("/") ? base : `origin/${base}`;
+  const baseRef = base.startsWith("origin/") || base.startsWith("refs/") ? base : `origin/${base}`;
   const fallback =
     baseRef === base ? "" : ` (fall back to \`${base}\` only if \`${baseRef}\` is unavailable)`;
   return (
