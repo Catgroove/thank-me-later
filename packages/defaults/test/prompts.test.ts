@@ -216,6 +216,12 @@ describe("default pipeline prompts", () => {
     expect(reviewPass.toLowerCase()).toContain("do not run");
   });
 
+  test("the review prompt is bounded - no diff payload is embedded", () => {
+    // The agent computes the diff itself, so the prompt is a small, fixed instruction block whose
+    // size is independent of how large the branch diff is. This guards against re-inlining a diff.
+    expect(reviewPrompt({ prBody: "a short body", base: "main" }).length).toBeLessThan(3000);
+  });
+
   test("the review prompt embeds the description and Cursor review standards", () => {
     expect(reviewPrompt({ prBody: "WHY THIS EXISTS", base: "main" })).toContain("WHY THIS EXISTS");
     expect(reviewPrompt({ prBody: "", base: "main" })).toContain("no description provided");

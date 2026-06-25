@@ -215,44 +215,19 @@ export function reviewPrompt(input: ReviewPromptInput): string {
   const body = input.prBody.trim().length > 0 ? input.prBody.trim() : "(no description provided)";
   return [
     "Thermo-nuclear code quality review.",
-    "Perform a deep code quality audit of the current branch's changes. Rethink how to " +
-      "structure and implement the changes to meaningfully improve code quality without " +
-      "impacting behavior. Work to improve abstractions, modularity, succinctness, legibility, " +
-      "and codebase health. Be ambitious. If there is a clear path to improving the " +
-      "implementation by restructuring some of the codebase, push for it. Measure twice, cut " +
-      "once.",
-    "This is a read-only pass: do not modify files, stage changes, or commit. Do not run the " +
-      "test suite. Use git or file reads only for targeted context when the diff gives you a concrete " +
-      "reason to inspect a call site, helper, or invariant.",
-    "Be ambitious about structural simplification. Look for code-judo moves that preserve " +
-      "behavior while making the implementation dramatically simpler, smaller, more direct, and " +
-      "more elegant. Prefer deleting complexity over rearranging it. Do not stop at local cleanup " +
-      "when a better framing would remove branches, helpers, modes, conditionals, or layers.",
-    "Do not let a PR push a file from under 1000 lines to over 1000 lines without a very strong " +
-      "reason. Treat new ad-hoc conditionals, scattered special cases, one-off booleans, nullable " +
-      "modes, or feature checks in shared flows as design problems. Prefer a dedicated " +
-      "abstraction, helper, state machine, policy object, or focused module when that makes the " +
-      "flow easier to reason about.",
-    "Prefer direct, boring, maintainable code over hacky or magical code. Flag brittle generic " +
-      "mechanisms, thin wrappers, identity abstractions, unnecessary indirection, copy-pasted " +
-      "logic, unnecessary casts, unclear optionality, any, unknown, and ad-hoc object shapes when " +
-      "a clearer type boundary could exist.",
-    "Keep logic in the canonical layer and reuse existing helpers. Call out feature logic leaking " +
-      "into shared paths, implementation details leaking through APIs, bespoke helpers that " +
-      "duplicate canonical utilities, and orchestration that is unnecessarily sequential or " +
-      "non-atomic when a cleaner structure is obvious.",
-    "Primary review questions: Is there a code-judo move that makes this dramatically simpler? " +
-      "Can the change be reframed so fewer concepts, branches, or helper layers are needed? Does " +
-      "the diff improve or worsen the local architecture? Is the logic in the right file and " +
-      "layer? Are repeated conditionals signaling a missing model or helper? Is each abstraction " +
-      "earning its keep?",
-    "Prioritize findings in this order: structural code-quality regressions; missed " +
-      "opportunities for dramatic simplification; spaghetti or branching complexity increases; " +
-      "boundary, abstraction, and type-contract problems; file-size and decomposition concerns; " +
-      "modularity and abstraction issues; legibility and maintainability concerns. Do not flood " +
-      "the review with low-value nits.",
+    "Perform a deep maintainability audit of the current branch's changes. Be ambitious: prefer " +
+      "deleting complexity over rearranging it, and push for a restructuring when it makes the " +
+      "code dramatically simpler without changing behavior.",
+    "This is a read-only pass: do not modify files, stage changes, or commit, and do not run the " +
+      "test suite. Read git or files only for targeted context the diff gives a reason to inspect.",
+    "Look for code-judo moves and reframings that remove branches, helpers, modes, or layers " +
+      "while preserving behavior; logic that belongs in a more canonical layer or could reuse an " +
+      "existing helper; brittle generic mechanisms, thin wrappers, unnecessary indirection or " +
+      "casts, unclear optionality, and ad-hoc shapes where a clearer type boundary fits; and " +
+      "files crossing ~1000 lines or repeated conditionals that signal a missing abstraction.",
     "Before reporting a candidate finding, try to refute it against the diff and targeted " +
-      "context. Report only real maintainability problems. Assign each finding a disposition: " +
+      "context. Report only real maintainability problems and do not flood the review with " +
+      "low-value nits. Assign each finding a disposition: " +
       "blocker for a problem that must be resolved before this ships; should-fix for a clear " +
       "improvement the author should make; consider for an optional suggestion worth weighing; " +
       "nit for a trivial, take-it-or-leave-it remark. Use action auto-fix only for safe, " +
