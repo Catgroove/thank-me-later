@@ -21,6 +21,7 @@ type BaseSyncOutcome = "skipped" | "synced" | FlowSignal;
 export function rebaseStep(): Step {
   return defineStep({
     name: "rebase",
+    display: { label: "Rebase" },
     async run(ctx) {
       const result = await syncBase(ctx);
       if (result === "skipped") return skip();
