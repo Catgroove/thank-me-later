@@ -46,7 +46,7 @@ export const tmlDefaults: Plugin = (tml) => {
       isolate: true,
     }, // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the review/checks/CI run against it
-    reviewStep(fixLoopPolicy),
+    reviewStep(), // review owns its low fix budget; the maxFixAttempts knob governs the checks below
     qualityStep(fixLoopPolicy),
     testStep(fixLoopPolicy),
     openPrStep(), // performs a final base sync before pushing the branch

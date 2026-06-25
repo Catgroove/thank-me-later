@@ -18,12 +18,16 @@ import {
 } from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { guardReadOnly } from "../git-guard.ts";
-import type { FixLoopPolicy } from "./fix-loop.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 import { fixCommitSubject } from "../semantic-commit.ts";
 
 const REVIEW_PASS_TITLE = "Code review";
+
+// Review fixes obvious, safe findings once and then stops; judgement calls go to the human gate.
+// Unlike the objective checks (quality/test/ci), re-reviewing a maintainability pass does not
+// converge, so review does not take the global maxFixAttempts knob - it has its own low budget.
+const REVIEW_AUTO_FIX_ATTEMPTS = 1;
 
 /** Run the read-only review pass: structured reply against the findings schema, validated. */
 async function runPass(agent: Harness, prompt: string): Promise<Finding[]> {
@@ -76,7 +80,7 @@ function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): stri
     .join("; ");
 }
 
-export function reviewStep(policy: FixLoopPolicy = {}): Step {
+export function reviewStep(): Step {
   return defineStep({
     name: "review",
     display: { label: "Review" },
@@ -102,7 +106,7 @@ export function reviewStep(policy: FixLoopPolicy = {}): Step {
           );
         },
         commitMessage: (_input, result) => fixCommitSubject("review", result.summary),
-        maxAutoFixAttempts: policy.maxAutoFixAttempts,
+        maxAutoFixAttempts: REVIEW_AUTO_FIX_ATTEMPTS,
         recordRounds: "live",
       });
 

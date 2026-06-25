@@ -82,6 +82,48 @@ describe("review step", () => {
     expect(summaryOf(result)).toContain("fixed");
   });
 
+  test("stops after a single auto-fix attempt and escalates to the gate", async () => {
+    // Review converges by not looping a judgement pass: at most one fix attempt, then the human
+    // gate - never the multi-round churn the global maxFixAttempts allows for the objective checks.
+    const agent = new FakeHarness();
+    const first = makeFinding("review", {
+      disposition: "should-fix",
+      action: "auto-fix",
+      title: "Tidy",
+      detail: "Small cleanup.",
+    });
+    const second = makeFinding("review", {
+      disposition: "should-fix",
+      action: "auto-fix",
+      title: "More to tidy",
+      detail: "Still not clean.",
+    });
+    agent.responses.push(
+      pass([first]),
+      { ok: true, summary: "fixed once", output: {} },
+      pass([second]),
+    );
+    // The fix commits (staged change) so the loop advances on progress and reaches its cap rather
+    // than stopping early on the no-progress guard.
+    const git = new FakeGit();
+    git.stagedFiles = ["src/x.ts"];
+    git.commitSha = "a".repeat(40);
+    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    // initial + one fix + one verify, then the loop hits its cap and asks the human.
+    expect(agent.tasks).toHaveLength(3);
+    expect(approvals).toHaveLength(1);
+    expect((approvals[0] as { stopReason?: string }).stopReason).toBe("auto_fix_limit_hit");
+    expect(recordedRounds.map((r) => r.trigger)).toEqual([
+      "initial",
+      "auto_fix",
+      "verify",
+      "approval",
+    ]);
+  });
+
   test("lists ask-user findings in the summary but never fixes them", async () => {
     const agent = new FakeHarness();
     agent.responses.push(
