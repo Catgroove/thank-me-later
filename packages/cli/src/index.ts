@@ -108,8 +108,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const auto = deps.auto ?? false;
   const buildConfig =
-    deps.buildConfig ??
-    ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir), { autoApprove: auto }));
+    deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
   const engineFor = deps.engineFor ?? createEngine;
   const verbose = deps.verbose ?? false;
   // Closing the TUI while the Run is active aborts it through this controller (ending the Run with
