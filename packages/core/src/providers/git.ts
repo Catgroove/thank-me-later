@@ -19,9 +19,25 @@ export interface GitStatus {
   readonly unstaged: string[];
 }
 
+export interface GitDiffCommandPlan {
+  readonly args: readonly string[];
+}
+
+export interface GitDiffPathCommandPlan {
+  readonly argsPrefix: readonly string[];
+}
+
+export interface GitDiffPlan {
+  readonly committedBranchDiff: GitDiffCommandPlan;
+  readonly trackedWorktreeDiff: GitDiffCommandPlan;
+  readonly untrackedFilesList: GitDiffCommandPlan;
+  readonly untrackedFileDiff: GitDiffPathCommandPlan;
+}
+
 export interface GitDiffScope {
   readonly base: string;
   readonly ref: string;
+  readonly plan?: GitDiffPlan;
   readonly committedBranchDiffCommand: string;
   readonly trackedWorktreeDiffCommand: string;
   readonly untrackedFilesListCommand: string;
@@ -82,7 +98,7 @@ export interface Git {
   push(opts: { branch: string; force?: boolean }): Promise<void>;
 }
 
-async function git(cwd: string, args: string[]): Promise<string> {
+async function git(cwd: string, args: readonly string[]): Promise<string> {
   const { exitCode, stdout, stderr } = await spawnGit(cwd, args);
   if (exitCode !== 0) {
     throw new Error(`git ${args.join(" ")} failed (exit ${exitCode}): ${stderr.trim()}`);
@@ -107,31 +123,48 @@ async function comparisonRef(cwd: string, base: string): Promise<string> {
   return (await refExists(cwd, `refs/remotes/origin/${base}`)) ? `origin/${base}` : base;
 }
 
-async function untrackedDiff(cwd: string): Promise<string> {
-  const out = await git(cwd, ["ls-files", "--others", "--exclude-standard"]);
+async function untrackedDiff(cwd: string, plan: GitDiffPlan): Promise<string> {
+  const out = await git(cwd, plan.untrackedFilesList.args);
   const files = out
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const diffs: string[] = [];
   for (const file of files) {
-    const result = await spawnGit(cwd, ["diff", "--no-index", "--", "/dev/null", file]);
+    const result = await spawnGit(cwd, [...plan.untrackedFileDiff.argsPrefix, file]);
     if (result.exitCode !== 0 && result.exitCode !== 1) {
-      throw new Error(`git diff --no-index /dev/null ${file} failed: ${result.stderr.trim()}`);
+      throw new Error(
+        `${gitCommandText([...plan.untrackedFileDiff.argsPrefix, file])} failed: ${result.stderr.trim()}`,
+      );
     }
     if (result.stdout.trim().length > 0) diffs.push(result.stdout.trim());
   }
   return diffs.join("\n\n");
 }
 
+function gitCommandText(args: readonly string[]): string {
+  return `git ${args.join(" ")}`;
+}
+
+function diffPlan(ref: string): GitDiffPlan {
+  return {
+    committedBranchDiff: { args: ["diff", "--find-renames", `${ref}...HEAD`, "--"] },
+    trackedWorktreeDiff: { args: ["diff", "--find-renames", "HEAD", "--"] },
+    untrackedFilesList: { args: ["ls-files", "--others", "--exclude-standard"] },
+    untrackedFileDiff: { argsPrefix: ["diff", "--no-index", "--", "/dev/null"] },
+  };
+}
+
 function diffScope(base: string, ref: string): GitDiffScope {
+  const plan = diffPlan(ref);
   return {
     base,
     ref,
-    committedBranchDiffCommand: `git diff --find-renames ${ref}...HEAD --`,
-    trackedWorktreeDiffCommand: "git diff --find-renames HEAD --",
-    untrackedFilesListCommand: "git ls-files --others --exclude-standard",
-    untrackedFileDiffCommand: "git diff --no-index -- /dev/null <path>",
+    plan,
+    committedBranchDiffCommand: gitCommandText(plan.committedBranchDiff.args),
+    trackedWorktreeDiffCommand: gitCommandText(plan.trackedWorktreeDiff.args),
+    untrackedFilesListCommand: gitCommandText(plan.untrackedFilesList.args),
+    untrackedFileDiffCommand: `${gitCommandText(plan.untrackedFileDiff.argsPrefix)} <path>`,
   };
 }
 
@@ -257,11 +290,11 @@ export function createGit(cwd: string): Git {
     },
 
     async diffAgainst(base) {
-      const ref = await comparisonRef(cwd, base);
+      const plan = diffPlan(await comparisonRef(cwd, base));
       const diffs = [
-        await git(cwd, ["diff", "--find-renames", `${ref}...HEAD`, "--"]),
-        await git(cwd, ["diff", "--find-renames", "HEAD", "--"]),
-        await untrackedDiff(cwd),
+        await git(cwd, plan.committedBranchDiff.args),
+        await git(cwd, plan.trackedWorktreeDiff.args),
+        await untrackedDiff(cwd, plan),
       ]
         .map((diff) => diff.trim())
         .filter((diff) => diff.length > 0);
