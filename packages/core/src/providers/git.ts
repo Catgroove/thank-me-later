@@ -55,6 +55,7 @@ export interface Git {
    */
   createBranch(name: string, opts?: { from?: string }): Promise<void>;
   checkout(name: string): Promise<void>;
+  checkoutDetached(ref?: string): Promise<void>;
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
   status(): Promise<GitStatus>;
@@ -199,6 +200,10 @@ export function createGit(cwd: string): Git {
 
     async checkout(name) {
       await git(cwd, ["checkout", name]);
+    },
+
+    async checkoutDetached(ref) {
+      await git(cwd, ["checkout", "--detach", ...(ref ? [ref] : [])]);
     },
 
     async stageAll() {

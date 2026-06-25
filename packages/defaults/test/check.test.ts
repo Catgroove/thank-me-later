@@ -12,7 +12,10 @@ describe("checkStep", () => {
 
     const result = await checkStep("quality", qualityPrompt).run(ctx);
 
-    expect(result).toEqual({ artifacts: {}, rounds: [{ trigger: "initial", findings: [] }] });
+    expect(result).toEqual({
+      artifacts: {},
+      rounds: [{ trigger: "initial", findings: [], testing: { summary: "clean", tested: false } }],
+    });
     expect(agent.tasks).toHaveLength(1);
     expect(agent.tasks[0]).toContain("Check step: quality");
     expect(agent.tasks[0]).toContain(qualityPrompt);
@@ -93,7 +96,7 @@ describe("checkStep", () => {
     expect(agent.tasks[1]).toContain("Formatting drift");
     expect(agent.tasks[2]).toContain("Prior check round history");
     expect(git.calls).toContain("stageAll");
-    expect(git.calls).toContain("commit chore: apply fixes from quality");
+    expect(git.calls).toContain("commit chore(quality): formatted src/a.ts");
     expect(result).toMatchObject({
       rounds: [
         {

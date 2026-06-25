@@ -9,13 +9,16 @@ import {
   createGit,
   type Engine,
   type EngineOptions,
+  type Git,
   createRunJournal,
   createWorktree,
   currentWorkspaceSourceBranch,
   isolationBoundaryFor,
+  releaseSourceBranchForWorktree,
   removeWorktree,
   type RunJournal,
   type RunJournalResumeMode,
+  type SourceBranchRelease,
 } from "@tml/core";
 import {
   createTerminalRenderer,
@@ -86,12 +89,26 @@ async function defaultCreateTui(options: { onAbort: () => void }): Promise<Inter
 // 128 + signal number: the conventional exit code for a signal-terminated process.
 const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
 
+async function finalizeWorktreeHandoff(input: {
+  readonly cwd: string;
+  readonly git: Git;
+  readonly sourceRelease: SourceBranchRelease;
+  readonly workspacePath?: string;
+}): Promise<void> {
+  try {
+    if (input.workspacePath !== undefined) await removeWorktree(input.cwd, input.workspacePath);
+  } finally {
+    if (input.sourceRelease.kind === "detached") {
+      await input.git.checkout(input.sourceRelease.restoreBranch);
+    }
+  }
+}
+
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const auto = deps.auto ?? false;
   const buildConfig =
-    deps.buildConfig ??
-    ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir), { autoApprove: auto }));
+    deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
   const engineFor = deps.engineFor ?? createEngine;
   const verbose = deps.verbose ?? false;
   // Closing the TUI while the Run is active aborts it through this controller (ending the Run with
@@ -139,6 +156,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   let view = initialView;
   let workspaceToClean: string | undefined;
   let setupJournal: RunJournal | undefined;
+  let fatalErrorMessage: string | undefined;
 
   // Outcome of one engine pass. Two passes (source phase, worktree phase) fold into the same `view`
   // and the same journaled Run; the engine coalesces phase-2 replay-only events before they reach
@@ -252,35 +270,47 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       throw new Error("tml ship: could not determine the feature branch to isolate.");
     }
     await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
-    if (currentBranch === featureBranch) await sourceGit.checkout(base);
-    if (!existsSync(join(worktreePath, ".git"))) {
-      await createWorktree(cwd, featureBranch, worktreePath);
-    }
-    workspaceToClean = worktreePath;
-
-    // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
-    // engine coalesces the source-phase replay so the Run reads as one continuous stream.
-    const worktreeConfig = await buildConfig(worktreePath);
-    if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
-      throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
-    }
-    const phase2 = engineFor(worktreeConfig, {
-      cwd: worktreePath,
-      ask,
-      approveFindings,
-      signal: abortController.signal,
-      journal,
-      coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
+    const sourceRelease = await releaseSourceBranchForWorktree({
+      sourcePath: cwd,
+      git: sourceGit,
+      base,
+      currentBranch,
+      featureBranch,
     });
-    const outcome = await runPass(phase2);
-    if (outcome.finished && workspaceToClean !== undefined) {
-      await removeWorktree(cwd, workspaceToClean);
+    try {
+      workspaceToClean = worktreePath;
+      if (!existsSync(join(worktreePath, ".git"))) {
+        await createWorktree(cwd, featureBranch, worktreePath);
+      }
+
+      // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
+      // engine coalesces the source-phase replay so the Run reads as one continuous stream.
+      const worktreeConfig = await buildConfig(worktreePath);
+      if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
+        throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
+      }
+      const phase2 = engineFor(worktreeConfig, {
+        cwd: worktreePath,
+        ask,
+        approveFindings,
+        signal: abortController.signal,
+        journal,
+        coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
+      });
+      const outcome = await runPass(phase2);
+      return exitCode(outcome);
+    } finally {
+      await finalizeWorktreeHandoff({
+        cwd,
+        git: sourceGit,
+        sourceRelease,
+        workspacePath: workspaceToClean,
+      });
       workspaceToClean = undefined;
     }
-    return exitCode(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
-    console.error(errorMessage(error));
+    fatalErrorMessage = errorMessage(error);
     return 1;
   } finally {
     try {
@@ -294,6 +324,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     }
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);
+    if (fatalErrorMessage !== undefined) console.error(fatalErrorMessage);
   }
 }
 

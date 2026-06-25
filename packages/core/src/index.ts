@@ -35,21 +35,28 @@ export {
   type RoundRecord,
   type RoundRecordInput,
   type RoundResolution,
+  type RoundTestingEvidence,
+  type RoundTestingEvidenceInput,
   type RoundTrigger,
   type StepRoundSummary,
   currentFindings,
   findingId,
   findingLifecycle,
   hasPriorRounds,
+  hasTestingEvidence,
   isFixAttemptRound,
   makeFinding,
+  normalizeTestingEvidence,
   parseAgentFindingsOutput,
   renderFindingForPr,
+  renderFindingForPrText,
   renderPipelineSummaryForPr,
+  renderRoundNarrativeForPr,
   renderRoundsForPr,
   renderRoundsForPrompt,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
+  unresolvedFindings,
 } from "./round.ts";
 export {
   executeRoundLoop,
@@ -112,6 +119,12 @@ export {
   type RunStatus,
   type RunWorktreeHandoff,
 } from "./run-journal.ts";
-export { createWorktree, currentWorkspaceSourceBranch, removeWorktree } from "./workspace.ts";
+export {
+  createWorktree,
+  currentWorkspaceSourceBranch,
+  releaseSourceBranchForWorktree,
+  removeWorktree,
+  type SourceBranchRelease,
+} from "./workspace.ts";
 export { AssemblyError, isolationBoundaryFor, validatePipeline } from "./validate.ts";
 export type { IsolationBoundary } from "./validate.ts";

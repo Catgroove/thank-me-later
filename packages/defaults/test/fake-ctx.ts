@@ -77,6 +77,10 @@ export class FakeGit implements Git {
     this.calls.push(`checkout ${name}`);
     return Promise.resolve();
   }
+  checkoutDetached(ref?: string): Promise<void> {
+    this.calls.push(`checkoutDetached ${ref ?? "HEAD"}`);
+    return Promise.resolve();
+  }
   stageAll(): Promise<void> {
     this.calls.push("stageAll");
     return Promise.resolve();
