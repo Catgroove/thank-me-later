@@ -1,14 +1,14 @@
 // `tmlDefaults` - the blessed default pipeline as an injected-API Plugin. In order:
-//   branch -> describe -> commit(the change) | rebase -> quality -> test
-//          -> review -> open-pr -> ci-wait -> merge-gate
+//   branch -> describe -> commit(the change) | rebase -> review -> quality -> test
+//          -> open-pr -> ci-wait -> merge-gate
 // The `|` marks the isolation boundary (carried on commit-change): branch/describe/commit-change run
 // in the source checkout, then the host switches the checkout back to the default branch and hands
 // the feature branch to a disposable worktree where the rest of the pipeline runs. The work lands as
-// a clean history - your change, then tml's fixes in their own commits. Checks and review commit
+// a clean history - your change, then tml's fixes in their own commits. Review and checks commit
 // their auto-fixes through the core round executor. `rebase` runs once the change is committed
-// (clean worktree) so checks and review see the freshly fetched base; `open-pr` performs one final
+// (clean worktree) so review and checks see the freshly fetched base; `open-pr` performs one final
 // internal sync before pushing so the PR and CI start from the latest base even if it drifted during
-// the slow checks/review phase. Disable the early sync with `disable: ["rebase"]` in tml.json.
+// the slow review/checks phase. Disable the early sync with `disable: ["rebase"]` in tml.json.
 // `merge-gate` runs last: after CI is green it confirms the host will actually let the PR merge (no
 // conflicts, not behind, not blocked by branch protection, not a draft).
 // It registers no Providers (the host wires Git provider + Harness by name) and names no models
@@ -41,10 +41,10 @@ export const tmlDefaults: Plugin = (tml) => {
     // The isolation boundary: branch/describe/commit-change run in the source checkout, then the
     // host hands the feature branch to a disposable worktree where the rest of the pipeline runs.
     { ...commitStep("commit-change", prTitle), isolate: true }, // your work, subject = the PR title
-    rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
+    rebaseStep(), // sync onto the latest base before the review/checks/CI run against it
+    reviewStep(fixLoopPolicy),
     qualityStep(fixLoopPolicy),
     testStep(fixLoopPolicy),
-    reviewStep(fixLoopPolicy),
     openPrStep(), // performs a final base sync before pushing the branch
     ciWaitStep(fixLoopPolicy),
     mergeGateStep(),
