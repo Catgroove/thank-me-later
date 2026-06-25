@@ -22,16 +22,29 @@ const rounds: RoundRecord[] = [
   { step: "review", index: 0, trigger: "initial", findings: [finding] },
 ];
 
+const syncedPushCalls = [
+  "fetch main",
+  "isAncestor origin/main HEAD",
+  "isAncestor HEAD origin/main",
+  "push (force) tml/ship-abc1234",
+];
+
+function freshGit(): FakeGit {
+  const git = new FakeGit();
+  git.ancestry.set("origin/main..HEAD", true);
+  return git;
+}
+
 describe("open-pr step", () => {
   test("pushes the branch and opens the PR with a generated audit block", async () => {
-    const git = new FakeGit();
+    const git = freshGit();
     const gitProvider = new FakeGitProvider();
     const { ctx } = fakeCtx({ git, gitProvider, reads, rounds });
 
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
     // No commit: the work and fixes were committed by earlier Steps.
-    expect(git.calls).toEqual(["push (force) tml/ship-abc1234"]);
+    expect(git.calls).toEqual(syncedPushCalls);
     expect(gitProvider.opened).toHaveLength(1);
     expect(gitProvider.opened[0]?.head).toBe("tml/ship-abc1234");
     expect(gitProvider.opened[0]?.base).toBe("main");
@@ -44,7 +57,7 @@ describe("open-pr step", () => {
   });
 
   test("records empty review and round summaries explicitly", async () => {
-    const git = new FakeGit();
+    const git = freshGit();
     const gitProvider = new FakeGitProvider();
     const { ctx } = fakeCtx({ git, gitProvider, reads: { ...reads, reviewSummary: "" } });
 
@@ -55,7 +68,7 @@ describe("open-pr step", () => {
   });
 
   test("is idempotent: an existing PR is reused after pushing local commits", async () => {
-    const git = new FakeGit();
+    const git = freshGit();
     const gitProvider = new FakeGitProvider();
     const prior: PullRequest = {
       number: 7,
@@ -75,7 +88,7 @@ describe("open-pr step", () => {
     const result = (await openPrStep().run(ctx)) as { pullRequest: PullRequest };
 
     expect(result.pullRequest.body).toContain("<!-- tml:summary:start -->");
-    expect(git.calls).toEqual(["push (force) tml/ship-abc1234"]); // update the existing PR's branch
+    expect(git.calls).toEqual(syncedPushCalls); // update the existing PR's branch
     expect(gitProvider.opened).toEqual([]); // nothing opened
     expect(gitProvider.bodyUpdates).toHaveLength(1);
   });
@@ -83,7 +96,7 @@ describe("open-pr step", () => {
   test.each(["merged", "closed"] as const)(
     "opens a fresh PR when the head's only PR is %s (not reused)",
     async (state) => {
-      const git = new FakeGit();
+      const git = freshGit();
       const gitProvider = new FakeGitProvider();
       gitProvider.existing = {
         number: 7,

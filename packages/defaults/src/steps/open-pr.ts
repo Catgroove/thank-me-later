@@ -1,11 +1,12 @@
-// `open-pr` - push the branch and open or refresh the PR. The work and fixes were already
-// committed by earlier Steps, so this Step does not commit. It uses the PR body as the base audit
-// surface: a generated, delimited summary block is created from artifacts and completed rounds and
-// refreshed idempotently on re-runs. Default review findings stay out of PR comments and threads.
+// `open-pr` - sync, push, and open or refresh the PR. The work and fixes were already committed by
+// earlier Steps, so this Step does not commit. It uses the PR body as the base audit surface: a
+// generated, delimited summary block is created from artifacts and completed rounds and refreshed
+// idempotently on re-runs. Default review findings stay out of PR comments and threads.
 
 import { defineStep, type Step } from "@tml/core";
 import { branchName, prBody, prTitle, pullRequest, reviewSummary } from "../artifacts.ts";
 import { buildDefaultPrBody, updateDefaultPrBody } from "../pr-body.ts";
+import { syncBase } from "./rebase.ts";
 
 export function openPrStep(): Step {
   return defineStep({
@@ -16,9 +17,12 @@ export function openPrStep(): Step {
     async run(ctx) {
       const head = ctx.read(branchName);
 
+      const syncResult = await syncBase(ctx);
+      if (syncResult !== "skipped" && syncResult !== "synced") return syncResult;
+
       // Push before the idempotency check so a re-run that created new local commits updates the
-      // already-open PR instead of silently leaving those commits only in the checkout. Force (with
-      // lease) because `rebase` may have rewritten history; it's a safe fast-forward otherwise and
+      // already-open PR instead of silently leaving those commits only in the checkout. Force with
+      // lease because the sync may have rewritten history; it is a safe fast-forward otherwise and
       // refuses rather than clobbers if the remote head moved under us.
       await ctx.git.push({ branch: head, force: true }); // push the feature branch we ship under
 
