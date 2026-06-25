@@ -4,7 +4,7 @@
 "tml": minor
 ---
 
-Make the review step converge instead of churning. Modelled on no-mistakes:
+Make the review step converge instead of churning:
 
 - Review asks a finishable question - bugs, risks, and safe non-functional simplifications in the changed code, nothing about styling/lint/types - and returns no findings when the change is clean. The open-ended "thermo-nuclear" restructuring mandate is gone.
 - Findings are triaged by action: only safe, mechanical issues are `auto-fix`; anything touching the author's intent (architecture, product behaviour) is `ask-user` and goes to the human approval gate, never looped on. Default is `ask-user` when in doubt.
