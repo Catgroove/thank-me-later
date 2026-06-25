@@ -3,23 +3,21 @@
 // and guard, the run-loop internals) stays private to the package.
 
 export {
+  type AbortDecision,
   type ApprovalDecision,
   type ApprovalDecisionSource,
+  type ApprovalFindingsInput,
   type ApproveDecision,
   type ApproveFindingsInput,
-  type AbortDecision,
-  type FixDecision,
-  type SkipDecision,
-} from "./approval.ts";
-export {
-  type ApprovalFindingsInput,
   autoApproveFindings,
   autoApproveResponder,
+  type FixDecision,
   isRoundApproveFindingsInput,
   type RoundApprovalFixBudget,
   type RoundApproveFindingsInput,
   type RoundLoopStopReason,
-} from "./round-approval.ts";
+  type SkipDecision,
+} from "./approval.ts";
 export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
 export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";

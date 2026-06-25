@@ -6,8 +6,12 @@
 // through `ctx.approveFindings`: an approve or skip ends the loop with a recorded decision, a fix
 // continues the loop with the operator's selection and notes, and an abort throws.
 
-import type { ApprovalDecision } from "./approval.ts";
-import type { RoundApproveFindingsInput, RoundLoopStopReason } from "./round-approval.ts";
+import {
+  type ApprovalDecision,
+  type RoundApproveFindingsInput,
+  type RoundLoopStopReason,
+  requiresApproval,
+} from "./approval.ts";
 import type { Ctx } from "./context.ts";
 import {
   type Finding,
@@ -287,14 +291,6 @@ function stopPolicy(
   if (input.lastFixProgress === "no_progress") return "no_progress";
   if (input.selectedFindings.length > 0) return undefined;
   return input.findings.some((f) => needsUser(options, f)) ? "needs_user" : "remaining_findings";
-}
-
-function requiresApproval(stopReason: RoundLoopStopReason): boolean {
-  return (
-    stopReason === "needs_user" ||
-    stopReason === "auto_fix_limit_hit" ||
-    stopReason === "no_progress"
-  );
 }
 
 function defaultPrompt(stepName: string, stopReason: RoundLoopStopReason): string {
