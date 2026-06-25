@@ -402,39 +402,51 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** The sentinel the agent-prompt round-history renderer emits when there is no prior round history. */
+export const NO_PRIOR_ROUNDS = "No prior rounds.";
+
+/** One ledger line for a finding in the agent-facing history: id, disposition/action, title, location. */
+function renderFindingLedgerLine(finding: Finding): string {
+  const location = finding.location ? ` (${finding.location})` : "";
+  return `- ${finding.id} · ${finding.disposition}/${finding.action} · ${finding.title}${location}`;
+}
+
 /**
- * Compact rendering of one completed round for a fresh-agent prompt. Unlike the
- * PR renderer this is the flat, heading-free form fed back to agents (round
- * history) and to the approval gate (decision context), so both surfaces give
- * an identical account of every prior round - user notes included.
+ * Lean rendering of one completed round for a fresh-agent prompt: the trigger, a one-line-per-finding
+ * ledger partitioned into selected-to-fix vs. noted, and the fix summary and commit when present.
+ * It carries no per-finding detail or operator notes - the agent re-derives detail from the live
+ * worktree, so the history only needs the ledger of what was raised, selected, and done. The verbose
+ * per-round account stays in the PR renderers ({@link renderRoundForPr}), which are human-facing.
  */
-function renderRoundForPrompt(round: RoundRecordInput, index: number): string {
+function renderRoundForAgentPrompt(round: RoundRecordInput, index: number): string {
   const lines = [`Round ${index}: ${round.trigger}`];
-  if (round.findings.length === 0) lines.push("No findings.");
-  else lines.push(...round.findings.map(renderFindingForPr));
-  if (round.selectedFindingIds && round.selectedFindingIds.length > 0) {
-    lines.push(`Selected: ${round.selectedFindingIds.join(", ")}`);
-  }
-  if (round.userNotes && Object.keys(round.userNotes).length > 0) {
-    lines.push("User notes:");
-    for (const [id, note] of Object.entries(round.userNotes)) lines.push(`- ${id}: ${note}`);
+  if (round.findings.length === 0) {
+    lines.push("No findings.");
+  } else {
+    const selected = new Set(round.selectedFindingIds ?? []);
+    const selectedFindings = round.findings.filter((f) => selected.has(f.id));
+    const noted = round.findings.filter((f) => !selected.has(f.id));
+    if (selectedFindings.length > 0) {
+      lines.push("Selected to fix:", ...selectedFindings.map(renderFindingLedgerLine));
+    }
+    if (noted.length > 0) {
+      lines.push("Noted / not fixed:", ...noted.map(renderFindingLedgerLine));
+    }
   }
   if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
   if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
-  if (round.testing?.summary?.trim())
-    lines.push(`Testing summary: ${round.testing.summary.trim()}`);
-  if (round.testing?.tested !== undefined)
-    lines.push(`Tested: ${round.testing.tested ? "yes" : "no"}`);
   return lines.join("\n");
 }
 
-/** The sentinel `renderRoundsForPrompt` emits when there is no prior round history. */
-export const NO_PRIOR_ROUNDS = "No prior rounds.";
-
-/** Compact rendering of completed rounds for a fresh-agent prompt. */
-export function renderRoundsForPrompt(rounds: readonly RoundRecordInput[]): string {
+/**
+ * Compact, detail-free rendering of completed rounds for a fresh-agent prompt. This is the lean form
+ * fed back to agents on verify and fix passes and to the approval gate; the verbose PR renderers
+ * stay for human-facing surfaces. Emits {@link NO_PRIOR_ROUNDS} when there are no rounds so
+ * `hasPriorRounds` keeps working unchanged.
+ */
+export function renderRoundsForAgentPrompt(rounds: readonly RoundRecordInput[]): string {
   if (rounds.length === 0) return NO_PRIOR_ROUNDS;
-  return rounds.map(renderRoundForPrompt).join("\n\n");
+  return rounds.map(renderRoundForAgentPrompt).join("\n\n");
 }
 
 /** Whether round-history text holds real prior rounds, not the empty-history sentinel. */

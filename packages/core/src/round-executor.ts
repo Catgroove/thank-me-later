@@ -19,7 +19,7 @@ import {
   type RoundTestingEvidence,
   type RoundTrigger,
   normalizeTestingEvidence,
-  renderRoundsForPrompt,
+  renderRoundsForAgentPrompt,
 } from "./round.ts";
 
 const DEFAULT_MAX_AUTO_FIX_ATTEMPTS = 3;
@@ -135,7 +135,7 @@ export async function executeRoundLoop(
       trigger,
       attempt: attempts,
       history: [...rounds],
-      historyText: renderRoundsForPrompt(rounds),
+      historyText: renderRoundsForAgentPrompt(rounds),
     };
     const check = await options.check(checkInput);
     const findings = [...check.findings];
@@ -184,7 +184,7 @@ export async function executeRoundLoop(
       stopReason,
       findings,
       ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
-      context: renderRoundsForPrompt(rounds),
+      context: renderRoundsForAgentPrompt(rounds),
       fixBudget: {
         attempts,
         maxAttempts: maxAutoFixAttempts,
@@ -240,7 +240,7 @@ async function applyFix(
     attempt: args.attempt,
     findings: [...args.fixFindings],
     history: [...args.rounds],
-    historyText: renderRoundsForPrompt(args.rounds),
+    historyText: renderRoundsForAgentPrompt(args.rounds),
   };
   const fix = await options.fix(fixInput);
   const commit = await commitFix(ctx, options, fixInput, fix);
