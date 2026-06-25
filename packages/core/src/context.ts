@@ -5,8 +5,7 @@
 // `until` is the engine-owned temporal primitive; `ask` escalates a
 // free-text decision; `approveFindings` escalates a structured finding gate.
 
-import type { ApprovalDecision } from "./approval.ts";
-import type { ApprovalFindingsInput } from "./round-approval.ts";
+import type { ApprovalDecision, ApprovalFindingsInput } from "./approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Pending } from "./pending.ts";
 import type { GitProvider } from "./providers/git-provider.ts";

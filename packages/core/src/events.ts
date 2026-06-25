@@ -12,7 +12,7 @@
 // display, but completed Step durations derive from these timestamps - never from a
 // renderer-local guess. The engine is the single source of timing truth.
 
-import type { ApprovalFindingsInput } from "./round-approval.ts";
+import type { ApprovalFindingsInput } from "./approval.ts";
 import type { AgentProgress } from "./providers/harness.ts";
 import type { Finding, RoundRecord } from "./round.ts";
 import type { StepDisplay } from "./step.ts";
