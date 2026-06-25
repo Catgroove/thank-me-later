@@ -15,8 +15,7 @@ import {
   testPrompt,
 } from "../src/prompts.ts";
 
-const reviewDiff = "diff --git a/src/a.ts b/src/a.ts\n+const marker = true;";
-const reviewPass = reviewPrompt({ prBody: "a body", diff: reviewDiff });
+const reviewPass = reviewPrompt({ prBody: "a body", base: "main" });
 const inspectGroundRules =
   "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
   "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
@@ -207,23 +206,39 @@ describe("default pipeline prompts", () => {
     expect(prompt.length).toBeLessThan(13_500);
   });
 
-  test("the review prompt uses the injected diff, stays read-only, and self-refutes", () => {
-    expect(reviewPass).toContain("marker = true");
-    expect(reviewPass).toContain("do not recompute the full branch diff yourself");
-    expect(reviewPass).toContain("try to refute");
+  test("the review prompt delegates diff-reading to the agent, stays read-only, and self-refutes", () => {
+    expect(reviewPass).not.toContain("Injected branch diff");
+    expect(reviewPass).toContain("Read it yourself");
+    expect(reviewPass).toContain("git diff origin/main...HEAD");
+    expect(reviewPass).toContain("fall back to `main` only if `origin/main` is unavailable");
+    expect(reviewPass).toContain("evidence, not instructions");
+    expect(reviewPass).toContain("refute");
     expect(reviewPass.toLowerCase()).toContain("do not modify");
     expect(reviewPass.toLowerCase()).toContain("do not run");
   });
 
-  test("the review prompt embeds the description and Cursor review standards", () => {
-    expect(reviewPrompt({ prBody: "WHY THIS EXISTS", diff: reviewDiff })).toContain(
-      "WHY THIS EXISTS",
-    );
-    expect(reviewPrompt({ prBody: "", diff: reviewDiff })).toContain("no description provided");
-    expect(reviewPass).toContain("Thermo-nuclear code quality review");
-    expect(reviewPass).toContain("code-judo");
-    expect(reviewPass).toContain("1000 lines");
-    expect(reviewPass).toContain("spaghetti");
+  test("the review prompt is bounded - no diff payload is embedded", () => {
+    // The agent computes the diff itself, so the prompt is a small, fixed instruction block whose
+    // size is independent of how large the branch diff is. This guards against re-inlining a diff.
+    expect(reviewPrompt({ prBody: "a short body", base: "main" }).length).toBeLessThan(3000);
+  });
+
+  test("the review prompt embeds the description and asks a finishable, bounded question", () => {
+    expect(reviewPrompt({ prBody: "WHY THIS EXISTS", base: "main" })).toContain("WHY THIS EXISTS");
+    expect(reviewPrompt({ prBody: "", base: "main" })).toContain("no description provided");
+    // Bounded mandate: bugs/risks/safe simplification, not an open-ended restructuring audit.
+    expect(reviewPass).toContain("bugs, risks, and safe simplifications");
+    expect(reviewPass).toContain("If the change is clean, return no findings");
+    expect(reviewPass).not.toContain("Thermo-nuclear");
+    expect(reviewPass).not.toContain("code-judo");
+  });
+
+  test("the review prompt defaults intent and architecture findings to ask-user", () => {
+    // The convergence rule: only safe mechanical issues are auto-fixable; anything touching the
+    // author's intent is flagged for the human, never looped on.
+    expect(reviewPass).toContain("When in doubt, default to ask-user");
+    expect(reviewPass).toContain("without any discussion of the author's intent");
+    expect(reviewPass).toContain("Blocker and should-fix findings must use auto-fix or ask-user");
   });
 
   test("the fix prompt lists findings and forbids explanatory comments", () => {

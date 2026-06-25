@@ -1,8 +1,11 @@
-// `review` - a pre-push thermo-nuclear maintainability audit of the branch's diff. The check is
-// one read-only agent pass based on Cursor's thermo-nuclear code quality review skill, followed by
-// the shared round loop for safe auto-fixes and verification. The before/after worktree check
-// reverts any edits the read-only pass makes anyway, so only the fix callback can change files.
-// The resulting markdown becomes the `reviewSummary` artifact `open-pr` folds into the PR body.
+// `review` - a pre-push read-only review of the branch's diff for bugs, risks, and safe
+// simplifications. One agent pass triages findings by action; safe auto-fix findings get a single
+// fire-and-forget fix pass (no re-review), while findings that touch the author's intent are flagged
+// for the human approval gate. So a clean diff is one pass, obvious fixes cost one more, and
+// judgement calls reach the operator once - the step never re-reviews and so never churns. The
+// before/after worktree check reverts any edits the read-only pass makes anyway, so only the fix
+// callback can change files. The resulting markdown becomes the `reviewSummary` artifact `open-pr`
+// folds into the PR body.
 
 import {
   defineStep,
@@ -16,12 +19,17 @@ import {
 } from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { guardReadOnly } from "../git-guard.ts";
-import type { FixLoopPolicy } from "./fix-loop.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 import { fixCommitSubject } from "../semantic-commit.ts";
 
-const REVIEW_PASS_TITLE = "Thermo-nuclear code quality review";
+const REVIEW_PASS_TITLE = "Code review";
+
+// Review fixes obvious, safe findings once (fire-and-forget, no re-review) and routes judgement
+// calls to the human gate. Unlike the objective checks (quality/test/ci), re-reviewing a
+// maintainability pass does not converge, so review does not take the global maxFixAttempts knob -
+// it has its own low budget and `verifyAfterFix: false`.
+const REVIEW_AUTO_FIX_ATTEMPTS = 1;
 
 /** Run the read-only review pass: structured reply against the findings schema, validated. */
 async function runPass(agent: Harness, prompt: string): Promise<Finding[]> {
@@ -55,7 +63,7 @@ async function runReviewPass(
 ): Promise<Finding[]> {
   const prompt = reviewPrompt({
     prBody: ctx.read(prBody),
-    diff: await ctx.git.diffAgainst(await ctx.git.defaultBranch()),
+    base: await ctx.git.defaultBranch(),
   });
   return ctx.phase(
     REVIEW_PASS_TITLE,
@@ -74,20 +82,18 @@ function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): stri
     .join("; ");
 }
 
-export function reviewStep(policy: FixLoopPolicy = {}): Step {
+export function reviewStep(): Step {
   return defineStep({
     name: "review",
     display: { label: "Review" },
     consumes: [prBody],
     produces: [reviewSummary],
     async run(ctx) {
-      let latestFindings: Finding[] = [];
-
       const result = await executeRoundLoop(ctx, {
         stepName: "review",
         async check(input) {
-          latestFindings = await runReviewPass(ctx, input);
-          return { findings: latestFindings };
+          const findings = await runReviewPass(ctx, input);
+          return { findings };
         },
         async fix(input) {
           return ctx.phase(
@@ -100,13 +106,16 @@ export function reviewStep(policy: FixLoopPolicy = {}): Step {
           );
         },
         commitMessage: (_input, result) => fixCommitSubject("review", result.summary),
-        maxAutoFixAttempts: policy.maxAutoFixAttempts,
+        maxAutoFixAttempts: REVIEW_AUTO_FIX_ATTEMPTS,
+        // Review is a judgement pass: apply safe fixes once and stop. A re-review would not
+        // converge and would re-surface findings the operator already decided on.
+        verifyAfterFix: false,
         recordRounds: "live",
       });
 
       return {
         artifacts: {
-          reviewSummary: summarize(latestFindings, fixSummaries(result.rounds)),
+          reviewSummary: summarize(result.findings, fixSummaries(result.rounds)),
         },
         rounds: [],
       };

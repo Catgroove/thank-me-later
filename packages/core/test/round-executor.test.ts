@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ApprovalDecision } from "../src/approval.ts";
+import type { ApprovalDecision, ApprovalFindingsInput } from "../src/approval.ts";
 import type { Ctx } from "../src/context.ts";
 import {
   type CommitResult,
@@ -85,7 +85,12 @@ class FakeGit implements Git {
   }
 }
 
-function fakeCtx(parts: { git?: Git; approveFindings?: () => Promise<ApprovalDecision> } = {}): {
+function fakeCtx(
+  parts: {
+    git?: Git;
+    approveFindings?: (input: ApprovalFindingsInput) => Promise<ApprovalDecision>;
+  } = {},
+): {
   ctx: Ctx;
   asks: string[];
 } {
@@ -212,6 +217,49 @@ describe("executeRoundLoop", () => {
       },
       { trigger: "verify", findings: [] },
     ]);
+  });
+
+  test("verifyAfterFix false applies one fix, never re-checks, and gates the rest", async () => {
+    const auto = finding("auto-fix", "Safe tidy");
+    const ask = finding("ask-user", "Confirm intent");
+    const git = new FakeGit();
+    git.stagedFiles = ["src/file.ts"];
+    git.commitSha = "abc".repeat(13) + "a";
+    const approvals: ApprovalFindingsInput[] = [];
+    const { ctx } = fakeCtx({
+      git,
+      approveFindings: (input) => {
+        approvals.push(input);
+        return Promise.resolve({ action: "approve" });
+      },
+    });
+    const checkTriggers: string[] = [];
+    const fixInputs: RoundFixInput[] = [];
+
+    const result = await executeRoundLoop(ctx, {
+      stepName: "review",
+      verifyAfterFix: false,
+      maxAutoFixAttempts: 1,
+      check(input) {
+        checkTriggers.push(input.trigger);
+        return Promise.resolve({ findings: [auto, ask] });
+      },
+      fix(input) {
+        fixInputs.push(input);
+        return Promise.resolve({ summary: "fixed" });
+      },
+      commitMessage: "chore: fix",
+    });
+
+    // One check (no verify), one fix targeting only the auto-fix finding.
+    expect(checkTriggers).toEqual(["initial"]);
+    expect(fixInputs).toHaveLength(1);
+    expect(fixInputs[0]?.findings).toEqual([auto]);
+    // The untargeted ask-user finding is escalated to the gate exactly once.
+    expect(approvals).toHaveLength(1);
+    expect((approvals[0] as { stopReason?: string }).stopReason).toBe("needs_user");
+    expect(approvals[0]?.findings).toEqual([ask]);
+    expect(result.rounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "approval"]);
   });
 
   test("continues with an approved user fix before fresh verification", async () => {

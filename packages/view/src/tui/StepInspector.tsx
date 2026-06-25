@@ -196,10 +196,9 @@ function progressLine(entries: readonly FindingLifecycle[]): string {
   return parts.join(" · ");
 }
 
-function FindingLine(props: { entry: FindingLifecycle; focused?: boolean; tag?: string }) {
+function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const f = () => props.entry.finding;
   const meta = () => STATUS_META[props.entry.status];
-  const tag = () => props.tag ?? meta().tag;
   // The focused background matches the approval drawer's focused-finding row so the two surfaces
   // read as pointing at the same finding.
   const marker = () => findingMarker(f());
@@ -220,15 +219,10 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean; tag?: 
           {marker()} {sanitize(f().title)}
           {f().location ? ` — ${sanitize(f().location ?? "")}` : ""}
         </text>
-        <Show when={tag() !== ""}>
-          <text fg={meta().color}>{tag()}</text>
+        <Show when={meta().tag !== ""}>
+          <text fg={meta().color}>{meta().tag}</text>
         </Show>
       </box>
-      <Show when={props.tag !== undefined && meta().tag !== "" && props.tag !== meta().tag}>
-        <text fg="#64748b" marginLeft={2}>
-          {meta().tag}
-        </text>
-      </Show>
       <text fg="#94a3b8" wrapMode="word" marginLeft={2}>
         {sanitize(f().detail, { preserveNewlines: true })}
       </text>
@@ -240,25 +234,14 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean; tag?: 
 // canonical order are shared with the approval drawer (SECTION_ORDER/SECTION_LABEL), so the section
 // header carries the action and the per-line `(action)` tag drops away. The per-line status glyph
 // adds the orthogonal progress dimension: which of those findings are still pending, fixed, or decided.
-function FindingSection(props: {
-  label: string;
-  entries: FindingLifecycle[];
-  rounds: readonly RoundRecord[];
-  focusedId?: string;
-}) {
+function FindingSection(props: { label: string; entries: FindingLifecycle[]; focusedId?: string }) {
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg="#64748b" attributes={1}>
         {props.label} ({props.entries.length})
       </text>
       <For each={props.entries}>
-        {(entry) => (
-          <FindingLine
-            entry={entry}
-            focused={entry.finding.id === props.focusedId}
-            tag={autoApprovalTag(entry, props.rounds)}
-          />
-        )}
+        {(entry) => <FindingLine entry={entry} focused={entry.finding.id === props.focusedId} />}
       </For>
     </box>
   );
@@ -282,7 +265,6 @@ function Findings(props: { step: StepView; focusedId?: string }) {
                 <FindingSection
                   label={SECTION_LABEL[action]}
                   entries={items()}
-                  rounds={props.step.rounds}
                   focusedId={props.focusedId}
                 />
               </Show>
@@ -294,42 +276,12 @@ function Findings(props: { step: StepView; focusedId?: string }) {
   );
 }
 
-function autoApprovalTag(
-  entry: FindingLifecycle,
-  rounds: readonly RoundRecord[],
-): string | undefined {
-  const latestCheckIndex = Math.max(
-    0,
-    ...rounds
-      .filter((round) => round.trigger === "initial" || round.trigger === "verify")
-      .map((round) => round.index),
-  );
-  const approval = rounds
-    .filter(
-      (round) =>
-        round.trigger === "approval" &&
-        round.approvalSource === "auto" &&
-        round.index >= latestCheckIndex &&
-        round.findings.some((finding) => finding.id === entry.finding.id),
-    )
-    .at(-1);
-  if (approval === undefined) return undefined;
-  if (approval.resolution === "approved" && entry.status === "accepted") {
-    return "auto-approved as-is";
-  }
-  if (approval.selectedFindingIds?.includes(entry.finding.id) && entry.status === "pending") {
-    return "auto-approved";
-  }
-  return undefined;
-}
-
 function RoundLine(props: { round: RoundRecord; fixNumber?: number }) {
   const r = props.round;
   return (
     <box flexDirection="column" marginBottom={1}>
       <text fg="#cbd5e1">
         round {r.index} · {r.trigger}
-        {r.approvalSource === "auto" ? " · auto" : ""}
         {props.fixNumber !== undefined ? ` · fix ${props.fixNumber}` : ""} · {r.findings.length}{" "}
         finding
         {r.findings.length === 1 ? "" : "s"}

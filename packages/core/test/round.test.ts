@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  NO_PRIOR_ROUNDS,
   currentFindings,
   findingId,
   findingLifecycle,
@@ -7,6 +8,7 @@ import {
   renderFindingForPr,
   renderPipelineSummaryForPr,
   renderRoundForPr,
+  renderRoundsForAgentPrompt,
   renderRoundsForPr,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
@@ -93,6 +95,66 @@ describe("PR summary rendering", () => {
     expect(renderPipelineSummaryForPr(rounds)).toContain("| lint | clean | 3 | 1 | verify | 0 |");
     expect(renderUnresolvedFindingsForPr(rounds)).toContain("Confirm contract");
     expect(renderUnresolvedFindingsForPr(rounds)).not.toContain("Lint failed");
+  });
+});
+
+describe("agent-prompt round history", () => {
+  const selected = makeFinding("review", {
+    disposition: "should-fix",
+    action: "auto-fix",
+    title: "Collapse the duplicated branch",
+    detail: "A long evidence-based explanation the agent does not need re-sent.",
+    location: "src/x.ts:42",
+  });
+  const noted = makeFinding("review", {
+    disposition: "nit",
+    action: "no-op",
+    title: "Stray comment",
+    detail: "Another verbose detail body.",
+  });
+
+  test("empty history renders the shared sentinel", () => {
+    expect(renderRoundsForAgentPrompt([])).toBe(NO_PRIOR_ROUNDS);
+  });
+
+  test("renders a compact, detail-free ledger partitioned by selection", () => {
+    const text = renderRoundsForAgentPrompt([
+      {
+        trigger: "initial",
+        findings: [selected, noted],
+        selectedFindingIds: [selected.id],
+        fixSummary: "Removed the branch.",
+        commitSha: "abc123",
+      },
+    ]);
+
+    expect(text).toContain("Round 0: initial");
+    expect(text).toContain("Selected to fix:");
+    expect(text).toContain("Noted / not fixed:");
+    expect(text).toContain(
+      `- ${selected.id} · should-fix/auto-fix · Collapse the duplicated branch (src/x.ts:42)`,
+    );
+    expect(text).toContain(`- ${noted.id} · nit/no-op · Stray comment`);
+    expect(text).toContain("Fix summary: Removed the branch.");
+    expect(text).toContain("Commit: abc123");
+    // Detail bodies are re-derived from the worktree, never re-sent.
+    expect(text).not.toContain("evidence-based explanation");
+    expect(text).not.toContain("verbose detail body");
+  });
+
+  test("omits an empty partition heading and grows linearly per finding", () => {
+    const single = renderRoundsForAgentPrompt([{ trigger: "verify", findings: [noted] }]);
+    expect(single).not.toContain("Selected to fix:");
+    expect(single).toContain("Noted / not fixed:");
+
+    const lineCount = (text: string) => text.split("\n").length;
+    const oneFinding = lineCount(
+      renderRoundsForAgentPrompt([{ trigger: "initial", findings: [noted] }]),
+    );
+    const twoFindings = lineCount(
+      renderRoundsForAgentPrompt([{ trigger: "initial", findings: [noted, selected] }]),
+    );
+    expect(twoFindings).toBe(oneFinding + 1);
   });
 });
 

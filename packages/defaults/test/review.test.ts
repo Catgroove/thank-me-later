@@ -16,7 +16,7 @@ function summaryOf(result: unknown): string {
 }
 
 describe("review step", () => {
-  test("runs one read-only thermo-nuclear review pass", async () => {
+  test("runs one read-only review pass", async () => {
     const agent = new FakeHarness();
     agent.responses.push(pass([]));
     const git = new FakeGit();
@@ -29,9 +29,9 @@ describe("review step", () => {
     const result = await reviewStep().run(ctx);
 
     expect(agent.tasks).toHaveLength(1);
-    expect(git.calls.filter((call) => call === "diffAgainst main")).toHaveLength(1);
-    expect(agent.tasks[0]).toContain("Thermo-nuclear code quality review");
-    expect(agent.tasks[0]).toContain("Injected branch diff");
+    expect(git.calls).not.toContain("diffAgainst main");
+    expect(agent.tasks[0]).toContain("Review the code changes on this branch");
+    expect(agent.tasks[0]).toContain("git diff origin/main...HEAD");
     expect(agent.tasks[0]).toContain("Adds --json output");
     expect(agent.opts[0]?.schema).toBe(findingsSchema);
     expect(asks).toHaveLength(0);
@@ -50,11 +50,11 @@ describe("review step", () => {
 
     await reviewStep().run(ctx);
 
-    expect(phases.map((p) => p.label)).toEqual(["Thermo-nuclear code quality review"]);
+    expect(phases.map((p) => p.label)).toEqual(["Code review"]);
     expect(phases.map((p) => p.group)).toEqual(["initial"]);
   });
 
-  test("runs the fix pass for auto-fix findings, then verifies with a fresh review", async () => {
+  test("applies one fire-and-forget fix for auto-fix findings, with no re-review", async () => {
     const agent = new FakeHarness();
     const auto = makeFinding("review", {
       disposition: "should-fix",
@@ -62,24 +62,54 @@ describe("review step", () => {
       title: "Tidy",
       detail: "Small cleanup.",
     });
-    agent.responses.push(pass([auto]), { ok: true, summary: "fixed", output: {} }, pass([]));
-    const { ctx, phases, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
+    // Only two scripted replies: the review and the fix. No third (verify) pass.
+    agent.responses.push(pass([auto]), { ok: true, summary: "fixed", output: {} });
+    const git = new FakeGit();
+    git.stagedFiles = ["file.ts"];
+    const { ctx, phases, recordedRounds } = fakeCtx({ agent, git, reads: { prBody: "body" } });
 
     const result = await reviewStep().run(ctx);
 
-    expect(agent.tasks).toHaveLength(3);
+    expect(agent.tasks).toHaveLength(2);
     expect(agent.opts[1]?.schema).toBeUndefined();
     expect(agent.tasks[1]).toContain("Prior review round history");
     expect(agent.tasks[1]).toContain("Round 0: initial");
-    expect(agent.tasks[2]).toContain("Prior review round history");
-    expect(phases.map((p) => p.group)).toEqual([
-      "initial",
-      "fix · attempt 1",
-      "verify · attempt 1",
-    ]);
+    expect(phases.map((p) => p.group)).toEqual(["initial", "fix · attempt 1"]);
     expect(phases.find((p) => p.group?.startsWith("fix"))?.label).toBe("Apply fixes");
-    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
+    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix"]);
+    expect(recordedRounds.map((r) => r.trigger)).not.toContain("verify");
     expect(summaryOf(result)).toContain("fixed");
+  });
+
+  test("auto-fixes safe findings, then gates only the ask-user findings, without re-review", async () => {
+    const agent = new FakeHarness();
+    const auto = makeFinding("review", {
+      disposition: "should-fix",
+      action: "auto-fix",
+      title: "Tidy",
+      detail: "Small cleanup.",
+    });
+    const ask = makeFinding("review", {
+      disposition: "should-fix",
+      action: "ask-user",
+      title: "Confirm contract",
+      detail: "intent?",
+    });
+    // Initial review then one fix; no verify pass is scripted because none should run.
+    agent.responses.push(pass([auto, ask]), { ok: true, summary: "fixed once", output: {} });
+    const git = new FakeGit();
+    git.stagedFiles = ["file.ts"];
+    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+
+    await reviewStep().run(ctx);
+
+    expect(agent.tasks).toHaveLength(2);
+    expect(approvals).toHaveLength(1);
+    expect((approvals[0] as { stopReason?: string }).stopReason).toBe("needs_user");
+    // The gate sees only the unfixed ask-user finding, not the auto-fixed one.
+    expect(approvals[0]?.findings.map((f) => f.title)).toEqual(["Confirm contract"]);
+    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "approval"]);
+    expect(recordedRounds.map((r) => r.trigger)).not.toContain("verify");
   });
 
   test("lists ask-user findings in the summary but never fixes them", async () => {

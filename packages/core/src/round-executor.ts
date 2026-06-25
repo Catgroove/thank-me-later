@@ -19,7 +19,7 @@ import {
   type RoundTestingEvidence,
   type RoundTrigger,
   normalizeTestingEvidence,
-  renderRoundsForPrompt,
+  renderRoundsForAgentPrompt,
 } from "./round.ts";
 
 const DEFAULT_MAX_AUTO_FIX_ATTEMPTS = 3;
@@ -91,6 +91,14 @@ export interface RoundLoopOptions {
   stepName?: string;
   /** Maximum number of fix rounds. Defaults to 3. */
   maxAutoFixAttempts?: number;
+  /**
+   * Whether to run a fresh check round after a fix to confirm it. Defaults to `true` (the
+   * converging loop for objective checks: fix, re-run the tool, repeat). Set `false` for a
+   * fire-and-forget fix that is not re-reviewed - the fix is applied once and the loop stops,
+   * escalating only the findings the fix did not target. Suits a judgement pass (review) where a
+   * full re-review would not converge and would re-surface decisions the operator already made.
+   */
+  verifyAfterFix?: boolean;
   /** Optional stop policy after each check round. Defaults to clean and no-selected stops. */
   stopPolicy?(input: RoundStopPolicyInput): RoundLoopStopReason | undefined;
   /** Commit subject for each fix round when using the default commit behavior. */
@@ -130,12 +138,12 @@ export async function executeRoundLoop(
   let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
   let lastFixProgress: RoundFixProgress | undefined;
 
-  while (true) {
+  roundsLoop: while (true) {
     const checkInput: RoundCheckInput = {
       trigger,
       attempt: attempts,
       history: [...rounds],
-      historyText: renderRoundsForPrompt(rounds),
+      historyText: renderRoundsForAgentPrompt(rounds),
     };
     const check = await options.check(checkInput);
     const findings = [...check.findings];
@@ -161,63 +169,112 @@ export async function executeRoundLoop(
       stopReason = "auto_fix_limit_hit";
     }
 
+    // The findings the gate and the terminal result consider. Normally the full check findings; in
+    // fire-and-forget mode it narrows to what the fix did not target (the fix is not re-reviewed).
+    let gateFindings = findings;
+
     if (stopReason === undefined) {
       attempts += 1;
+      const fixedIds = new Set(selected.map((f) => f.id));
+      const remainingAfterFix = findings.filter((f) => !fixedIds.has(f.id));
       lastFixProgress = await applyFix(ctx, options, {
         trigger: "auto_fix",
         attempt: attempts,
         fixFindings: selected,
-        recordFindings: selected,
+        recordFindings:
+          options.verifyAfterFix === false
+            ? (progress) => (progress === "no_progress" ? findings : remainingAfterFix)
+            : selected,
+        selectedFindingIds: selected.map((f) => f.id),
         rounds,
       });
+      if (options.verifyAfterFix !== false) {
+        trigger = "verify";
+        continue;
+      }
+      if (lastFixProgress === "no_progress") {
+        gateFindings = findings;
+        stopReason = "no_progress";
+      } else {
+        gateFindings = remainingAfterFix;
+        stopReason = terminalStopReason(options, gateFindings);
+      }
+    }
+
+    while (options.stepName !== undefined && requiresApproval(stopReason)) {
+      const suggestedFindingIds = currentSelectedFindingIds(gateFindings, rounds);
+      const approvalInput: RoundApproveFindingsInput = {
+        prompt: defaultPrompt(options.stepName, stopReason),
+        stopReason,
+        findings: gateFindings,
+        ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
+        context: renderRoundsForAgentPrompt(rounds),
+        fixBudget: {
+          attempts,
+          maxAttempts: maxAutoFixAttempts,
+          remainingAttempts: Math.max(0, maxAutoFixAttempts - attempts),
+        },
+      };
+      const decision = await ctx.approveFindings(approvalInput);
+
+      if (decision.action === "abort") {
+        throw new Error(decision.reason ?? "approval aborted by operator");
+      }
+      if (decision.action === "approve" || decision.action === "skip") {
+        await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
+        return done(stopReason, gateFindings, rounds, attempts);
+      }
+
+      const decisionFindings = selectDecisionFindings(gateFindings, decision.selectedFindingIds);
+      if (decisionFindings.length === 0) {
+        throw new Error(`${options.stepName}: approval fix selected no current findings`);
+      }
+      const userFindings = decision.userFindings ?? [];
+      const recordFixFindings = [...decisionFindings, ...userFindings];
+      const fixedIds = new Set(recordFixFindings.map((f) => f.id));
+      const remainingAfterFix = gateFindings.filter((f) => !fixedIds.has(f.id));
+      const findingsIfNoProgress = appendFindings(gateFindings, userFindings);
+      await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
+      attempts += 1;
+      lastFixProgress = await applyFix(ctx, options, {
+        trigger: "user_fix",
+        attempt: attempts,
+        fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
+        recordFindings:
+          options.verifyAfterFix === false
+            ? (progress) => (progress === "no_progress" ? findingsIfNoProgress : remainingAfterFix)
+            : recordFixFindings,
+        selectedFindingIds: recordFixFindings.map((f) => f.id),
+        rounds,
+        userNotes: cleanNotes(decision.notes),
+      });
+      // A fire-and-forget operator fix is applied once and not re-reviewed, matching the auto-fix path.
+      if (options.verifyAfterFix === false) {
+        if (lastFixProgress === "no_progress") {
+          gateFindings = findingsIfNoProgress;
+          stopReason = "no_progress";
+        } else {
+          gateFindings = remainingAfterFix;
+          stopReason = terminalStopReason(options, gateFindings);
+        }
+        continue;
+      }
       trigger = "verify";
-      continue;
+      continue roundsLoop;
     }
 
-    if (options.stepName === undefined || !requiresApproval(stopReason)) {
-      return done(stopReason, findings, rounds, attempts);
-    }
-
-    const suggestedFindingIds = currentSelectedFindingIds(findings, rounds);
-    const approvalInput: RoundApproveFindingsInput = {
-      prompt: defaultPrompt(options.stepName, stopReason),
-      stopReason,
-      findings,
-      ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
-      context: renderRoundsForPrompt(rounds),
-      fixBudget: {
-        attempts,
-        maxAttempts: maxAutoFixAttempts,
-        remainingAttempts: Math.max(0, maxAutoFixAttempts - attempts),
-      },
-    };
-    const decision = await ctx.approveFindings(approvalInput);
-
-    if (decision.action === "abort") {
-      throw new Error(decision.reason ?? "approval aborted by operator");
-    }
-    if (decision.action === "approve" || decision.action === "skip") {
-      await appendRound(ctx, options, rounds, approvalRound(findings, decision));
-      return done(stopReason, findings, rounds, attempts);
-    }
-
-    const decisionFindings = selectDecisionFindings(findings, decision.selectedFindingIds);
-    if (decisionFindings.length === 0) {
-      throw new Error(`${options.stepName}: approval fix selected no current findings`);
-    }
-    const userFindings = decision.userFindings ?? [];
-    await appendRound(ctx, options, rounds, approvalRound(findings, decision));
-    attempts += 1;
-    lastFixProgress = await applyFix(ctx, options, {
-      trigger: "user_fix",
-      attempt: attempts,
-      fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
-      recordFindings: [...decisionFindings, ...userFindings],
-      rounds,
-      userNotes: cleanNotes(decision.notes),
-    });
-    trigger = "verify";
+    return done(stopReason, gateFindings, rounds, attempts);
   }
+}
+
+/** Terminal stop for a fire-and-forget fix: no re-check, so classify the findings the fix left. */
+function terminalStopReason(
+  options: RoundLoopOptions,
+  findings: readonly Finding[],
+): RoundLoopStopReason {
+  if (findings.length === 0) return "clean";
+  if (findings.some((finding) => needsUser(options, finding))) return "needs_user";
+  return "remaining_findings";
 }
 
 interface ApplyFixArgs {
@@ -226,7 +283,10 @@ interface ApplyFixArgs {
   /** Findings handed to the fix callback; may carry inline operator notes. */
   readonly fixFindings: readonly Finding[];
   /** Findings recorded in the round; the clean, note-free set. */
-  readonly recordFindings: readonly Finding[];
+  readonly recordFindings:
+    | readonly Finding[]
+    | ((progress: RoundFixProgress) => readonly Finding[]);
+  readonly selectedFindingIds?: readonly string[];
   readonly rounds: RoundRecordInput[];
   readonly userNotes?: Record<string, string>;
 }
@@ -240,16 +300,20 @@ async function applyFix(
     attempt: args.attempt,
     findings: [...args.fixFindings],
     history: [...args.rounds],
-    historyText: renderRoundsForPrompt(args.rounds),
+    historyText: renderRoundsForAgentPrompt(args.rounds),
   };
   const fix = await options.fix(fixInput);
   const commit = await commitFix(ctx, options, fixInput, fix);
   const fixSummary = fix.summary.trim();
+  const recordFindings =
+    typeof args.recordFindings === "function"
+      ? [...args.recordFindings(commit.progress)]
+      : [...args.recordFindings];
 
   await appendRound(ctx, options, args.rounds, {
     trigger: args.trigger,
-    findings: [...args.recordFindings],
-    selectedFindingIds: args.recordFindings.map((f) => f.id),
+    findings: recordFindings,
+    selectedFindingIds: [...(args.selectedFindingIds ?? recordFindings.map((f) => f.id))],
     ...(args.userNotes ? { userNotes: args.userNotes } : {}),
     ...(fixSummary.length > 0 ? { fixSummary } : {}),
     ...(commit.commitSha !== undefined ? { commitSha: commit.commitSha } : {}),
@@ -321,7 +385,6 @@ function approvalRound(findings: readonly Finding[], decision: ApprovalDecision)
     findings: [...findings, ...userFindings],
     ...(decision.action === "fix" ? { selectedFindingIds: [...decision.selectedFindingIds] } : {}),
     ...(userNotes ? { userNotes } : {}),
-    ...(decision.source ? { approvalSource: decision.source } : {}),
     ...(resolution ? { resolution } : {}),
   };
 }
@@ -344,6 +407,17 @@ function selectDecisionFindings(
 ): Finding[] {
   const selected = new Set(selectedFindingIds);
   return findings.filter((finding) => selected.has(finding.id));
+}
+
+function appendFindings(findings: readonly Finding[], additions: readonly Finding[]): Finding[] {
+  const seen = new Set(findings.map((finding) => finding.id));
+  const out = [...findings];
+  for (const finding of additions) {
+    if (seen.has(finding.id)) continue;
+    out.push(finding);
+    seen.add(finding.id);
+  }
+  return out;
 }
 
 function annotateWithNotes(

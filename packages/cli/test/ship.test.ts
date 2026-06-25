@@ -128,8 +128,6 @@ describe("parseShipArgs", () => {
   test("preserves --verbose, --fresh, and --resume", () => {
     expect(parseShipArgs(["--verbose"]).verbose).toBe(true);
     expect(parseShipArgs(["-v"]).verbose).toBe(true);
-    expect(parseShipArgs([]).auto).toBe(false);
-    expect(parseShipArgs(["--auto"]).auto).toBe(true);
     expect(parseShipArgs([]).journalResume).toBeUndefined();
     expect(parseShipArgs(["--fresh"]).journalResume).toBe("fresh");
     expect(parseShipArgs(["--resume"])).toMatchObject({ journalResume: "auto" });
@@ -147,13 +145,11 @@ describe("parseShipArgs", () => {
     });
     expect(parseShipArgs(["--resume", "run-7", "--fresh"])).toEqual({
       verbose: false,
-      auto: false,
       plain: false,
       journalResume: "fresh",
     });
     expect(parseShipArgs(["--resume", "run-7", "--resume"])).toEqual({
       verbose: false,
-      auto: false,
       plain: false,
       journalResume: "auto",
     });
