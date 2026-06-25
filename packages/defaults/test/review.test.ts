@@ -29,9 +29,9 @@ describe("review step", () => {
     const result = await reviewStep().run(ctx);
 
     expect(agent.tasks).toHaveLength(1);
-    expect(git.calls.filter((call) => call === "diffAgainst main")).toHaveLength(1);
+    expect(git.calls).not.toContain("diffAgainst main");
     expect(agent.tasks[0]).toContain("Thermo-nuclear code quality review");
-    expect(agent.tasks[0]).toContain("Injected branch diff");
+    expect(agent.tasks[0]).toContain("git diff main...HEAD");
     expect(agent.tasks[0]).toContain("Adds --json output");
     expect(agent.opts[0]?.schema).toBe(findingsSchema);
     expect(asks).toHaveLength(0);
