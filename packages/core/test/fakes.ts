@@ -1,8 +1,10 @@
 // In-memory Provider doubles the engine is proven against. GitProvider and Harness
-// have no real implementation in this release; these stand in for them. The Git
-// Provider is real (see git.test.ts), so it has no fake here.
+// have no real implementation in this release; these stand in for them. The real Git
+// capability is exercised in git.test.ts against a throwaway repo; this `FakeGit` keeps
+// engine-level tests deterministic so they never depend on the ambient checkout's branch.
 
 import { AbortError, type Pending } from "../src/pending.ts";
+import type { CommitResult, Git, GitStatus, RebaseResult } from "../src/providers/git.ts";
 import type {
   CheckRun,
   GitProvider,
@@ -26,6 +28,66 @@ function pendingAfter<T>(polls: number, value: T): Pending<T> {
       return Promise.resolve(calls >= polls ? { done: true, value } : { done: false });
     },
   };
+}
+
+/**
+ * A no-op `Git` whose `currentBranch` is fixed (default "master"), so the engine reads a stable
+ * branch instead of the test process's actual checkout. Pass "HEAD" to model a detached HEAD.
+ */
+export class FakeGit implements Git {
+  constructor(private readonly branch = "master") {}
+
+  currentBranch(): Promise<string> {
+    return Promise.resolve(this.branch);
+  }
+  defaultBranch(): Promise<string> {
+    return Promise.resolve("main");
+  }
+  headSha(): Promise<string> {
+    return Promise.resolve("abc1234");
+  }
+  fetch(): Promise<void> {
+    return Promise.resolve();
+  }
+  isAncestor(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+  rebase(): Promise<RebaseResult> {
+    return Promise.resolve({ status: "clean" });
+  }
+  rebaseAbort(): Promise<void> {
+    return Promise.resolve();
+  }
+  rebaseInProgress(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+  createBranch(): Promise<void> {
+    return Promise.resolve();
+  }
+  checkout(): Promise<void> {
+    return Promise.resolve();
+  }
+  checkoutDetached(): Promise<void> {
+    return Promise.resolve();
+  }
+  stageAll(): Promise<void> {
+    return Promise.resolve();
+  }
+  commit(): Promise<CommitResult> {
+    return Promise.resolve({ sha: "0".repeat(40) });
+  }
+  status(): Promise<GitStatus> {
+    return Promise.resolve({ branch: this.branch, staged: [], unstaged: [] });
+  }
+  diffAgainst(): Promise<string> {
+    return Promise.resolve("");
+  }
+  discardChanges(): Promise<void> {
+    return Promise.resolve();
+  }
+  push(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 export interface FakeGitProviderOptions {

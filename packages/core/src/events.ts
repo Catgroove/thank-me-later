@@ -21,6 +21,12 @@ export type PipelineStep = string | { readonly name: string; readonly display?: 
 
 export type RunEvent =
   | { type: "run:started"; at: number; pipeline: PipelineStep[] }
+  // HEAD's branch as core sees the active checkout. Emitted at Run start with the initial branch,
+  // and again whenever a Step advances HEAD onto a different branch (e.g. the branch Step). This is
+  // the engine's own git view, not any pipeline's branch-name artifact, so it stays accurate for
+  // custom pipelines and for a resumed run in an isolated worktree. `branch` is absent when HEAD is
+  // detached or unreadable, which clears any branch a presenter is showing.
+  | { type: "branch:changed"; at: number; branch?: string }
   | { type: "step:started"; at: number; step: string }
   | { type: "step:log"; at: number; step: string; message: string }
   | { type: "agent:progress"; at: number; step: string; progress: AgentProgress }

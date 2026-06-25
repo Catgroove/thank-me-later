@@ -130,16 +130,26 @@ async function drive(
   // The branch you're on scopes `auto` resume: a parked Run only resumes on the branch it was
   // shipping. We seed it at start and advance it as Steps move HEAD onto a feature branch.
   let resumeKey = await currentBranchOrUndefined(git);
+  // The branch last surfaced to consumers via `branch:changed`. Tracked separately from `resumeKey`
+  // (which only ever advances onto a real branch) so the displayed branch also clears when HEAD
+  // detaches. Seeded with the start branch and reconciled after each Step that may have moved HEAD.
+  let shownBranch = resumeKey;
   const snapshot = await journal?.begin({
     pipeline: pipeline.map((s) => s.name),
     ...(resumeKey !== undefined ? { resumeKey } : {}),
   });
-  const syncResumeKey = async (): Promise<void> => {
-    if (journal === undefined) return;
+  // Re-read HEAD's branch and reconcile both the resume key and the displayed branch. The resume key
+  // only advances onto a real branch (never resets to undefined on a detached HEAD); the displayed
+  // branch tracks the actual checkout and emits `branch:changed` whenever it differs.
+  const syncBranch = async (): Promise<void> => {
     const branch = await currentBranchOrUndefined(git);
     if (branch !== undefined && branch !== resumeKey) {
       resumeKey = branch;
-      await journal.recordResumeKey(branch);
+      await journal?.recordResumeKey(branch);
+    }
+    if (branch !== shownBranch) {
+      shownBranch = branch;
+      await emit(run, { type: "branch:changed", ...(branch !== undefined ? { branch } : {}) });
     }
   };
   const ask =
@@ -167,6 +177,9 @@ async function drive(
     type: "run:started",
     pipeline: pipeline.map(pipelineStepEvent),
   });
+  // Surface the starting branch right away. For a resumed run in an isolated worktree this is the
+  // already-created feature branch, so the view shows it without waiting for a Step to re-emit.
+  if (shownBranch !== undefined) await emit(run, { type: "branch:changed", branch: shownBranch });
 
   // Validate configured model ids against the live Harness *before* the first Step,
   // but only when the Harness can list its models - otherwise we can't, so we don't.
@@ -355,8 +368,9 @@ async function drive(
 
     await journal?.recordStepCompleted(step.name);
     // A Step may have moved HEAD onto a feature branch; keep the resume key pointed at it so a
-    // re-run on that branch resumes this Run (and a fresh run elsewhere does not).
-    await syncResumeKey();
+    // re-run on that branch resumes this Run (and a fresh run elsewhere does not), and surface the
+    // branch change to consumers.
+    await syncBranch();
     await emit(run, { type: "step:finished", step: step.name });
     i += 1;
   }

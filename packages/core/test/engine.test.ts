@@ -8,7 +8,7 @@ import type { RunJournal } from "../src/run-journal.ts";
 import { cancel, goto, retry, skip } from "../src/signals.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
-import { FakeGitProvider, FakeHarness } from "./fakes.ts";
+import { FakeGit, FakeGitProvider, FakeHarness } from "./fakes.ts";
 
 const raw = defineArtifact<string>()("raw");
 const derived = defineArtifact<number>()("derived");
@@ -16,7 +16,7 @@ const derived = defineArtifact<number>()("derived");
 function engineFor(pipeline: Pipeline, ask?: (p: string) => Promise<string>): Engine {
   return createEngine(
     { pipeline, providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() } },
-    ask ? { ask } : {},
+    { git: new FakeGit(), ...(ask ? { ask } : {}) },
   );
 }
 
@@ -64,6 +64,7 @@ describe("engine - happy path", () => {
 
     expect(types(events)).toEqual([
       "run:started",
+      "branch:changed",
       "step:started",
       "artifact:written",
       "step:finished",
@@ -256,14 +257,25 @@ describe("engine - flow signals, ask, and failure", () => {
   test("skip emits step:skipped and continues", async () => {
     const skipped = defineStep({ name: "skipped", run: () => Promise.resolve(skip()) });
     const events = await collect(engineFor([skipped]));
-    expect(types(events)).toEqual(["run:started", "step:started", "step:skipped", "run:finished"]);
+    expect(types(events)).toEqual([
+      "run:started",
+      "branch:changed",
+      "step:started",
+      "step:skipped",
+      "run:finished",
+    ]);
   });
 
   test("cancel ends the Run early but successfully", async () => {
     const stop = defineStep({ name: "stop", run: () => Promise.resolve(cancel("nothing to do")) });
     const never = defineStep({ name: "never", run: () => Promise.resolve({}) });
     const events = await collect(engineFor([stop, never]));
-    expect(types(events)).toEqual(["run:started", "step:started", "run:finished"]);
+    expect(types(events)).toEqual([
+      "run:started",
+      "branch:changed",
+      "step:started",
+      "run:finished",
+    ]);
   });
 
   test("goto jumps forward, skipping the step in between", async () => {
@@ -273,6 +285,7 @@ describe("engine - flow signals, ask, and failure", () => {
     const events = await collect(engineFor([a, b, c]));
     expect(types(events)).toEqual([
       "run:started",
+      "branch:changed",
       "step:started", // a
       "step:finished", // a (goto)
       "step:started", // c - b was jumped over
