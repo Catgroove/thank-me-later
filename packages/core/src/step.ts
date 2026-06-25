@@ -10,6 +10,11 @@ import type { FlowSignal } from "./signals.ts";
 
 type Artifacts = readonly Artifact<unknown, string>[];
 
+export interface StepDisplay {
+  readonly label?: string;
+  readonly group?: string;
+}
+
 /**
  * How the engine treats a completed Step when resuming from the Run Journal.
  *
@@ -35,6 +40,8 @@ export interface Step<C extends Artifacts = Artifacts, P extends Artifacts = Art
   readonly produces: P;
   readonly run: StepRun<C, P>;
   readonly resume?: StepResumePolicy;
+  /** Optional renderer metadata. It changes presentation only; Step identity stays `name`. */
+  readonly display?: StepDisplay;
   /**
    * Marks the isolation boundary. After the last Step carrying this flag completes, the host hands
    * the work off from the source checkout to a disposable worktree and runs the remaining Steps
@@ -53,6 +60,7 @@ export function defineStep<
   produces?: P;
   run: StepRun<C, P>;
   resume?: StepResumePolicy;
+  display?: StepDisplay;
   isolate?: boolean;
 }): Step<C, P> {
   return {
@@ -61,6 +69,7 @@ export function defineStep<
     produces: def.produces ?? ([] as unknown as P),
     run: def.run,
     resume: def.resume ?? "replay",
+    ...(def.display !== undefined ? { display: def.display } : {}),
     ...(def.isolate ? { isolate: true } : {}),
   };
 }

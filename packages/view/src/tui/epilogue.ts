@@ -1,7 +1,7 @@
 // The post-TUI scrollback epilogue: a compact summary printed after the alternate screen is torn
 // down, so the terminal keeps a useful trace of the Run without the full transcript. Pure (returns
 // lines); the renderer writes them. Generic over the assembled Pipeline - it tallies by status and
-// names the failed/cancelled Step from facts, never from default Step names.
+// names the failed/cancelled Step from facts, never from concrete Step names.
 
 import { sanitize } from "./sanitize.ts";
 import type { ViewState } from "../present.ts";

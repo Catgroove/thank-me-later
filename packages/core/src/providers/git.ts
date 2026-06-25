@@ -193,7 +193,7 @@ export function createGit(cwd: string): Git {
 
     async createBranch(name, opts) {
       // `--no-track` keeps the new branch from adopting the start point's upstream (e.g. we don't
-      // want a branch cut off `origin/main` to track `origin/main`); `open-pr` sets the upstream.
+      // want a branch cut off `origin/main` to track `origin/main`); a later push sets upstream.
       const startPoint = opts?.from ? ["--no-track", opts.from] : [];
       await git(cwd, ["checkout", "-b", name, ...startPoint]);
     },

@@ -2,13 +2,14 @@
 // The TUI root: header, the Pipeline rail + Step inspector body, an always-visible activity panel,
 // and the pending-interaction / abort-confirmation drawers. It owns the keyboard: navigation folds
 // through the pure `navOnKey`, approval keys through the pure approval helpers, and abort goes through
-// the injected `onAbort`. Nothing here branches on default Step names - it is generic over the Pipeline.
+// the injected `onAbort`. Nothing here branches on concrete Step names - it is generic over the Pipeline.
 
 import { For, Show, createEffect, createSignal } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import type { ActivityEntry, ViewState } from "../present.ts";
+import { displayStepNameFor } from "../step-display.ts";
 import { sanitize } from "./sanitize.ts";
 import { runElapsed, statusColor } from "./format.ts";
 import { initialNav, navOnKey, type NavState } from "./navigation.ts";
@@ -302,7 +303,7 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
       </text>
       <text flexGrow={1} marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
         {status()}
-        {active() ? ` · ${sanitize(active() ?? "")}` : ""}
+        {active() ? ` · ${sanitize(displayStepNameFor(props.view(), active() ?? ""))}` : ""}
       </text>
       <Show when={elapsed() !== ""}>
         <text fg="#64748b">total {elapsed()}</text>
@@ -325,10 +326,10 @@ function stepStatusOf(status: ViewState["status"]): "active" | "done" | "failed"
 }
 
 /** One cross-Step activity line: a dim `step:` prefix and the entry, coloured by kind (purple tool). */
-function ActivityLine(props: { entry: ActivityEntry }) {
+function ActivityLine(props: { entry: ActivityEntry; view: ViewState }) {
   const e = props.entry;
   const line = () => {
-    const prefix = `${e.step}: `;
+    const prefix = `${displayStepNameFor(props.view, e.step)}: `;
     if (e.kind === "tool") {
       const label = `${e.tool?.name ?? ""}${e.tool?.detail ? ` · ${e.tool.detail}` : ""}`;
       return `${prefix}⚙ ${label}${e.phase === "end" ? " (done)" : ""}`;
@@ -367,7 +368,9 @@ function ActivityPanel(props: { view: Accessor<ViewState> }) {
           when={props.view().globalActivity.length > 0}
           fallback={<text fg="#64748b">No activity yet.</text>}
         >
-          <For each={props.view().globalActivity}>{(entry) => <ActivityLine entry={entry} />}</For>
+          <For each={props.view().globalActivity}>
+            {(entry) => <ActivityLine entry={entry} view={props.view()} />}
+          </For>
         </Show>
       </scrollbox>
     </box>

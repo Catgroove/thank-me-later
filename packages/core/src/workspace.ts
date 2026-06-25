@@ -1,8 +1,8 @@
 // Isolated ship worktree. After `tml ship` branches and commits the work in the source checkout, it
 // hands that feature branch to a disposable `git worktree` and runs the noisy remainder of the
-// pipeline (rebase, checks, review, open-pr, ci-wait) there. A worktree shares the source repo's
-// object database and refs, so the branch and its commits are real in the user's repo throughout -
-// disposing the worktree removes only its directory, leaving the PR branch intact.
+// pipeline there. A worktree shares the source repo's object database and refs, so the branch and
+// its commits are real in the user's repo throughout - disposing the worktree removes only its
+// directory, leaving the PR branch intact.
 
 import { mkdir, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";

@@ -163,7 +163,13 @@ async function drive(
   const runRounds: RoundRecord[] = [...(snapshot?.rounds ?? [])];
   const roundIndexes = new Map<string, number>(snapshot?.roundIndexes);
 
-  await emit(run, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
+  await emit(run, {
+    type: "run:started",
+    pipeline: pipeline.map((step) => ({
+      name: step.name,
+      ...(step.display !== undefined ? { display: step.display } : {}),
+    })),
+  });
 
   // Validate configured model ids against the live Harness *before* the first Step,
   // but only when the Harness can list its models - otherwise we can't, so we don't.

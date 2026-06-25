@@ -2,7 +2,7 @@
 // base PR/CI lifecycle entities (PullRequest, CheckRun, mergeable) live here in
 // core as first-class types; a host adapter maps a specific Git provider onto
 // them. Reads are hybrid: getPullRequest returns a full base snapshot for
-// reconstruction, getChecks is the cheap, pollable call the ci-wait loop drives.
+// reconstruction, getChecks is the cheap, pollable call for status-check consumers.
 // PR comments and review threads are intentionally out of this base surface;
 // post-PR conversation reconciliation is a later, separate provider extension.
 
@@ -62,7 +62,7 @@ export interface PullRequest {
   readonly body: string;
   readonly state: "open" | "closed" | "merged";
   readonly mergeable: Mergeable;
-  /** The host's overall merge-readiness verdict; the merge gate polls this to a terminal value. */
+  /** The host's overall merge-readiness verdict; poll until this reaches a terminal value. */
   readonly mergeStateStatus: MergeState;
   readonly checks: CheckRun[];
 }
@@ -82,7 +82,7 @@ export interface GitProvider {
   getPullRequest(prNumber: number): Promise<PullRequest>;
   /** Idempotently replace or patch the PR body according to the caller's generated text policy. */
   updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void>;
-  /** Cheap and pollable — the ci-wait loop calls this through `until`. */
+  /** Cheap and pollable status-check rollup for `ctx.until` loops. */
   getChecks(prNumber: number): Pending<CheckRun[]>;
   /** Merge-readiness poller; settles once the host's {@link MergeState} leaves `unknown`. */
   getMergeState(prNumber: number): Pending<MergeState>;
@@ -90,7 +90,7 @@ export interface GitProvider {
    * Optional: whether the current user may bypass the rules that gate merges into `branch`. A
    * `blocking` merge state (e.g. an unmet required review) reflects the rule, not the viewer's
    * privileges, so a maintainer who can bypass still sees `blocked`. This answers the second
-   * question - "but may *I* merge anyway?" - so the merge gate can pass instead of nagging.
+   * question - "but may *I* merge anyway?" - for callers that distinguish bypassable blocks.
    */
   canBypassMerge?(branch: string): Promise<boolean>;
   /** Optional host-specific CI log retrieval for failed checks. */

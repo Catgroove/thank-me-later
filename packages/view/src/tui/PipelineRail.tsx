@@ -1,15 +1,15 @@
 /** @jsxImportSource @opentui/solid */
-// The left rail: the assembled Pipeline as one ordered list, exactly as emitted by `run:started`.
-// Generic over the Pipeline - every Step renders identically (glyph, name, elapsed, short headline),
-// with no branching on Step names or semantics. The active Step shows a spinner - or, when it is
-// blocked awaiting a human decision, a static amber glyph so it reads as "waiting on you", not
-// "busy". The selected Step is highlighted. An active Step that declares phases shows its
-// current-group phases as a sub-tree,
-// so a multi-pass Step (e.g. review) is no longer an opaque single spinner.
+// The left rail: the assembled Pipeline rendered as display rows. Most Steps are one row; related
+// post-PR gate Steps are grouped under a shared heading while keeping their internal Step names
+// unchanged. The active Step shows a spinner - or, when it is blocked awaiting a human decision, a
+// static amber glyph so it reads as "waiting on you", not "busy". The selected Step is highlighted.
+// An active Step that declares phases shows its current-group phases as a sub-tree, so a multi-pass
+// Step is no longer an opaque single spinner.
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { PhaseView, ViewState } from "../present.ts";
+import { pipelineDisplayRows } from "../step-display.ts";
 import { sanitize } from "./sanitize.ts";
 import {
   latestGroupPhases,
@@ -30,14 +30,14 @@ export interface RailProps {
   readonly now: Accessor<number>;
 }
 
-function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
+function PhaseRow(props: { phase: PhaseView; last: boolean; now: number; grouped: boolean }) {
   const elapsed = () => phaseElapsed(props.phase, props.now);
   const count = () =>
     props.phase.status === "done" && props.phase.findings.length > 0
       ? ` ${props.phase.findings.length}`
       : "";
   return (
-    <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+    <box flexDirection="row" paddingLeft={props.grouped ? 3 : 1} paddingRight={1}>
       <text flexShrink={0} fg="#475569">
         {props.last ? " └ " : " ├ "}
       </text>
@@ -71,9 +71,19 @@ export function PipelineRail(props: RailProps) {
       title="pipeline"
       padding={0}
     >
-      <For each={props.view().steps}>
-        {(step, index) => {
-          const isSelected = () => index() === selected();
+      <For each={pipelineDisplayRows(props.view().steps)}>
+        {(row) => {
+          if (row.kind === "group") {
+            return (
+              <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+                <text fg="#64748b" wrapMode="none" truncate>
+                  {sanitize(row.label)}
+                </text>
+              </box>
+            );
+          }
+          const step = row.step;
+          const isSelected = () => row.stepIndex === selected();
           const pendingAt = () => {
             const pending = props.view().pendingInteraction;
             return pending?.step === step.name ? pending.at : undefined;
@@ -84,7 +94,7 @@ export function PipelineRail(props: RailProps) {
             <box flexDirection="column">
               <box
                 flexDirection="row"
-                paddingLeft={1}
+                paddingLeft={row.grouped ? 3 : 1}
                 paddingRight={1}
                 backgroundColor={isSelected() ? "#1e293b" : undefined}
               >
@@ -107,7 +117,7 @@ export function PipelineRail(props: RailProps) {
                   wrapMode="none"
                   truncate
                 >
-                  {sanitize(step.name)}
+                  {sanitize(row.label)}
                 </text>
                 <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
                   {elapsed()}
@@ -116,7 +126,12 @@ export function PipelineRail(props: RailProps) {
               <Show when={phases().length > 0}>
                 <For each={phases()}>
                   {(phase, i) => (
-                    <PhaseRow phase={phase} last={i() === phases().length - 1} now={props.now()} />
+                    <PhaseRow
+                      phase={phase}
+                      last={i() === phases().length - 1}
+                      now={props.now()}
+                      grouped={row.grouped}
+                    />
                   )}
                 </For>
               </Show>
