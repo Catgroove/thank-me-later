@@ -8,8 +8,7 @@
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { PhaseView, ViewState } from "../present.ts";
-import { pipelineDisplayRows } from "../step-display.ts";
+import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
   latestGroupPhases,
@@ -59,9 +58,79 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number; grouped
   );
 }
 
+function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<number> }) {
+  const isSelected = () => props.stepIndex() === effectiveIndex(props.nav(), props.view());
+  const grouped = () => props.step.displayGroup !== undefined;
+  const startsGroup = () => {
+    const group = props.step.displayGroup;
+    return group !== undefined && props.view().steps[props.stepIndex() - 1]?.displayGroup !== group;
+  };
+  const pendingAt = () => {
+    const pending = props.view().pendingInteraction;
+    return pending?.step === props.step.name ? pending.at : undefined;
+  };
+  const elapsed = () => stepElapsed(props.step, props.now(), pendingAt());
+  const phases = () => (props.step.status === "active" ? latestGroupPhases(props.step) : []);
+  return (
+    <box flexDirection="column">
+      <Show when={startsGroup()}>
+        <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+          <text fg="#64748b" wrapMode="none" truncate>
+            {sanitize(props.step.displayGroup ?? "")}
+          </text>
+        </box>
+      </Show>
+      <box flexDirection="column">
+        <box
+          flexDirection="row"
+          paddingLeft={grouped() ? 3 : 1}
+          paddingRight={1}
+          backgroundColor={isSelected() ? "#1e293b" : undefined}
+        >
+          {props.step.status !== "active" ? (
+            <text flexShrink={0} fg={statusColor(props.step.status)}>
+              {statusGlyph(props.step.status)}
+            </text>
+          ) : pendingAt() !== undefined ? (
+            <text flexShrink={0} fg={WAITING_COLOR}>
+              {WAITING_GLYPH}
+            </text>
+          ) : (
+            <spinner name="dots" color={statusColor("active")} />
+          )}
+          <text
+            flexGrow={1}
+            flexShrink={1}
+            marginLeft={1}
+            fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}
+            wrapMode="none"
+            truncate
+          >
+            {sanitize(props.step.displayLabel)}
+          </text>
+          <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
+            {elapsed()}
+          </text>
+        </box>
+        <Show when={phases().length > 0}>
+          <For each={phases()}>
+            {(phase, i) => (
+              <PhaseRow
+                phase={phase}
+                last={i() === phases().length - 1}
+                now={props.now()}
+                grouped={grouped()}
+              />
+            )}
+          </For>
+        </Show>
+      </box>
+    </box>
+  );
+}
+
 export function PipelineRail(props: RailProps) {
   ensureSpinner(); // make the <spinner> element resolvable before the rail renders one
-  const selected = () => effectiveIndex(props.nav(), props.view());
   return (
     <box
       flexDirection="column"
@@ -71,73 +140,8 @@ export function PipelineRail(props: RailProps) {
       title="pipeline"
       padding={0}
     >
-      <For each={pipelineDisplayRows(props.view().steps)}>
-        {(row) => {
-          if (row.kind === "group") {
-            return (
-              <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-                <text fg="#64748b" wrapMode="none" truncate>
-                  {sanitize(row.label)}
-                </text>
-              </box>
-            );
-          }
-          const step = row.step;
-          const isSelected = () => row.stepIndex === selected();
-          const pendingAt = () => {
-            const pending = props.view().pendingInteraction;
-            return pending?.step === step.name ? pending.at : undefined;
-          };
-          const elapsed = () => stepElapsed(step, props.now(), pendingAt());
-          const phases = () => (step.status === "active" ? latestGroupPhases(step) : []);
-          return (
-            <box flexDirection="column">
-              <box
-                flexDirection="row"
-                paddingLeft={row.grouped ? 3 : 1}
-                paddingRight={1}
-                backgroundColor={isSelected() ? "#1e293b" : undefined}
-              >
-                {step.status !== "active" ? (
-                  <text flexShrink={0} fg={statusColor(step.status)}>
-                    {statusGlyph(step.status)}
-                  </text>
-                ) : pendingAt() !== undefined ? (
-                  <text flexShrink={0} fg={WAITING_COLOR}>
-                    {WAITING_GLYPH}
-                  </text>
-                ) : (
-                  <spinner name="dots" color={statusColor("active")} />
-                )}
-                <text
-                  flexGrow={1}
-                  flexShrink={1}
-                  marginLeft={1}
-                  fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}
-                  wrapMode="none"
-                  truncate
-                >
-                  {sanitize(row.label)}
-                </text>
-                <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
-                  {elapsed()}
-                </text>
-              </box>
-              <Show when={phases().length > 0}>
-                <For each={phases()}>
-                  {(phase, i) => (
-                    <PhaseRow
-                      phase={phase}
-                      last={i() === phases().length - 1}
-                      now={props.now()}
-                      grouped={row.grouped}
-                    />
-                  )}
-                </For>
-              </Show>
-            </box>
-          );
-        }}
+      <For each={props.view().steps}>
+        {(step, stepIndex) => <StepRailRow {...props} step={step} stepIndex={stepIndex} />}
       </For>
     </box>
   );
