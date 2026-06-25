@@ -1,7 +1,7 @@
 # thank-me-later (tml)
 
 An extensible "ship it" CLI/TUI tool. After an agent finishes a unit of work, tml
-conducts a code-defined pipeline that branches, reviews, lints, formats, opens a PR,
+conducts a code-defined pipeline that branches, runs quality checks, reviews, opens a PR,
 waits on CI, and responds to PR comments. Built on the philosophy "everything is a
 plugin" (inspired by pi) over an opinionated set of sane defaults. Shorthand
 "tml" plays on "spend time now, thank me later."
@@ -14,7 +14,7 @@ The default pipeline ships with sane defaults; users compose or patch their own.
 _Avoid_: Workflow, flow, chain, script
 
 **Step**:
-One addressable unit of work in a Pipeline (e.g. create branch, review, lint, open PR,
+One addressable unit of work in a Pipeline (e.g. create branch, review, quality check, open PR,
 wait for CI, respond to comments). Defined in code, not config. Receives accumulated
 context from preceding steps and returns a result plus an optional flow signal.
 _Avoid_: Task, stage, job, action
@@ -209,7 +209,7 @@ Step. An unanswered Ask is simply a suspended Run, not a failure.
 _Avoid_: Prompt, confirm, question
 
 **Finding**:
-A normalized outcome from review, lint, typecheck, tests, or CI: severity, action, title,
+A normalized outcome from review, quality checks, tests, or CI: severity, action, title,
 detail, optional location, and a deterministic id. Findings are records, not provider-specific
 messages. They are the shared language for deciding what can be auto-fixed, what needs a user,
 and what is informational. A finding id is reliable for addressing findings within one round, but

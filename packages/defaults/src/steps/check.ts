@@ -20,10 +20,8 @@ import {
   checkFindingsSchema,
   checkFixPrompt,
   checkPrompt,
-  formatPrompt,
-  lintPrompt,
+  qualityPrompt,
   testPrompt,
-  typecheckPrompt,
 } from "../prompts.ts";
 
 interface CheckPolicy {
@@ -50,6 +48,24 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
         before,
         (m) => ctx.log(m),
         "warning: a check round modified the worktree; reverting before continuing",
+      );
+    },
+  },
+  mixed: {
+    groundRules:
+      "\n\nThis is a check/verification round, not a fix round. For source-inspection checks, " +
+      "inspect files directly instead of invoking local quality tools. For command-backed " +
+      "checks, run the non-mutating check command needed to judge the repository, building or " +
+      "installing dependencies only when the command cannot run otherwise. Do not edit source " +
+      "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
+      "repaired by changing files, return an auto-fix finding for the later fix round. ",
+    before: (ctx) => ctx.git.status(),
+    async after(ctx, before) {
+      await revertIfWorktreeChanged(
+        ctx.git,
+        before,
+        (m) => ctx.log(m),
+        "check command left worktree changes; cleaning up before continuing",
       );
     },
   },
@@ -145,11 +161,7 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
   return parseAgentFindingsOutput(output, { namespace: name, sourceName: name });
 }
 
-export const formatStep = (policy: FixLoopPolicy = {}): Step =>
-  checkStep("format", formatPrompt, { ...policy, mode: "inspect" });
-export const lintStep = (policy: FixLoopPolicy = {}): Step =>
-  checkStep("lint", lintPrompt, { ...policy, mode: "inspect" });
-export const typecheckStep = (policy: FixLoopPolicy = {}): Step =>
-  checkStep("typecheck", typecheckPrompt, { ...policy, mode: "run" });
+export const qualityStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("quality", qualityPrompt, { ...policy, mode: "mixed" });
 export const testStep = (policy: FixLoopPolicy = {}): Step =>
   checkStep("test", testPrompt, { ...policy, mode: "run" });

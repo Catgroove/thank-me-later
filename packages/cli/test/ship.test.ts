@@ -133,9 +133,7 @@ describe("assembleShipConfig", () => {
       "describe",
       "commit-change",
       "rebase",
-      "format",
-      "lint",
-      "typecheck",
+      "quality",
       "test",
       "review",
       "open-pr",
@@ -149,11 +147,11 @@ describe("assembleShipConfig", () => {
 
   test("honors tml.json selection: disable drops a step, models flows through", async () => {
     const config = await assembleShipConfig("/repo", {
-      selection: { disable: ["typecheck"], models: { review: "opus" } },
+      selection: { disable: ["quality"], models: { review: "opus" } },
       pluginPaths: [],
     });
-    expect(config.pipeline.map((s) => s.name)).not.toContain("typecheck");
-    expect(config.pipeline.map((s) => s.name)).toContain("lint");
+    expect(config.pipeline.map((s) => s.name)).not.toContain("quality");
+    expect(config.pipeline.map((s) => s.name)).toContain("test");
     expect(config.models).toEqual({ review: "opus" });
   });
 

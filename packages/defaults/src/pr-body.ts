@@ -86,7 +86,7 @@ function riskAssessment(
 }
 
 function testingSummary(rounds: readonly RoundRecord[]): string {
-  const checkSteps = new Set(["format", "lint", "typecheck", "test"]);
+  const checkSteps = new Set(["quality", "test"]);
   const summaries = summarizeStepRounds(rounds).filter((summary) => checkSteps.has(summary.step));
   if (summaries.length === 0) return "No local check rounds recorded.";
   return summaries

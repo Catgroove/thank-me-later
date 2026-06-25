@@ -1,6 +1,6 @@
 // @tml/defaults — the blessed default pipeline, shipped as just another Plugin built on the
 // same @tml/core primitives (ARCHITECTURE). The pipeline is
-//   branch → describe → commit(the change) → {format,lint,typecheck,test}+commit
+//   branch → describe → commit(the change) → {quality,test}+commit
 //          → review (commits its own fixes) → open-pr → ci-wait → merge-gate
 // assembled by the `tmlDefaults` Plugin (an injected-API `(tml) => …`). Steps and artifact
 // tokens are also exported so plugin authors can reuse or replace individual pieces. The plugin
@@ -11,14 +11,7 @@ export { branchName, prBody, prTitle, pullRequest, reviewSummary } from "./artif
 export { default, tmlDefaults } from "./plugin.ts";
 export { type BranchMode, branchNameFor, branchStep } from "./steps/branch.ts";
 export { ciWaitStep } from "./steps/ci-wait.ts";
-export {
-  checkStep,
-  type CheckStepOptions,
-  formatStep,
-  lintStep,
-  testStep,
-  typecheckStep,
-} from "./steps/check.ts";
+export { checkStep, type CheckStepOptions, qualityStep, testStep } from "./steps/check.ts";
 export { type CommitMessage, commitGroup, commitStep } from "./steps/commit.ts";
 export type { FixLoopPolicy } from "./steps/fix-loop.ts";
 export { describeStep } from "./steps/describe.ts";
