@@ -121,8 +121,10 @@ export function checkStep(
               agentResult.summary,
               agentResult.ok,
             ),
-            testingSummary: agentResult.summary,
-            tested: policy === checkPolicies.run,
+            testing: {
+              summary: agentResult.summary,
+              tested: policy === checkPolicies.run,
+            },
           };
         },
         async fix(input) {

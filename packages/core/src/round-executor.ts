@@ -12,7 +12,9 @@ import type { Ctx } from "./context.ts";
 import {
   type Finding,
   type RoundRecordInput,
+  type RoundTestingEvidence,
   type RoundTrigger,
+  normalizeTestingEvidence,
   renderRoundsForPrompt,
 } from "./round.ts";
 
@@ -31,9 +33,7 @@ export interface RoundCheckInput {
 
 export interface RoundCheckResult {
   readonly findings: readonly Finding[];
-  readonly testingSummary?: string;
-  readonly tested?: boolean;
-  readonly artifacts?: readonly string[];
+  readonly testing?: RoundTestingEvidence;
 }
 
 export interface RoundFixInput {
@@ -136,14 +136,13 @@ export async function executeRoundLoop(
     const check = await options.check(checkInput);
     const findings = [...check.findings];
     const selected = selectFindings(options, findings, checkInput);
+    const testing = normalizeTestingEvidence(check.testing);
 
     await appendRound(ctx, options, rounds, {
       trigger,
       findings,
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
-      ...(check.testingSummary?.trim() ? { testingSummary: check.testingSummary.trim() } : {}),
-      ...(check.tested !== undefined ? { tested: check.tested } : {}),
-      ...(check.artifacts && check.artifacts.length > 0 ? { artifacts: [...check.artifacts] } : {}),
+      ...(testing ? { testing } : {}),
     });
 
     let stopReason = stopPolicy(options, {

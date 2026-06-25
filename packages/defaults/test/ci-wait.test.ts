@@ -60,9 +60,11 @@ describe("ci-wait step", () => {
         {
           trigger: "initial",
           findings: [],
-          testingSummary: "2 green, 0 failed, 0 pending CI checks.",
-          tested: true,
-          artifacts: ["build: success", "lint: success"],
+          testing: {
+            summary: "2 green, 0 failed, 0 pending CI checks.",
+            tested: true,
+            artifacts: ["build: success", "lint: success"],
+          },
         },
       ],
     });

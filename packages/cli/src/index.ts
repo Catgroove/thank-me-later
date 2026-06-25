@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   type Config,
   autoApproveResponder,
@@ -14,9 +14,11 @@ import {
   createWorktree,
   currentWorkspaceSourceBranch,
   isolationBoundaryFor,
+  releaseSourceBranchForWorktree,
   removeWorktree,
   type RunJournal,
   type RunJournalResumeMode,
+  type SourceBranchRelease,
 } from "@tml/core";
 import {
   createTerminalRenderer,
@@ -86,95 +88,6 @@ async function defaultCreateTui(options: { onAbort: () => void }): Promise<Inter
 
 // 128 + signal number: the conventional exit code for a signal-terminated process.
 const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
-
-type SourceBranchRelease =
-  | { readonly kind: "already-released" }
-  | { readonly kind: "checked-out-base" }
-  | { readonly kind: "detached"; readonly restoreBranch: string };
-
-interface WorktreeEntry {
-  readonly path: string;
-  readonly branch?: string;
-}
-
-async function gitOutput(cwd: string, args: readonly string[]): Promise<string> {
-  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} failed (exit ${exitCode}): ${stderr.trim()}`);
-  }
-  return stdout;
-}
-
-function parseWorktreeList(output: string): WorktreeEntry[] {
-  const entries: WorktreeEntry[] = [];
-  let current: { path?: string; branch?: string } = {};
-  const pushCurrent = (): void => {
-    if (current.path !== undefined) entries.push({ path: current.path, branch: current.branch });
-    current = {};
-  };
-  for (const line of output.split("\n")) {
-    if (line.length === 0) {
-      pushCurrent();
-      continue;
-    }
-    if (line.startsWith("worktree ")) {
-      pushCurrent();
-      current.path = line.slice("worktree ".length);
-      continue;
-    }
-    if (line.startsWith("branch ")) current.branch = line.slice("branch ".length);
-  }
-  pushCurrent();
-  return entries;
-}
-
-async function worktreeClaimingBranch(cwd: string, branch: string): Promise<string | undefined> {
-  const self = resolve(cwd);
-  const branchRef = `refs/heads/${branch}`;
-  for (const entry of parseWorktreeList(
-    await gitOutput(cwd, ["worktree", "list", "--porcelain"]),
-  )) {
-    if (entry.branch === branchRef && resolve(entry.path) !== self) return entry.path;
-  }
-  return undefined;
-}
-
-function isLinkedWorktreeBranchLock(error: unknown, branch: string): boolean {
-  const message = errorMessage(error);
-  return (
-    message.includes("already checked out at") &&
-    (message.includes(`'${branch}'`) || message.includes(`refs/heads/${branch}`))
-  );
-}
-
-async function releaseSourceBranchForWorktree(input: {
-  readonly cwd: string;
-  readonly git: Git;
-  readonly base: string;
-  readonly currentBranch: string;
-  readonly featureBranch: string;
-}): Promise<SourceBranchRelease> {
-  if (input.currentBranch !== input.featureBranch) return { kind: "already-released" };
-
-  if ((await worktreeClaimingBranch(input.cwd, input.base)) !== undefined) {
-    await input.git.checkoutDetached();
-    return { kind: "detached", restoreBranch: input.featureBranch };
-  }
-
-  try {
-    await input.git.checkout(input.base);
-    return { kind: "checked-out-base" };
-  } catch (error) {
-    if (!isLinkedWorktreeBranchLock(error, input.base)) throw error;
-    await input.git.checkoutDetached();
-    return { kind: "detached", restoreBranch: input.featureBranch };
-  }
-}
 
 async function finalizeWorktreeHandoff(input: {
   readonly cwd: string;
@@ -359,7 +272,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     }
     await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
     const sourceRelease = await releaseSourceBranchForWorktree({
-      cwd,
+      sourcePath: cwd,
       git: sourceGit,
       base,
       currentBranch,

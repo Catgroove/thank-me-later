@@ -14,7 +14,7 @@ describe("checkStep", () => {
 
     expect(result).toEqual({
       artifacts: {},
-      rounds: [{ trigger: "initial", findings: [], testingSummary: "clean", tested: false }],
+      rounds: [{ trigger: "initial", findings: [], testing: { summary: "clean", tested: false } }],
     });
     expect(agent.tasks).toHaveLength(1);
     expect(agent.tasks[0]).toContain("Check step: quality");

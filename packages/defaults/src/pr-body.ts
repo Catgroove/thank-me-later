@@ -3,6 +3,7 @@
 // block so human edits around it survive. The block is not a PR comment or review thread.
 
 import {
+  hasTestingEvidence,
   renderPipelineSummaryForPr,
   renderRoundNarrativeForPr,
   renderUnresolvedFindingsForPr,
@@ -104,14 +105,15 @@ function testingSummary(rounds: readonly RoundRecord[]): string {
   }
   lines.push("Evidence:");
   for (const round of evidence) {
-    const status = round.tested === undefined ? "unknown" : round.tested ? "tested" : "not run";
-    const trimmedSummary = round.testingSummary?.trim();
+    const status =
+      round.testing?.tested === undefined ? "unknown" : round.testing.tested ? "tested" : "not run";
+    const trimmedSummary = round.testing?.summary?.trim();
     const summary =
       trimmedSummary !== undefined && trimmedSummary.length > 0
         ? trimmedSummary
         : "No testing summary recorded.";
     lines.push(`- ${round.step} round ${round.index}: ${status} - ${summary}`);
-    for (const artifact of round.artifacts ?? []) lines.push(`  - ${artifact}`);
+    for (const artifact of round.testing?.artifacts ?? []) lines.push(`  - ${artifact}`);
   }
   return lines.join("\n");
 }
@@ -124,14 +126,6 @@ function latestTestingEvidence(rounds: readonly RoundRecord[]): RoundRecord[] {
     if (prior === undefined || round.index > prior.index) latest.set(round.step, round);
   }
   return [...latest.values()];
-}
-
-function hasTestingEvidence(round: RoundRecord): boolean {
-  return (
-    (round.testingSummary?.trim().length ?? 0) > 0 ||
-    round.tested !== undefined ||
-    (round.artifacts?.length ?? 0) > 0
-  );
 }
 
 function testingStatus(status: ReturnType<typeof summarizeStepRounds>[number]["status"]): string {

@@ -21,6 +21,12 @@ export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify" | "app
 export type RoundResolution = "approved" | "skipped";
 export type ApprovalDecisionSource = "operator" | "auto";
 
+export interface RoundTestingEvidence {
+  readonly summary?: string;
+  readonly tested?: boolean;
+  readonly artifacts?: readonly string[];
+}
+
 /**
  * The lifecycle of a single finding across a Step's rounds.
  *
@@ -57,9 +63,7 @@ export interface RoundRecord {
   readonly userNotes?: Record<string, string>;
   readonly fixSummary?: string;
   readonly commitSha?: string;
-  readonly testingSummary?: string;
-  readonly tested?: boolean;
-  readonly artifacts?: string[];
+  readonly testing?: RoundTestingEvidence;
   /** Set on the terminal round of an approval gate that the operator approved or skipped. */
   readonly resolution?: RoundResolution;
   /** Source of an approval gate decision. Omitted means a human operator. */
@@ -82,7 +86,44 @@ export function isFixAttemptRound(round: Pick<RoundRecord, "trigger" | "resoluti
 }
 
 export type FindingInput = Omit<Finding, "id">;
+export type RoundTestingEvidenceInput = RoundTestingEvidence;
 export type RoundRecordInput = Omit<RoundRecord, "step" | "index">;
+
+function testingEvidenceFrom(
+  input: { readonly testing?: RoundTestingEvidenceInput } | RoundTestingEvidenceInput | undefined,
+): RoundTestingEvidenceInput | undefined {
+  if (input === undefined) return undefined;
+  if (isRoundWithTesting(input)) return input.testing;
+  return input;
+}
+
+function isRoundWithTesting(
+  input: { readonly testing?: RoundTestingEvidenceInput } | RoundTestingEvidenceInput,
+): input is { readonly testing?: RoundTestingEvidenceInput } {
+  return "testing" in input;
+}
+
+export function normalizeTestingEvidence(
+  input: RoundTestingEvidenceInput | undefined,
+): RoundTestingEvidence | undefined {
+  if (input === undefined) return undefined;
+  const summary = input.summary?.trim();
+  const artifacts = input.artifacts
+    ?.map((artifact) => artifact.trim())
+    .filter((artifact) => artifact.length > 0);
+  const normalized: RoundTestingEvidence = {
+    ...(summary && summary.length > 0 ? { summary } : {}),
+    ...(input.tested !== undefined ? { tested: input.tested } : {}),
+    ...(artifacts && artifacts.length > 0 ? { artifacts } : {}),
+  };
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+export function hasTestingEvidence(
+  input: { readonly testing?: RoundTestingEvidenceInput } | RoundTestingEvidenceInput | undefined,
+): boolean {
+  return normalizeTestingEvidence(testingEvidenceFrom(input)) !== undefined;
+}
 
 /**
  * Deterministic ID for addressing a finding within one round. It is best-effort across rounds only:
@@ -223,7 +264,7 @@ export function renderRoundForPr(round: RoundRecord): string {
   const lines = [`### ${round.step} round ${round.index}`, `Trigger: ${round.trigger}`, ""];
   if (round.commitSha) lines.push(`Commit: \`${round.commitSha}\``, "");
   if (round.fixSummary?.trim()) lines.push(`Fixes applied: ${round.fixSummary.trim()}`, "");
-  if (round.testingSummary?.trim()) lines.push(`Testing: ${round.testingSummary.trim()}`, "");
+  if (round.testing?.summary?.trim()) lines.push(`Testing: ${round.testing.summary.trim()}`, "");
   if (round.findings.length === 0) {
     lines.push("No findings.");
   } else {
@@ -291,11 +332,15 @@ function renderNarrativeRound(
   const lines = [`#### Round ${round.index}: ${roundLabel(round)}`];
   if (round.fixSummary?.trim()) lines.push(`- Fix summary: ${round.fixSummary.trim()}`);
   if (round.commitSha) lines.push(`- Fix commit: ${commitReference(round.commitSha, options)}`);
-  if (round.testingSummary?.trim()) lines.push(`- Testing summary: ${round.testingSummary.trim()}`);
-  if (round.tested !== undefined) lines.push(`- Tested: ${round.tested ? "yes" : "no"}`);
-  if (round.artifacts && round.artifacts.length > 0) {
-    lines.push("- Artifacts:");
-    for (const artifact of round.artifacts) lines.push(`  - ${artifact}`);
+  if (round.testing?.summary?.trim()) {
+    lines.push(`- Testing summary: ${round.testing.summary.trim()}`);
+  }
+  if (round.testing?.tested !== undefined) {
+    lines.push(`- Tested: ${round.testing.tested ? "yes" : "no"}`);
+  }
+  if (round.testing?.artifacts && round.testing.artifacts.length > 0) {
+    lines.push("- Testing artifacts:");
+    for (const artifact of round.testing.artifacts) lines.push(`  - ${artifact}`);
   }
   if (round.resolution === "approved")
     lines.push("- Operator resolution: accepted remaining findings.");
@@ -373,8 +418,10 @@ function renderRoundForPrompt(round: RoundRecordInput, index: number): string {
   }
   if (round.fixSummary?.trim()) lines.push(`Fix summary: ${round.fixSummary.trim()}`);
   if (round.commitSha) lines.push(`Commit: ${round.commitSha}`);
-  if (round.testingSummary?.trim()) lines.push(`Testing summary: ${round.testingSummary.trim()}`);
-  if (round.tested !== undefined) lines.push(`Tested: ${round.tested ? "yes" : "no"}`);
+  if (round.testing?.summary?.trim())
+    lines.push(`Testing summary: ${round.testing.summary.trim()}`);
+  if (round.testing?.tested !== undefined)
+    lines.push(`Tested: ${round.testing.tested ? "yes" : "no"}`);
   return lines.join("\n");
 }
 

@@ -152,11 +152,13 @@ export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
               const finding = findingForCheck(check);
               return finding ? [finding] : [];
             }),
-            testingSummary: ciTestingSummary(latestChecks),
-            tested: latestChecks.length > 0,
-            artifacts: latestChecks.map(
-              (check) => `${check.name}: ${check.conclusion ?? check.status}`,
-            ),
+            testing: {
+              summary: ciTestingSummary(latestChecks),
+              tested: latestChecks.length > 0,
+              artifacts: latestChecks.map(
+                (check) => `${check.name}: ${check.conclusion ?? check.status}`,
+              ),
+            },
           };
         },
         async fix(input) {
