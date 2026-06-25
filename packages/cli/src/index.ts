@@ -1,24 +1,15 @@
 #!/usr/bin/env bun
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   type Config,
   autoApproveResponder,
   createEngine,
-  createGit,
   type Engine,
   type EngineOptions,
-  type Git,
   createRunJournal,
-  createWorktree,
-  currentWorkspaceSourceBranch,
-  isolationBoundaryFor,
-  releaseSourceBranchForWorktree,
-  removeWorktree,
+  type RunEvent,
   type RunJournal,
   type RunJournalResumeMode,
-  type SourceBranchRelease,
 } from "@tml/core";
 import {
   createTerminalRenderer,
@@ -32,6 +23,12 @@ import {
 import { assembleShipConfig } from "./config.ts";
 import { errorMessage } from "./error.ts";
 import { init } from "./init.ts";
+import {
+  type IsolationAdapter,
+  isolatedRun,
+  outcomeExitCode,
+  worktreeIsolation,
+} from "./isolated-run.ts";
 import { loadTmlConfig } from "./load.ts";
 
 /** Seams, injected by tests; production snapshots the checkout into an isolated run workspace. */
@@ -42,6 +39,8 @@ export interface ShipDeps {
   engineFor?: (config: Config, opts: EngineOptions) => Engine;
   /** Override or disable the local Run Journal. Production creates one per checkout. */
   journal?: RunJournal | false;
+  /** The git/worktree mechanism the isolated run executes on. Defaults to a disposable worktree. */
+  isolation?: IsolationAdapter;
   /** Journal selection policy when production creates the journal. Defaults to a fresh run. */
   journalResume?: RunJournalResumeMode;
   /** Exact run id for `journalResume: "exact"`, or a stable id for tests. */
@@ -89,21 +88,6 @@ async function defaultCreateTui(options: { onAbort: () => void }): Promise<Inter
 // 128 + signal number: the conventional exit code for a signal-terminated process.
 const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
 
-async function finalizeWorktreeHandoff(input: {
-  readonly cwd: string;
-  readonly git: Git;
-  readonly sourceRelease: SourceBranchRelease;
-  readonly workspacePath?: string;
-}): Promise<void> {
-  try {
-    if (input.workspacePath !== undefined) await removeWorktree(input.cwd, input.workspacePath);
-  } finally {
-    if (input.sourceRelease.kind === "detached") {
-      await input.git.checkout(input.sourceRelease.restoreBranch);
-    }
-  }
-}
-
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const auto = deps.auto ?? false;
@@ -150,60 +134,18 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   };
   for (const signal of signals) process.on(signal, onSignal);
 
-  // Production `tml ship` runs the early, deterministic Steps (branch/describe/commit-change) in the
-  // user's checkout, then hands the feature branch to a disposable worktree for the rest. Test seams
-  // that inject an Engine keep the direct single-pass cwd path, so unit tests avoid git fixtures.
+  // `ship` owns the CLI lifecycle (renderer, signals, epilogue); `isolatedRun` owns the two-phase,
+  // journaled run and folds each event back through this sink. Engine + isolation seams are injected
+  // so tests drive the whole handoff without git fixtures (the in-checkout adapter).
   let view = initialView;
-  let workspaceToClean: string | undefined;
   let setupJournal: RunJournal | undefined;
   let fatalErrorMessage: string | undefined;
-
-  // Outcome of one engine pass. Two passes (source phase, worktree phase) fold into the same `view`
-  // and the same journaled Run; the engine coalesces phase-2 replay-only events before they reach
-  // either this live stream or the durable journal.
-  interface PassOutcome {
-    failed: boolean;
-    cancelled: boolean;
-    finished: boolean;
-    paused: boolean;
-  }
-  const runPass = async (engine: Engine): Promise<PassOutcome> => {
-    const outcome: PassOutcome = {
-      failed: false,
-      cancelled: false,
-      finished: false,
-      paused: false,
-    };
-    for await (const event of engine.run()) {
-      if (event.type === "run:paused") {
-        outcome.paused = true;
-        continue;
-      }
-      view = present(view, event);
-      renderer.render(view, event);
-      if (event.type === "run:failed") outcome.failed = true;
-      if (event.type === "run:cancelled") outcome.cancelled = true;
-      if (event.type === "run:finished") outcome.finished = true;
-    }
-    return outcome;
+  const emit = (event: RunEvent): void => {
+    view = present(view, event);
+    renderer.render(view, event);
   };
-  const exitCode = (o: PassOutcome): number => (o.cancelled ? 130 : o.failed ? 1 : 0);
 
   try {
-    // Test seam: a single engine pass directly in the checkout.
-    if (deps.engineFor !== undefined) {
-      const journal = deps.journal === false ? undefined : deps.journal;
-      const config = await buildConfig(cwd);
-      const engine = engineFor(config, {
-        cwd,
-        ask,
-        approveFindings,
-        signal: abortController.signal,
-        ...(journal ? { journal } : {}),
-      });
-      return exitCode(await runPass(engine));
-    }
-
     if (deps.journal === false) {
       throw new Error("tml ship: isolated runs require the Run Journal.");
     }
@@ -216,98 +158,18 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         ...(deps.runId ? { runId: deps.runId } : {}),
       });
     setupJournal = journal;
-    const resumeKey = await currentWorkspaceSourceBranch(cwd);
-    const pipelineNames = sourceConfig.pipeline.map((s) => s.name);
-    const snapshot = await journal.begin({
-      pipeline: pipelineNames,
-      ...(resumeKey !== undefined ? { resumeKey } : {}),
+    const outcome = await isolatedRun(sourceConfig, {
+      cwd,
+      buildConfig,
+      engineFor,
+      ask,
+      approveFindings,
+      signal: abortController.signal,
+      journal,
+      isolation: deps.isolation ?? worktreeIsolation,
+      emit,
     });
-    const worktreePath = snapshot.metadata.workspacePath;
-    if (worktreePath === undefined) throw new Error("tml ship: Run Journal has no workspace.");
-
-    const boundary = isolationBoundaryFor(sourceConfig.pipeline);
-    if (boundary === undefined) {
-      const engine = engineFor(sourceConfig, {
-        cwd,
-        ask,
-        approveFindings,
-        signal: abortController.signal,
-        journal,
-      });
-      return exitCode(await runPass(engine));
-    }
-    const boundaryName = boundary.step.name;
-    const sourcePhase = new Set(boundary.sourceSteps.map((step) => step.name));
-
-    // Phase 1: branch/describe/commit-change in the source checkout, pausing at the boundary. Skip
-    // it when a resumed Run already finished the boundary (the branch + commit are durable in git).
-    if (!snapshot.completedSteps.has(boundaryName)) {
-      const phase1 = engineFor(sourceConfig, {
-        cwd,
-        ask,
-        approveFindings,
-        signal: abortController.signal,
-        journal,
-        stopAfter: boundaryName,
-      });
-      const outcome = await runPass(phase1);
-      if (outcome.finished || outcome.failed || outcome.cancelled) return exitCode(outcome);
-      if (!outcome.paused)
-        throw new Error("tml ship: engine stopped before the isolation handoff.");
-    }
-
-    // Handoff: the source checkout is on the feature branch with the work committed. Switch it back
-    // to the default branch so the worktree can claim the feature branch (git allows a branch in one
-    // worktree only), then add the worktree on that branch.
-    const sourceGit = createGit(cwd);
-    const base = await sourceGit.defaultBranch();
-    const currentBranch = await sourceGit.currentBranch();
-    const featureBranch =
-      snapshot.metadata.worktreeHandoff?.workspaceBranch ??
-      snapshot.metadata.workspaceBranch ??
-      currentBranch;
-    if (featureBranch === base || featureBranch === "HEAD") {
-      throw new Error("tml ship: could not determine the feature branch to isolate.");
-    }
-    await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
-    const sourceRelease = await releaseSourceBranchForWorktree({
-      sourcePath: cwd,
-      git: sourceGit,
-      base,
-      currentBranch,
-      featureBranch,
-    });
-    try {
-      workspaceToClean = worktreePath;
-      if (!existsSync(join(worktreePath, ".git"))) {
-        await createWorktree(cwd, featureBranch, worktreePath);
-      }
-
-      // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
-      // engine coalesces the source-phase replay so the Run reads as one continuous stream.
-      const worktreeConfig = await buildConfig(worktreePath);
-      if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
-        throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
-      }
-      const phase2 = engineFor(worktreeConfig, {
-        cwd: worktreePath,
-        ask,
-        approveFindings,
-        signal: abortController.signal,
-        journal,
-        coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
-      });
-      const outcome = await runPass(phase2);
-      return exitCode(outcome);
-    } finally {
-      await finalizeWorktreeHandoff({
-        cwd,
-        git: sourceGit,
-        sourceRelease,
-        workspacePath: workspaceToClean,
-      });
-      workspaceToClean = undefined;
-    }
+    return outcomeExitCode(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
     fatalErrorMessage = errorMessage(error);
