@@ -55,6 +55,7 @@ export interface Git {
    */
   createBranch(name: string, opts?: { from?: string }): Promise<void>;
   checkout(name: string): Promise<void>;
+  checkoutDetached(ref?: string): Promise<void>;
   stageAll(): Promise<void>;
   commit(message: string): Promise<CommitResult>;
   status(): Promise<GitStatus>;
@@ -192,13 +193,17 @@ export function createGit(cwd: string): Git {
 
     async createBranch(name, opts) {
       // `--no-track` keeps the new branch from adopting the start point's upstream (e.g. we don't
-      // want a branch cut off `origin/main` to track `origin/main`); `open-pr` sets the upstream.
+      // want a branch cut off `origin/main` to track `origin/main`); a later push sets upstream.
       const startPoint = opts?.from ? ["--no-track", opts.from] : [];
       await git(cwd, ["checkout", "-b", name, ...startPoint]);
     },
 
     async checkout(name) {
       await git(cwd, ["checkout", name]);
+    },
+
+    async checkoutDetached(ref) {
+      await git(cwd, ["checkout", "--detach", ...(ref ? [ref] : [])]);
     },
 
     async stageAll() {

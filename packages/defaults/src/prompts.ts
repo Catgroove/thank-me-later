@@ -12,31 +12,22 @@ type PromptFinding = Pick<
   "id" | "disposition" | "action" | "title" | "detail" | "location"
 >;
 
-export const formatPrompt =
-  "Verify repository formatting by model-backed source inspection. Read relevant project " +
-  "formatting config and changed files, but do not run formatters, package managers, or " +
-  "install commands. Report only high-confidence formatting drift that is obvious from the " +
-  "source text, with auto-fix when a later fix round can safely reformat the affected file. " +
-  "If formatting cannot be judged confidently from source inspection, report no findings.";
-
-export const lintPrompt =
-  "Verify repository lint by model-backed source inspection. Read relevant lint config and " +
-  "changed files, but do not run linters, package managers, or install commands. Report only " +
-  "high-confidence lint issues visible in source, with auto-fix when a later fix round can " +
-  "safely repair the issue. If lint cleanliness cannot be judged confidently from source " +
-  "inspection, report no findings.";
-
-export const typecheckPrompt =
-  "Verify the repository type-checks. Discover the type-check command from project config and " +
+export const qualityPrompt =
+  "Verify repository formatting, lint, and type-checking in one pass. For formatting and lint, " +
+  "use model-backed source inspection: read relevant config and changed files, but do not run " +
+  "formatters, linters, package managers, or install commands. Report only high-confidence " +
+  "formatting or lint issues visible in source, with auto-fix when a later fix round can safely " +
+  "repair the issue. For type-checking, discover the type-check command from project config and " +
   "run it. Report each real type or API contract error that remains, with auto-fix when a later " +
-  "fix round can safely repair the issue. If type-checking is not configured, report no findings.";
+  "fix round can safely repair the issue. If one of these checks is not configured or cannot be " +
+  "judged confidently, report no findings for that check.";
 
 export const testPrompt =
   "Verify the repository test suite. Discover the test command from project config and run it. " +
   "Report each real failing test or test infrastructure problem that remains. If there are no " +
   "tests, report no findings.";
 
-export type CheckMode = "inspect" | "run";
+export type CheckMode = "inspect" | "mixed" | "run";
 
 export interface CheckPromptInput {
   readonly name: string;

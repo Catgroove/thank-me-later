@@ -1,10 +1,11 @@
 // The post-TUI scrollback epilogue: a compact summary printed after the alternate screen is torn
 // down, so the terminal keeps a useful trace of the Run without the full transcript. Pure (returns
 // lines); the renderer writes them. Generic over the assembled Pipeline - it tallies by status and
-// names the failed/cancelled Step from facts, never from default Step names.
+// names the failed/cancelled Step from facts, never from concrete Step names.
 
 import { sanitize } from "./sanitize.ts";
 import type { ViewState } from "../present.ts";
+import { displayStepName } from "../step-display.ts";
 import { runElapsed } from "./format.ts";
 
 /** The compact epilogue lines for a finished/failed/cancelled Run. */
@@ -19,14 +20,14 @@ export function epilogueLines(view: ViewState, now: number): string[] {
       break;
     case "failed": {
       const failed = view.steps.find((s) => s.status === "failed");
-      const where = failed ? ` at ${failed.name}` : "";
+      const where = failed ? ` at ${displayStepName(failed)}` : "";
       lines.push(`✗ ship failed${where}${elapsedSuffix}`);
       if (view.error) lines.push(`  ${sanitize(view.error)}`);
       break;
     }
     case "cancelled": {
       const active = view.steps.find((s) => s.status === "active");
-      const where = active ? ` at ${active.name}` : "";
+      const where = active ? ` at ${displayStepName(active)}` : "";
       lines.push(`◼ ship cancelled${where}${elapsedSuffix}`);
       break;
     }

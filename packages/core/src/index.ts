@@ -35,21 +35,28 @@ export {
   type RoundRecord,
   type RoundRecordInput,
   type RoundResolution,
+  type RoundTestingEvidence,
+  type RoundTestingEvidenceInput,
   type RoundTrigger,
   type StepRoundSummary,
   currentFindings,
   findingId,
   findingLifecycle,
   hasPriorRounds,
+  hasTestingEvidence,
   isFixAttemptRound,
   makeFinding,
+  normalizeTestingEvidence,
   parseAgentFindingsOutput,
   renderFindingForPr,
+  renderFindingForPrText,
   renderPipelineSummaryForPr,
+  renderRoundNarrativeForPr,
   renderRoundsForPr,
   renderRoundsForPrompt,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
+  unresolvedFindings,
 } from "./round.ts";
 export {
   executeRoundLoop,
@@ -65,7 +72,7 @@ export {
   type RoundLoopResult,
   type RoundStopPolicyInput,
 } from "./round-executor.ts";
-export { defineStep, type Step, type StepResult, type StepRun } from "./step.ts";
+export { defineStep, type Step, type StepDisplay, type StepResult, type StepRun } from "./step.ts";
 export { type Config, type ModelMap, type Pipeline, type Providers } from "./pipeline.ts";
 export {
   type Assembly,
@@ -99,7 +106,7 @@ export type {
 } from "./providers/git-provider.ts";
 export { isMergeable, mergeStateKind } from "./providers/git-provider.ts";
 export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
-export type { RunEvent, RunEventInput } from "./events.ts";
+export type { PipelineStep, RunEvent, RunEventInput } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions } from "./engine.ts";
 export {
   checkoutKeyForPath,
@@ -112,6 +119,12 @@ export {
   type RunStatus,
   type RunWorktreeHandoff,
 } from "./run-journal.ts";
-export { createWorktree, currentWorkspaceSourceBranch, removeWorktree } from "./workspace.ts";
+export {
+  createWorktree,
+  currentWorkspaceSourceBranch,
+  releaseSourceBranchForWorktree,
+  removeWorktree,
+  type SourceBranchRelease,
+} from "./workspace.ts";
 export { AssemblyError, isolationBoundaryFor, validatePipeline } from "./validate.ts";
 export type { IsolationBoundary } from "./validate.ts";

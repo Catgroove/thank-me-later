@@ -10,9 +10,9 @@ const finding = makeFinding("review", {
 });
 
 const rounds: RoundRecord[] = [
-  { step: "lint", index: 0, trigger: "initial", findings: [finding] },
-  { step: "lint", index: 1, trigger: "auto_fix", findings: [finding] },
-  { step: "lint", index: 2, trigger: "verify", findings: [] },
+  { step: "quality", index: 0, trigger: "initial", findings: [finding] },
+  { step: "quality", index: 1, trigger: "auto_fix", findings: [finding] },
+  { step: "quality", index: 2, trigger: "verify", findings: [] },
   { step: "review", index: 0, trigger: "initial", findings: [finding] },
 ];
 
@@ -25,10 +25,11 @@ describe("default PR body", () => {
     });
 
     expect(body).toContain("<!-- tml:summary:start -->");
-    expect(body).toContain("## Intent\nFixes the boundary case.");
+    expect(body).toContain("## What changed\nFixes the boundary case.");
     expect(body).toContain("## Risk assessment");
     expect(body).toContain("Review found one behavior question.");
-    expect(body).toContain("| lint | clean | 3 | 1 | verify | 0 |");
+    expect(body).toContain("| quality | clean | 3 | 1 | verify | 0 |");
+    expect(body).toContain("### Rounds");
     expect(body).toContain("Confirm behavior");
     expect(body).toContain("<!-- tml:summary:end -->");
   });

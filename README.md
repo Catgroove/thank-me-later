@@ -36,10 +36,10 @@ tml ship      # branch, commit, and run the rest of the pipeline in an isolated 
 and commits your current work in the source checkout. It then switches your checkout back to
 the default branch and hands the feature branch to a disposable worktree under the local Run
 Journal. You can keep editing the source checkout while the Run continues; those later edits
-are not part of the shipment. The default pipeline rebases onto the latest base, runs the
-review before format, lint, type-check, and test passes, then re-syncs before pushing,
-opening a PR, watching CI, and checking merge readiness. Fixes from the review and gates land
-as their own commits on top of your change.
+are not part of the shipment. The default pipeline rebases onto the latest base, runs review,
+then runs one quality pass covering format, lint, and type-check, then tests. Finally it
+syncs before pushing, opening a PR, watching CI, and checking merge readiness. Fixes from the
+review and gates land as their own commits on top of your change.
 
 By default, each `tml ship` starts a fresh journaled Run. Use `tml ship --resume` to
 continue the latest compatible parked Run for the current branch, or `tml ship --resume <id>`
@@ -59,7 +59,7 @@ machine-wide defaults; the two deep-merge, project winning):
   "branch": "require",                          // ai | auto | require
   "maxFixAttempts": 3,                           // auto-fix cap per round loop
   "models": { "default": "haiku", "review": "opus" },
-  "disable": ["typecheck"],                     // drop a default Step
+  "disable": ["quality"],                       // drop a default Step
   "plugins": ["./.tml/deep-review.ts"]          // local paths only (for now)
 }
 ```

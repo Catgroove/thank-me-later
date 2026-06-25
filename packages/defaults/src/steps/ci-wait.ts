@@ -16,6 +16,7 @@ import {
 } from "@tml/core";
 import { pullRequest } from "../artifacts.ts";
 import { ciFixPrompt } from "../prompts.ts";
+import { fixCommitSubject } from "../semantic-commit.ts";
 import type { FixLoopPolicy } from "./fix-loop.ts";
 
 /** CI poll cadence, in milliseconds: poll every 10s, give up after 30min. Tune as runs inform us. */
@@ -65,6 +66,14 @@ function failedCheckNames(findings: readonly Finding[]): string[] {
     .filter((name): name is string => name !== undefined && name.trim().length > 0);
 }
 
+function ciTestingSummary(checks: readonly CheckRun[]): string {
+  if (checks.length === 0) return "No CI checks were reported.";
+  const green = checks.filter(isGreen).length;
+  const failed = checks.filter((check) => check.status === "completed" && !isGreen(check)).length;
+  const pending = checks.length - green - failed;
+  return `${green} green, ${failed} failed, ${pending} pending CI checks.`;
+}
+
 /**
  * Wait for the status-check rollup to settle, guarding against the empty-rollup race: GitHub
  * reports no checks for the first seconds after a push, and the raw provider poller treats that
@@ -110,6 +119,7 @@ async function failedLogsForFindings(
 export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
   return defineStep({
     name: "ci-wait",
+    display: { group: "pr-gate", label: "ci" },
     consumes: [pullRequest],
     resume: "reconcile",
     async run(ctx) {
@@ -143,6 +153,13 @@ export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
               const finding = findingForCheck(check);
               return finding ? [finding] : [];
             }),
+            testing: {
+              summary: ciTestingSummary(latestChecks),
+              tested: latestChecks.length > 0,
+              artifacts: latestChecks.map(
+                (check) => `${check.name}: ${check.conclusion ?? check.status}`,
+              ),
+            },
           };
         },
         async fix(input) {
@@ -157,7 +174,7 @@ export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
           );
           return { summary: agentResult.summary };
         },
-        commitMessage: "chore: apply fixes from CI",
+        commitMessage: (_input, result) => fixCommitSubject("ci", result.summary),
         async commit({ ctx, message }) {
           const subject = message?.trim() ?? "";
           if (subject.length === 0)

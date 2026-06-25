@@ -19,6 +19,7 @@ import { revertIfWorktreeChanged } from "../git-guard.ts";
 import type { FixLoopPolicy } from "./fix-loop.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
+import { fixCommitSubject } from "../semantic-commit.ts";
 
 const REVIEW_PASS_TITLE = "Thermo-nuclear code quality review";
 
@@ -102,7 +103,7 @@ export function reviewStep(policy: FixLoopPolicy = {}): Step {
             { group: `fix · attempt ${input.attempt}` },
           );
         },
-        commitMessage: "chore: apply fixes from review",
+        commitMessage: (_input, result) => fixCommitSubject("review", result.summary),
         maxAutoFixAttempts: policy.maxAutoFixAttempts,
         recordRounds: "live",
       });

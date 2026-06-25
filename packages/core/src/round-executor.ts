@@ -12,7 +12,9 @@ import type { Ctx } from "./context.ts";
 import {
   type Finding,
   type RoundRecordInput,
+  type RoundTestingEvidence,
   type RoundTrigger,
+  normalizeTestingEvidence,
   renderRoundsForPrompt,
 } from "./round.ts";
 
@@ -31,6 +33,7 @@ export interface RoundCheckInput {
 
 export interface RoundCheckResult {
   readonly findings: readonly Finding[];
+  readonly testing?: RoundTestingEvidence;
 }
 
 export interface RoundFixInput {
@@ -133,11 +136,13 @@ export async function executeRoundLoop(
     const check = await options.check(checkInput);
     const findings = [...check.findings];
     const selected = selectFindings(options, findings, checkInput);
+    const testing = normalizeTestingEvidence(check.testing);
 
     await appendRound(ctx, options, rounds, {
       trigger,
       findings,
       ...(selected.length > 0 ? { selectedFindingIds: selected.map((f) => f.id) } : {}),
+      ...(testing ? { testing } : {}),
     });
 
     let stopReason = stopPolicy(options, {
