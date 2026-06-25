@@ -5,12 +5,9 @@
 export {
   type AbortDecision,
   type ApprovalDecision,
-  type ApprovalDecisionSource,
   type ApprovalFindingsInput,
   type ApproveDecision,
   type ApproveFindingsInput,
-  autoApproveFindings,
-  autoApproveResponder,
   type FixDecision,
   isRoundApproveFindingsInput,
   type RoundApprovalFixBudget,

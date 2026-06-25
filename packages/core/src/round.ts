@@ -18,7 +18,6 @@ export type RoundTrigger = "initial" | "auto_fix" | "user_fix" | "verify" | "app
  * show "accepted as-is"/"skipped" instead of "still open".
  */
 export type RoundResolution = "approved" | "skipped";
-export type ApprovalDecisionSource = "operator" | "auto";
 
 export interface RoundTestingEvidence {
   readonly summary?: string;
@@ -65,8 +64,6 @@ export interface RoundRecord {
   readonly testing?: RoundTestingEvidence;
   /** Set on the terminal round of an approval gate that the operator approved or skipped. */
   readonly resolution?: RoundResolution;
-  /** Source of an approval gate decision. Omitted means a human operator. */
-  readonly approvalSource?: ApprovalDecisionSource;
 }
 
 export interface StepRoundSummary {

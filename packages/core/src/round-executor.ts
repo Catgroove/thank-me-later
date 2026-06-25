@@ -321,7 +321,6 @@ function approvalRound(findings: readonly Finding[], decision: ApprovalDecision)
     findings: [...findings, ...userFindings],
     ...(decision.action === "fix" ? { selectedFindingIds: [...decision.selectedFindingIds] } : {}),
     ...(userNotes ? { userNotes } : {}),
-    ...(decision.source ? { approvalSource: decision.source } : {}),
     ...(resolution ? { resolution } : {}),
   };
 }
