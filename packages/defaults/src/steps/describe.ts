@@ -22,6 +22,7 @@ function asDescription(output: unknown): { title: string; body: string } {
 export function describeStep(): Step {
   return defineStep({
     name: "describe",
+    display: { label: "Describe" },
     produces: [prTitle, prBody],
     async run(ctx) {
       const reply = await ctx.agent.run(prDescriptionPrompt(), { schema: prDescriptionSchema });

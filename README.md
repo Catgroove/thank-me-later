@@ -73,6 +73,7 @@ imports `@tml/core`:
 export default (tml) => {
   tml.pipeline.insertAfter("review", tml.defineStep({
     name: "deep-review",
+    display: { label: "Security" },
     run: (ctx) => ctx.agent.run("Second, security-focused pass over the diff.").then(() => ({})),
   }));
 };
