@@ -89,13 +89,11 @@ export function reviewStep(): Step {
     consumes: [prBody],
     produces: [reviewSummary],
     async run(ctx) {
-      let latestFindings: Finding[] = [];
-
       const result = await executeRoundLoop(ctx, {
         stepName: "review",
         async check(input) {
-          latestFindings = await runReviewPass(ctx, input);
-          return { findings: latestFindings };
+          const findings = await runReviewPass(ctx, input);
+          return { findings };
         },
         async fix(input) {
           return ctx.phase(
@@ -117,7 +115,7 @@ export function reviewStep(): Step {
 
       return {
         artifacts: {
-          reviewSummary: summarize(latestFindings, fixSummaries(result.rounds)),
+          reviewSummary: summarize(result.findings, fixSummaries(result.rounds)),
         },
         rounds: [],
       };

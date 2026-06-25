@@ -138,7 +138,7 @@ export async function executeRoundLoop(
   let trigger: Extract<RoundTrigger, "initial" | "verify"> = "initial";
   let lastFixProgress: RoundFixProgress | undefined;
 
-  while (true) {
+  roundsLoop: while (true) {
     const checkInput: RoundCheckInput = {
       trigger,
       attempt: attempts,
@@ -175,69 +175,95 @@ export async function executeRoundLoop(
 
     if (stopReason === undefined) {
       attempts += 1;
+      const fixedIds = new Set(selected.map((f) => f.id));
+      const remainingAfterFix = findings.filter((f) => !fixedIds.has(f.id));
       lastFixProgress = await applyFix(ctx, options, {
         trigger: "auto_fix",
         attempt: attempts,
         fixFindings: selected,
-        recordFindings: selected,
+        recordFindings:
+          options.verifyAfterFix === false
+            ? (progress) => (progress === "no_progress" ? findings : remainingAfterFix)
+            : selected,
+        selectedFindingIds: selected.map((f) => f.id),
         rounds,
       });
       if (options.verifyAfterFix !== false) {
         trigger = "verify";
         continue;
       }
-      const fixedIds = new Set(selected.map((f) => f.id));
-      gateFindings = findings.filter((f) => !fixedIds.has(f.id));
-      stopReason = terminalStopReason(options, gateFindings);
+      if (lastFixProgress === "no_progress") {
+        gateFindings = findings;
+        stopReason = "no_progress";
+      } else {
+        gateFindings = remainingAfterFix;
+        stopReason = terminalStopReason(options, gateFindings);
+      }
     }
 
-    if (options.stepName === undefined || !requiresApproval(stopReason)) {
-      return done(stopReason, gateFindings, rounds, attempts);
-    }
+    while (options.stepName !== undefined && requiresApproval(stopReason)) {
+      const suggestedFindingIds = currentSelectedFindingIds(gateFindings, rounds);
+      const approvalInput: RoundApproveFindingsInput = {
+        prompt: defaultPrompt(options.stepName, stopReason),
+        stopReason,
+        findings: gateFindings,
+        ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
+        context: renderRoundsForAgentPrompt(rounds),
+        fixBudget: {
+          attempts,
+          maxAttempts: maxAutoFixAttempts,
+          remainingAttempts: Math.max(0, maxAutoFixAttempts - attempts),
+        },
+      };
+      const decision = await ctx.approveFindings(approvalInput);
 
-    const suggestedFindingIds = currentSelectedFindingIds(gateFindings, rounds);
-    const approvalInput: RoundApproveFindingsInput = {
-      prompt: defaultPrompt(options.stepName, stopReason),
-      stopReason,
-      findings: gateFindings,
-      ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
-      context: renderRoundsForAgentPrompt(rounds),
-      fixBudget: {
-        attempts,
-        maxAttempts: maxAutoFixAttempts,
-        remainingAttempts: Math.max(0, maxAutoFixAttempts - attempts),
-      },
-    };
-    const decision = await ctx.approveFindings(approvalInput);
+      if (decision.action === "abort") {
+        throw new Error(decision.reason ?? "approval aborted by operator");
+      }
+      if (decision.action === "approve" || decision.action === "skip") {
+        await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
+        return done(stopReason, gateFindings, rounds, attempts);
+      }
 
-    if (decision.action === "abort") {
-      throw new Error(decision.reason ?? "approval aborted by operator");
-    }
-    if (decision.action === "approve" || decision.action === "skip") {
+      const decisionFindings = selectDecisionFindings(gateFindings, decision.selectedFindingIds);
+      if (decisionFindings.length === 0) {
+        throw new Error(`${options.stepName}: approval fix selected no current findings`);
+      }
+      const userFindings = decision.userFindings ?? [];
+      const recordFixFindings = [...decisionFindings, ...userFindings];
+      const fixedIds = new Set(recordFixFindings.map((f) => f.id));
+      const remainingAfterFix = gateFindings.filter((f) => !fixedIds.has(f.id));
+      const findingsIfNoProgress = appendFindings(gateFindings, userFindings);
       await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
-      return done(stopReason, gateFindings, rounds, attempts);
+      attempts += 1;
+      lastFixProgress = await applyFix(ctx, options, {
+        trigger: "user_fix",
+        attempt: attempts,
+        fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
+        recordFindings:
+          options.verifyAfterFix === false
+            ? (progress) => (progress === "no_progress" ? findingsIfNoProgress : remainingAfterFix)
+            : recordFixFindings,
+        selectedFindingIds: recordFixFindings.map((f) => f.id),
+        rounds,
+        userNotes: cleanNotes(decision.notes),
+      });
+      // A fire-and-forget operator fix is applied once and not re-reviewed, matching the auto-fix path.
+      if (options.verifyAfterFix === false) {
+        if (lastFixProgress === "no_progress") {
+          gateFindings = findingsIfNoProgress;
+          stopReason = "no_progress";
+        } else {
+          gateFindings = remainingAfterFix;
+          stopReason = terminalStopReason(options, gateFindings);
+        }
+        continue;
+      }
+      trigger = "verify";
+      continue roundsLoop;
     }
 
-    const decisionFindings = selectDecisionFindings(gateFindings, decision.selectedFindingIds);
-    if (decisionFindings.length === 0) {
-      throw new Error(`${options.stepName}: approval fix selected no current findings`);
-    }
-    const userFindings = decision.userFindings ?? [];
-    await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
-    attempts += 1;
-    lastFixProgress = await applyFix(ctx, options, {
-      trigger: "user_fix",
-      attempt: attempts,
-      fixFindings: [...annotateWithNotes(decisionFindings, decision.notes), ...userFindings],
-      recordFindings: [...decisionFindings, ...userFindings],
-      rounds,
-      userNotes: cleanNotes(decision.notes),
-    });
-    // A fire-and-forget operator fix is applied once and not re-reviewed, matching the auto-fix path.
-    if (options.verifyAfterFix === false) {
-      return done(stopReason, gateFindings, rounds, attempts);
-    }
-    trigger = "verify";
+    return done(stopReason, gateFindings, rounds, attempts);
   }
 }
 
@@ -257,7 +283,10 @@ interface ApplyFixArgs {
   /** Findings handed to the fix callback; may carry inline operator notes. */
   readonly fixFindings: readonly Finding[];
   /** Findings recorded in the round; the clean, note-free set. */
-  readonly recordFindings: readonly Finding[];
+  readonly recordFindings:
+    | readonly Finding[]
+    | ((progress: RoundFixProgress) => readonly Finding[]);
+  readonly selectedFindingIds?: readonly string[];
   readonly rounds: RoundRecordInput[];
   readonly userNotes?: Record<string, string>;
 }
@@ -276,11 +305,15 @@ async function applyFix(
   const fix = await options.fix(fixInput);
   const commit = await commitFix(ctx, options, fixInput, fix);
   const fixSummary = fix.summary.trim();
+  const recordFindings =
+    typeof args.recordFindings === "function"
+      ? [...args.recordFindings(commit.progress)]
+      : [...args.recordFindings];
 
   await appendRound(ctx, options, args.rounds, {
     trigger: args.trigger,
-    findings: [...args.recordFindings],
-    selectedFindingIds: args.recordFindings.map((f) => f.id),
+    findings: recordFindings,
+    selectedFindingIds: [...(args.selectedFindingIds ?? recordFindings.map((f) => f.id))],
     ...(args.userNotes ? { userNotes: args.userNotes } : {}),
     ...(fixSummary.length > 0 ? { fixSummary } : {}),
     ...(commit.commitSha !== undefined ? { commitSha: commit.commitSha } : {}),
@@ -374,6 +407,17 @@ function selectDecisionFindings(
 ): Finding[] {
   const selected = new Set(selectedFindingIds);
   return findings.filter((finding) => selected.has(finding.id));
+}
+
+function appendFindings(findings: readonly Finding[], additions: readonly Finding[]): Finding[] {
+  const seen = new Set(findings.map((finding) => finding.id));
+  const out = [...findings];
+  for (const finding of additions) {
+    if (seen.has(finding.id)) continue;
+    out.push(finding);
+    seen.add(finding.id);
+  }
+  return out;
 }
 
 function annotateWithNotes(

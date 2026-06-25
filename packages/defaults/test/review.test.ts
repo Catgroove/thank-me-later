@@ -64,7 +64,9 @@ describe("review step", () => {
     });
     // Only two scripted replies: the review and the fix. No third (verify) pass.
     agent.responses.push(pass([auto]), { ok: true, summary: "fixed", output: {} });
-    const { ctx, phases, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const git = new FakeGit();
+    git.stagedFiles = ["file.ts"];
+    const { ctx, phases, recordedRounds } = fakeCtx({ agent, git, reads: { prBody: "body" } });
 
     const result = await reviewStep().run(ctx);
 
@@ -95,7 +97,9 @@ describe("review step", () => {
     });
     // Initial review then one fix; no verify pass is scripted because none should run.
     agent.responses.push(pass([auto, ask]), { ok: true, summary: "fixed once", output: {} });
-    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
+    const git = new FakeGit();
+    git.stagedFiles = ["file.ts"];
+    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, git, reads: { prBody: "body" } });
 
     await reviewStep().run(ctx);
 

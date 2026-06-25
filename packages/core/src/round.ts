@@ -472,23 +472,36 @@ export function findingLifecycle(
 
   const isCheck = (r: RoundRecord) => r.trigger === "initial" || r.trigger === "verify";
 
-  // The freshest re-scan decides what is still reported; fix and approval rounds are not re-scans.
-  const lastCheck = ordered.filter(isCheck).at(-1);
-  const present = new Set(lastCheck?.findings.map((f) => f.id) ?? []);
+  const last = ordered.at(-1);
+  const settled = opts.settled ?? false;
 
-  // A fix round records the findings it attempted; that is what can later be confirmed fixed.
+  // The freshest terminal observation decides what is still reported.
+  const lastCheck = ordered.filter(isCheck).at(-1);
+  const presentRound =
+    settled &&
+    last !== undefined &&
+    (isFixAttemptRound(last) || (last.trigger === "approval" && last.resolution !== undefined))
+      ? last
+      : lastCheck;
+  const present = new Set(presentRound?.findings.map((f) => f.id) ?? []);
+
+  // A fix round records attempted ids in its selection; older records carried them as findings.
   const attempted = new Set<string>();
-  for (const r of ordered)
-    if (isFixAttemptRound(r)) for (const f of r.findings) attempted.add(f.id);
+  for (const r of ordered) {
+    if (!isFixAttemptRound(r)) continue;
+    for (const f of r.findings) attempted.add(f.id);
+    for (const id of r.selectedFindingIds ?? []) attempted.add(id);
+  }
 
   // The last round's queued/attempted set is in flight: a check that just selected fixes, an
   // approval selection that just handed findings to the fixer, or a fix round awaiting its verify.
   // Either way the fix has not yet been confirmed.
-  const last = ordered.at(-1);
   const inFlight = new Set<string>();
   if (last !== undefined) {
-    if (isFixAttemptRound(last)) for (const f of last.findings) inFlight.add(f.id);
-    else if (isCheck(last) || last.trigger === "approval") {
+    if (isFixAttemptRound(last)) {
+      for (const f of last.findings) inFlight.add(f.id);
+      for (const id of last.selectedFindingIds ?? []) inFlight.add(id);
+    } else if (isCheck(last) || last.trigger === "approval") {
       for (const id of last.selectedFindingIds ?? []) inFlight.add(id);
     }
   }
@@ -507,7 +520,6 @@ export function findingLifecycle(
     }
   }
 
-  const settled = opts.settled ?? false;
   const out: FindingLifecycle[] = [];
   for (const id of order) {
     const finding = latest.get(id);
