@@ -88,42 +88,50 @@ function riskAssessment(
 }
 
 function testingSummary(rounds: readonly RoundRecord[]): string {
-  const checkSteps = new Set(["quality", "test", "ci-wait"]);
-  const summaries = summarizeStepRounds(rounds).filter((summary) => checkSteps.has(summary.step));
-  const evidence = latestTestingEvidence(rounds, checkSteps);
-  if (summaries.length === 0 && evidence.length === 0) return "No local check rounds recorded.";
+  const evidence = latestTestingEvidence(rounds);
+  const evidenceSteps = new Set(evidence.map((round) => round.step));
+  const summaries = summarizeStepRounds(rounds).filter((summary) =>
+    evidenceSteps.has(summary.step),
+  );
+  if (evidence.length === 0) return "No local check rounds recorded.";
 
   const lines: string[] = [];
   if (summaries.length > 0) {
     lines.push(
       ...summaries.map((summary) => `- ${summary.step}: ${testingStatus(summary.status)}`),
     );
+    lines.push("");
   }
-  if (evidence.length > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push("Evidence:");
-    for (const round of evidence) {
-      const status = round.tested === undefined ? "unknown" : round.tested ? "tested" : "not run";
-      const summary = round.testingSummary?.trim() ?? "No testing summary recorded.";
-      lines.push(`- ${round.step} round ${round.index}: ${status} - ${summary}`);
-      for (const artifact of round.artifacts ?? []) lines.push(`  - ${artifact}`);
-    }
+  lines.push("Evidence:");
+  for (const round of evidence) {
+    const status = round.tested === undefined ? "unknown" : round.tested ? "tested" : "not run";
+    const trimmedSummary = round.testingSummary?.trim();
+    const summary =
+      trimmedSummary !== undefined && trimmedSummary.length > 0
+        ? trimmedSummary
+        : "No testing summary recorded.";
+    lines.push(`- ${round.step} round ${round.index}: ${status} - ${summary}`);
+    for (const artifact of round.artifacts ?? []) lines.push(`  - ${artifact}`);
   }
   return lines.join("\n");
 }
 
-function latestTestingEvidence(
-  rounds: readonly RoundRecord[],
-  checkSteps: ReadonlySet<string>,
-): RoundRecord[] {
+function latestTestingEvidence(rounds: readonly RoundRecord[]): RoundRecord[] {
   const latest = new Map<string, RoundRecord>();
   for (const round of rounds) {
-    if (!checkSteps.has(round.step)) continue;
-    if (!round.testingSummary && round.tested === undefined && !round.artifacts?.length) continue;
+    if (!hasTestingEvidence(round)) continue;
     const prior = latest.get(round.step);
     if (prior === undefined || round.index > prior.index) latest.set(round.step, round);
   }
   return [...latest.values()];
+}
+
+function hasTestingEvidence(round: RoundRecord): boolean {
+  return (
+    (round.testingSummary?.trim().length ?? 0) > 0 ||
+    round.tested !== undefined ||
+    (round.artifacts?.length ?? 0) > 0
+  );
 }
 
 function testingStatus(status: ReturnType<typeof summarizeStepRounds>[number]["status"]): string {

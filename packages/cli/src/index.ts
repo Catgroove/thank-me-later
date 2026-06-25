@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   type Config,
   autoApproveResponder,
@@ -9,6 +9,7 @@ import {
   createGit,
   type Engine,
   type EngineOptions,
+  type Git,
   createRunJournal,
   createWorktree,
   currentWorkspaceSourceBranch,
@@ -86,6 +87,95 @@ async function defaultCreateTui(options: { onAbort: () => void }): Promise<Inter
 // 128 + signal number: the conventional exit code for a signal-terminated process.
 const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
 
+type SourceBranchRelease =
+  | { readonly kind: "already-released" }
+  | { readonly kind: "checked-out-base" }
+  | { readonly kind: "detached"; readonly restoreBranch: string };
+
+interface WorktreeEntry {
+  readonly path: string;
+  readonly branch?: string;
+}
+
+async function gitOutput(cwd: string, args: readonly string[]): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed (exit ${exitCode}): ${stderr.trim()}`);
+  }
+  return stdout;
+}
+
+function parseWorktreeList(output: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = [];
+  let current: { path?: string; branch?: string } = {};
+  const pushCurrent = (): void => {
+    if (current.path !== undefined) entries.push({ path: current.path, branch: current.branch });
+    current = {};
+  };
+  for (const line of output.split("\n")) {
+    if (line.length === 0) {
+      pushCurrent();
+      continue;
+    }
+    if (line.startsWith("worktree ")) {
+      pushCurrent();
+      current.path = line.slice("worktree ".length);
+      continue;
+    }
+    if (line.startsWith("branch ")) current.branch = line.slice("branch ".length);
+  }
+  pushCurrent();
+  return entries;
+}
+
+async function worktreeClaimingBranch(cwd: string, branch: string): Promise<string | undefined> {
+  const self = resolve(cwd);
+  const branchRef = `refs/heads/${branch}`;
+  for (const entry of parseWorktreeList(
+    await gitOutput(cwd, ["worktree", "list", "--porcelain"]),
+  )) {
+    if (entry.branch === branchRef && resolve(entry.path) !== self) return entry.path;
+  }
+  return undefined;
+}
+
+function isLinkedWorktreeBranchLock(error: unknown, branch: string): boolean {
+  const message = errorMessage(error);
+  return (
+    message.includes("already checked out at") &&
+    (message.includes(`'${branch}'`) || message.includes(`refs/heads/${branch}`))
+  );
+}
+
+async function releaseSourceBranchForWorktree(input: {
+  readonly cwd: string;
+  readonly git: Git;
+  readonly base: string;
+  readonly currentBranch: string;
+  readonly featureBranch: string;
+}): Promise<SourceBranchRelease> {
+  if (input.currentBranch !== input.featureBranch) return { kind: "already-released" };
+
+  if ((await worktreeClaimingBranch(input.cwd, input.base)) !== undefined) {
+    await input.git.checkoutDetached();
+    return { kind: "detached", restoreBranch: input.featureBranch };
+  }
+
+  try {
+    await input.git.checkout(input.base);
+    return { kind: "checked-out-base" };
+  } catch (error) {
+    if (!isLinkedWorktreeBranchLock(error, input.base)) throw error;
+    await input.git.checkoutDetached();
+    return { kind: "detached", restoreBranch: input.featureBranch };
+  }
+}
+
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const auto = deps.auto ?? false;
@@ -138,7 +228,6 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // that inject an Engine keep the direct single-pass cwd path, so unit tests avoid git fixtures.
   let view = initialView;
   let workspaceToClean: string | undefined;
-  let restoreDetachedSourceBranch: string | undefined;
   let setupJournal: RunJournal | undefined;
   let fatalErrorMessage: string | undefined;
 
@@ -254,46 +343,48 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
       throw new Error("tml ship: could not determine the feature branch to isolate.");
     }
     await journal.recordWorktreeHandoff({ sourceResumeKey: base, workspaceBranch: featureBranch });
-    if (currentBranch === featureBranch) {
-      try {
-        await sourceGit.checkout(base);
-      } catch {
-        // The source checkout may itself be a linked worktree while the default branch is already
-        // checked out elsewhere. We only need to free the feature branch for the disposable
-        // workspace, so detach instead of failing the ship.
-        await sourceGit.checkoutDetached();
-        restoreDetachedSourceBranch = featureBranch;
-      }
-    }
-    if (!existsSync(join(worktreePath, ".git"))) {
-      await createWorktree(cwd, featureBranch, worktreePath);
-    }
-    workspaceToClean = worktreePath;
-
-    // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
-    // engine coalesces the source-phase replay so the Run reads as one continuous stream.
-    const worktreeConfig = await buildConfig(worktreePath);
-    if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
-      throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
-    }
-    const phase2 = engineFor(worktreeConfig, {
-      cwd: worktreePath,
-      ask,
-      approveFindings,
-      signal: abortController.signal,
-      journal,
-      coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
+    const sourceRelease = await releaseSourceBranchForWorktree({
+      cwd,
+      git: sourceGit,
+      base,
+      currentBranch,
+      featureBranch,
     });
-    const outcome = await runPass(phase2);
-    if (outcome.finished && workspaceToClean !== undefined) {
-      await removeWorktree(cwd, workspaceToClean);
-      workspaceToClean = undefined;
-      if (restoreDetachedSourceBranch !== undefined) {
-        await sourceGit.checkout(restoreDetachedSourceBranch);
-        restoreDetachedSourceBranch = undefined;
+    try {
+      workspaceToClean = worktreePath;
+      if (!existsSync(join(worktreePath, ".git"))) {
+        await createWorktree(cwd, featureBranch, worktreePath);
+      }
+
+      // Phase 2: the rest of the pipeline runs in the worktree, resuming the same journaled Run. The
+      // engine coalesces the source-phase replay so the Run reads as one continuous stream.
+      const worktreeConfig = await buildConfig(worktreePath);
+      if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
+        throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
+      }
+      const phase2 = engineFor(worktreeConfig, {
+        cwd: worktreePath,
+        ask,
+        approveFindings,
+        signal: abortController.signal,
+        journal,
+        coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
+      });
+      const outcome = await runPass(phase2);
+      if (outcome.finished && workspaceToClean !== undefined) {
+        await removeWorktree(cwd, workspaceToClean);
+        workspaceToClean = undefined;
+      }
+      return exitCode(outcome);
+    } finally {
+      if (sourceRelease.kind === "detached") {
+        if (workspaceToClean !== undefined) {
+          await removeWorktree(cwd, workspaceToClean);
+          workspaceToClean = undefined;
+        }
+        await sourceGit.checkout(sourceRelease.restoreBranch);
       }
     }
-    return exitCode(outcome);
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
     fatalErrorMessage = errorMessage(error);
