@@ -91,6 +91,14 @@ export interface RoundLoopOptions {
   stepName?: string;
   /** Maximum number of fix rounds. Defaults to 3. */
   maxAutoFixAttempts?: number;
+  /**
+   * Whether to run a fresh check round after a fix to confirm it. Defaults to `true` (the
+   * converging loop for objective checks: fix, re-run the tool, repeat). Set `false` for a
+   * fire-and-forget fix that is not re-reviewed - the fix is applied once and the loop stops,
+   * escalating only the findings the fix did not target. Suits a judgement pass (review) where a
+   * full re-review would not converge and would re-surface decisions the operator already made.
+   */
+  verifyAfterFix?: boolean;
   /** Optional stop policy after each check round. Defaults to clean and no-selected stops. */
   stopPolicy?(input: RoundStopPolicyInput): RoundLoopStopReason | undefined;
   /** Commit subject for each fix round when using the default commit behavior. */
@@ -161,6 +169,10 @@ export async function executeRoundLoop(
       stopReason = "auto_fix_limit_hit";
     }
 
+    // The findings the gate and the terminal result consider. Normally the full check findings; in
+    // fire-and-forget mode it narrows to what the fix did not target (the fix is not re-reviewed).
+    let gateFindings = findings;
+
     if (stopReason === undefined) {
       attempts += 1;
       lastFixProgress = await applyFix(ctx, options, {
@@ -170,19 +182,24 @@ export async function executeRoundLoop(
         recordFindings: selected,
         rounds,
       });
-      trigger = "verify";
-      continue;
+      if (options.verifyAfterFix !== false) {
+        trigger = "verify";
+        continue;
+      }
+      const fixedIds = new Set(selected.map((f) => f.id));
+      gateFindings = findings.filter((f) => !fixedIds.has(f.id));
+      stopReason = terminalStopReason(options, gateFindings);
     }
 
     if (options.stepName === undefined || !requiresApproval(stopReason)) {
-      return done(stopReason, findings, rounds, attempts);
+      return done(stopReason, gateFindings, rounds, attempts);
     }
 
-    const suggestedFindingIds = currentSelectedFindingIds(findings, rounds);
+    const suggestedFindingIds = currentSelectedFindingIds(gateFindings, rounds);
     const approvalInput: RoundApproveFindingsInput = {
       prompt: defaultPrompt(options.stepName, stopReason),
       stopReason,
-      findings,
+      findings: gateFindings,
       ...(suggestedFindingIds ? { suggestedFindingIds } : {}),
       context: renderRoundsForAgentPrompt(rounds),
       fixBudget: {
@@ -197,16 +214,16 @@ export async function executeRoundLoop(
       throw new Error(decision.reason ?? "approval aborted by operator");
     }
     if (decision.action === "approve" || decision.action === "skip") {
-      await appendRound(ctx, options, rounds, approvalRound(findings, decision));
-      return done(stopReason, findings, rounds, attempts);
+      await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
+      return done(stopReason, gateFindings, rounds, attempts);
     }
 
-    const decisionFindings = selectDecisionFindings(findings, decision.selectedFindingIds);
+    const decisionFindings = selectDecisionFindings(gateFindings, decision.selectedFindingIds);
     if (decisionFindings.length === 0) {
       throw new Error(`${options.stepName}: approval fix selected no current findings`);
     }
     const userFindings = decision.userFindings ?? [];
-    await appendRound(ctx, options, rounds, approvalRound(findings, decision));
+    await appendRound(ctx, options, rounds, approvalRound(gateFindings, decision));
     attempts += 1;
     lastFixProgress = await applyFix(ctx, options, {
       trigger: "user_fix",
@@ -216,8 +233,22 @@ export async function executeRoundLoop(
       rounds,
       userNotes: cleanNotes(decision.notes),
     });
+    // A fire-and-forget operator fix is applied once and not re-reviewed, matching the auto-fix path.
+    if (options.verifyAfterFix === false) {
+      return done(stopReason, gateFindings, rounds, attempts);
+    }
     trigger = "verify";
   }
+}
+
+/** Terminal stop for a fire-and-forget fix: no re-check, so classify the findings the fix left. */
+function terminalStopReason(
+  options: RoundLoopOptions,
+  findings: readonly Finding[],
+): RoundLoopStopReason {
+  if (findings.length === 0) return "clean";
+  if (findings.some((finding) => needsUser(options, finding))) return "needs_user";
+  return "remaining_findings";
 }
 
 interface ApplyFixArgs {

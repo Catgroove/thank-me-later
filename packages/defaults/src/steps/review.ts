@@ -1,8 +1,9 @@
 // `review` - a pre-push read-only review of the branch's diff for bugs, risks, and safe
-// simplifications. One agent pass triages findings by action; only safe auto-fix findings enter the
-// bounded fix loop (one attempt by default), while findings that touch the author's intent are
-// flagged for the human approval gate, so the loop converges instead of churning on judgement calls.
-// The before/after worktree check reverts any edits the read-only pass makes anyway, so only the fix
+// simplifications. One agent pass triages findings by action; safe auto-fix findings get a single
+// fire-and-forget fix pass (no re-review), while findings that touch the author's intent are flagged
+// for the human approval gate. So a clean diff is one pass, obvious fixes cost one more, and
+// judgement calls reach the operator once - the step never re-reviews and so never churns. The
+// before/after worktree check reverts any edits the read-only pass makes anyway, so only the fix
 // callback can change files. The resulting markdown becomes the `reviewSummary` artifact `open-pr`
 // folds into the PR body.
 
@@ -24,9 +25,10 @@ import { fixCommitSubject } from "../semantic-commit.ts";
 
 const REVIEW_PASS_TITLE = "Code review";
 
-// Review fixes obvious, safe findings once and then stops; judgement calls go to the human gate.
-// Unlike the objective checks (quality/test/ci), re-reviewing a maintainability pass does not
-// converge, so review does not take the global maxFixAttempts knob - it has its own low budget.
+// Review fixes obvious, safe findings once (fire-and-forget, no re-review) and routes judgement
+// calls to the human gate. Unlike the objective checks (quality/test/ci), re-reviewing a
+// maintainability pass does not converge, so review does not take the global maxFixAttempts knob -
+// it has its own low budget and `verifyAfterFix: false`.
 const REVIEW_AUTO_FIX_ATTEMPTS = 1;
 
 /** Run the read-only review pass: structured reply against the findings schema, validated. */
@@ -107,6 +109,9 @@ export function reviewStep(): Step {
         },
         commitMessage: (_input, result) => fixCommitSubject("review", result.summary),
         maxAutoFixAttempts: REVIEW_AUTO_FIX_ATTEMPTS,
+        // Review is a judgement pass: apply safe fixes once and stop. A re-review would not
+        // converge and would re-surface findings the operator already decided on.
+        verifyAfterFix: false,
         recordRounds: "live",
       });
 

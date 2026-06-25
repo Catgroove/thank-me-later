@@ -54,7 +54,7 @@ describe("review step", () => {
     expect(phases.map((p) => p.group)).toEqual(["initial"]);
   });
 
-  test("runs the fix pass for auto-fix findings, then verifies with a fresh review", async () => {
+  test("applies one fire-and-forget fix for auto-fix findings, with no re-review", async () => {
     const agent = new FakeHarness();
     const auto = makeFinding("review", {
       disposition: "should-fix",
@@ -62,66 +62,50 @@ describe("review step", () => {
       title: "Tidy",
       detail: "Small cleanup.",
     });
-    agent.responses.push(pass([auto]), { ok: true, summary: "fixed", output: {} }, pass([]));
+    // Only two scripted replies: the review and the fix. No third (verify) pass.
+    agent.responses.push(pass([auto]), { ok: true, summary: "fixed", output: {} });
     const { ctx, phases, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     const result = await reviewStep().run(ctx);
 
-    expect(agent.tasks).toHaveLength(3);
+    expect(agent.tasks).toHaveLength(2);
     expect(agent.opts[1]?.schema).toBeUndefined();
     expect(agent.tasks[1]).toContain("Prior review round history");
     expect(agent.tasks[1]).toContain("Round 0: initial");
-    expect(agent.tasks[2]).toContain("Prior review round history");
-    expect(phases.map((p) => p.group)).toEqual([
-      "initial",
-      "fix · attempt 1",
-      "verify · attempt 1",
-    ]);
+    expect(phases.map((p) => p.group)).toEqual(["initial", "fix · attempt 1"]);
     expect(phases.find((p) => p.group?.startsWith("fix"))?.label).toBe("Apply fixes");
-    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "verify"]);
+    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix"]);
+    expect(recordedRounds.map((r) => r.trigger)).not.toContain("verify");
     expect(summaryOf(result)).toContain("fixed");
   });
 
-  test("stops after a single auto-fix attempt and escalates to the gate", async () => {
-    // Review converges by not looping a judgement pass: at most one fix attempt, then the human
-    // gate - never the multi-round churn the global maxFixAttempts allows for the objective checks.
+  test("auto-fixes safe findings, then gates only the ask-user findings, without re-review", async () => {
     const agent = new FakeHarness();
-    const first = makeFinding("review", {
+    const auto = makeFinding("review", {
       disposition: "should-fix",
       action: "auto-fix",
       title: "Tidy",
       detail: "Small cleanup.",
     });
-    const second = makeFinding("review", {
+    const ask = makeFinding("review", {
       disposition: "should-fix",
-      action: "auto-fix",
-      title: "More to tidy",
-      detail: "Still not clean.",
+      action: "ask-user",
+      title: "Confirm contract",
+      detail: "intent?",
     });
-    agent.responses.push(
-      pass([first]),
-      { ok: true, summary: "fixed once", output: {} },
-      pass([second]),
-    );
-    // The fix commits (staged change) so the loop advances on progress and reaches its cap rather
-    // than stopping early on the no-progress guard.
-    const git = new FakeGit();
-    git.stagedFiles = ["src/x.ts"];
-    git.commitSha = "a".repeat(40);
-    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, git, reads: { prBody: "body" } });
+    // Initial review then one fix; no verify pass is scripted because none should run.
+    agent.responses.push(pass([auto, ask]), { ok: true, summary: "fixed once", output: {} });
+    const { ctx, approvals, recordedRounds } = fakeCtx({ agent, reads: { prBody: "body" } });
 
     await reviewStep().run(ctx);
 
-    // initial + one fix + one verify, then the loop hits its cap and asks the human.
-    expect(agent.tasks).toHaveLength(3);
+    expect(agent.tasks).toHaveLength(2);
     expect(approvals).toHaveLength(1);
-    expect((approvals[0] as { stopReason?: string }).stopReason).toBe("auto_fix_limit_hit");
-    expect(recordedRounds.map((r) => r.trigger)).toEqual([
-      "initial",
-      "auto_fix",
-      "verify",
-      "approval",
-    ]);
+    expect((approvals[0] as { stopReason?: string }).stopReason).toBe("needs_user");
+    // The gate sees only the unfixed ask-user finding, not the auto-fixed one.
+    expect(approvals[0]?.findings.map((f) => f.title)).toEqual(["Confirm contract"]);
+    expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix", "approval"]);
+    expect(recordedRounds.map((r) => r.trigger)).not.toContain("verify");
   });
 
   test("lists ask-user findings in the summary but never fixes them", async () => {
