@@ -11,7 +11,13 @@
 // whole Run; only noisy activity is bounded. The top-level `text`/`tool`/`logs` mirror
 // the *active* Step's live buffers - the append-only terminal renderer consumes those.
 
-import type { ApprovalFindingsInput, Finding, RoundRecord, RunEvent } from "@tml/core";
+import type {
+  ApprovalFindingsInput,
+  Finding,
+  PipelineStep,
+  RoundRecord,
+  RunEvent,
+} from "@tml/core";
 
 /** Current tool activity, with a short human label (e.g. bash → the command). */
 export interface ToolView {
@@ -27,7 +33,7 @@ export interface ArtifactView {
 }
 
 /**
- * One observable span of work within a Step (e.g. a single review pass), folded from
+ * One observable span of work within a Step, folded from
  * `phase:started`/`phase:finished`. `findings` are the phase's own findings, surfaced live ahead
  * of the deduped authoritative set on the Step's rounds. Phases accumulate across the Step's run;
  * `group` (e.g. a round label) lets a presenter show only the current group.
@@ -54,6 +60,8 @@ export interface ActivityEntry {
 
 export interface StepView {
   readonly name: string;
+  readonly displayLabel: string;
+  readonly displayGroup?: string;
   readonly status: "pending" | "active" | "done" | "skipped" | "failed";
   readonly startedAt?: number;
   readonly finishedAt?: number;
@@ -174,6 +182,22 @@ function mapStep(steps: StepView[], name: string, fn: (step: StepView) => StepVi
   return steps.map((step) => (step.name === name ? fn(step) : step));
 }
 
+function stepViewFor(input: PipelineStep): StepView {
+  const name = typeof input === "string" ? input : input.name;
+  const display = typeof input === "string" ? undefined : input.display;
+  return {
+    name,
+    displayLabel: display?.label ?? name,
+    ...(display?.group !== undefined ? { displayGroup: display.group } : {}),
+    status: "pending",
+    artifacts: [],
+    rounds: [],
+    findings: [],
+    activity: [],
+    phases: [],
+  };
+}
+
 /** The findings of the latest recorded Round (highest index) for a Step. */
 function latestFindings(rounds: readonly RoundRecord[]): Finding[] {
   if (rounds.length === 0) return [];
@@ -258,15 +282,7 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
       return {
         ...view,
         startedAt: event.at,
-        steps: event.pipeline.map((name) => ({
-          name,
-          status: "pending",
-          artifacts: [],
-          rounds: [],
-          findings: [],
-          activity: [],
-          phases: [],
-        })),
+        steps: event.pipeline.map(stepViewFor),
       };
     case "step:started":
       // Flip the step to active, stamp its start, and reset the active-step live buffers.

@@ -119,6 +119,7 @@ async function failedLogsForFindings(
 export function ciWaitStep(policy: FixLoopPolicy = {}): Step {
   return defineStep({
     name: "ci-wait",
+    display: { group: "pr-gate", label: "ci" },
     consumes: [pullRequest],
     resume: "reconcile",
     async run(ctx) {

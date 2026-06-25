@@ -14,7 +14,7 @@ import type { ApprovalDecision } from "./approval.ts";
 import type { ApprovalFindingsInput } from "./round-approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
-import type { RunEvent, RunEventInput } from "./events.ts";
+import type { PipelineStep, RunEvent, RunEventInput } from "./events.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
@@ -163,7 +163,10 @@ async function drive(
   const runRounds: RoundRecord[] = [...(snapshot?.rounds ?? [])];
   const roundIndexes = new Map<string, number>(snapshot?.roundIndexes);
 
-  await emit(run, { type: "run:started", pipeline: pipeline.map((s) => s.name) });
+  await emit(run, {
+    type: "run:started",
+    pipeline: pipeline.map(pipelineStepEvent),
+  });
 
   // Validate configured model ids against the live Harness *before* the first Step,
   // but only when the Harness can list its models - otherwise we can't, so we don't.
@@ -361,6 +364,14 @@ async function drive(
   await journal?.finish("finished");
   await emit(run, { type: "run:finished" });
   queue.close();
+}
+
+function pipelineStepEvent(step: Step): PipelineStep {
+  const display = step.display;
+  if (display === undefined || (display.label === undefined && display.group === undefined)) {
+    return step.name;
+  }
+  return { name: step.name, display };
 }
 
 function isStepReplayableFromJournal(

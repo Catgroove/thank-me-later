@@ -15,9 +15,12 @@
 import type { ApprovalFindingsInput } from "./round-approval.ts";
 import type { AgentProgress } from "./providers/harness.ts";
 import type { Finding, RoundRecord } from "./round.ts";
+import type { StepDisplay } from "./step.ts";
+
+export type PipelineStep = string | { readonly name: string; readonly display?: StepDisplay };
 
 export type RunEvent =
-  | { type: "run:started"; at: number; pipeline: string[] }
+  | { type: "run:started"; at: number; pipeline: PipelineStep[] }
   | { type: "step:started"; at: number; step: string }
   | { type: "step:log"; at: number; step: string; message: string }
   | { type: "agent:progress"; at: number; step: string; progress: AgentProgress }
@@ -29,7 +32,7 @@ export type RunEvent =
   // model so presenters can render Findings and Round history without scraping PR Markdown or
   // waiting for an approval gate. The `round` is the fully normalized record (with `step`, `index`).
   | { type: "round:recorded"; at: number; step: string; round: RoundRecord }
-  // A Step opened a named span of work within itself - e.g. one review pass. Purely observational:
+  // A Step opened a named span of work within itself. Purely observational:
   // it lets presenters show what a Step is doing mid-run without the Step decomposing into separate
   // Steps. `group` is an optional caller-supplied label (e.g. a round) so related phases nest.
   | {

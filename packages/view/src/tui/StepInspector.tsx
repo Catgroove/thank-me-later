@@ -11,6 +11,7 @@ import type { Accessor } from "solid-js";
 import type { FindingLifecycle, FindingStatus, RoundRecord } from "@tml/core";
 import { findingLifecycle, isFixAttemptRound } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
+import { displayStepName } from "../step-display.ts";
 import { sanitize } from "./sanitize.ts";
 import {
   DISPOSITION_COLOR,
@@ -384,7 +385,7 @@ export function StepInspector(props: InspectorProps) {
           <box flexDirection="column" flexGrow={1}>
             <box flexDirection="row" paddingLeft={1}>
               <text fg="#e2e8f0" attributes={1}>
-                {sanitize(s().name)}
+                {sanitize(displayStepName(s()))}
               </text>
             </box>
             <TabBar active={tab()} />

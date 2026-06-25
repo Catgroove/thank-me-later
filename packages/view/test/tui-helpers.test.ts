@@ -231,6 +231,7 @@ describe("tui formatting", () => {
       stepElapsed(
         {
           name: "x",
+          displayLabel: "x",
           status: "done",
           artifacts: [],
           rounds: [],
@@ -246,6 +247,7 @@ describe("tui formatting", () => {
       stepElapsed(
         {
           name: "x",
+          displayLabel: "x",
           status: "active",
           startedAt: 1000,
           artifacts: [],

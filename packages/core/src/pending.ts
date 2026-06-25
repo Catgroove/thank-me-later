@@ -6,7 +6,7 @@
 // a per-Provider loop.
 //
 // `until` is abort-aware: an `AbortSignal` stops it promptly —
-// mid-sleep, not just between polls — so a long ci-wait can be cancelled.
+// mid-sleep, not just between polls — so a long Provider wait can be cancelled.
 
 import { setTimeout as delay } from "node:timers/promises";
 
