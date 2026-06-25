@@ -30,7 +30,6 @@ describe("tmlDefaults plugin", () => {
       "typecheck",
       "test",
       "review",
-      "resync",
       "open-pr",
       "ci-wait",
       "merge-gate",
