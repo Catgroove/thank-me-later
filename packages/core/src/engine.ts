@@ -10,8 +10,7 @@
 // Run is cancellable via an `AbortSignal`; an aborted Run ends with
 // `run:cancelled`, distinct from the `cancel()` flow signal a Step returns.
 
-import type { ApprovalDecision } from "./approval.ts";
-import type { ApprovalFindingsInput } from "./round-approval.ts";
+import type { ApprovalDecision, ApprovalFindingsInput } from "./approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
 import type { PipelineStep, RunEvent, RunEventInput } from "./events.ts";

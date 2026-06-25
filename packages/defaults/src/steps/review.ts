@@ -15,7 +15,7 @@ import {
   type Step,
 } from "@tml/core";
 import { prBody, reviewSummary } from "../artifacts.ts";
-import { revertIfWorktreeChanged } from "../git-guard.ts";
+import { guardReadOnly } from "../git-guard.ts";
 import type { FixLoopPolicy } from "./fix-loop.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
@@ -31,15 +31,6 @@ async function runPass(agent: Harness, prompt: string): Promise<Finding[]> {
 
 const READ_ONLY_EDIT_WARNING =
   "warning: the read-only review pass modified the worktree; reverting before continuing";
-
-async function runGuardedPass(ctx: Ctx, prompt: string): Promise<Finding[]> {
-  const before = await ctx.git.status();
-  try {
-    return await runPass(ctx.agent, prompt);
-  } finally {
-    await revertIfWorktreeChanged(ctx.git, before, (m) => ctx.log(m), READ_ONLY_EDIT_WARNING);
-  }
-}
 
 function withRoundHistory(prompt: string, input: RoundCheckInput): string {
   if (input.trigger === "initial" || !hasPriorRounds(input.historyText)) return prompt;
@@ -66,10 +57,14 @@ async function runReviewPass(
     prBody: ctx.read(prBody),
     diff: await ctx.git.diffAgainst(await ctx.git.defaultBranch()),
   });
-  return ctx.phase(REVIEW_PASS_TITLE, () => runGuardedPass(ctx, withRoundHistory(prompt, input)), {
-    group: passGroup(input),
-    findings: (findings) => findings,
-  });
+  return ctx.phase(
+    REVIEW_PASS_TITLE,
+    () =>
+      guardReadOnly(ctx, READ_ONLY_EDIT_WARNING, () =>
+        runPass(ctx.agent, withRoundHistory(prompt, input)),
+      ),
+    { group: passGroup(input), findings: (findings) => findings },
+  );
 }
 
 function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): string {
