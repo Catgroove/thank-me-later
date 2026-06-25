@@ -49,6 +49,7 @@ export {
   normalizeTestingEvidence,
   parseAgentFindingsOutput,
   renderFindingForPr,
+  renderFindingForPrText,
   renderPipelineSummaryForPr,
   renderRoundNarrativeForPr,
   renderRoundsForPr,

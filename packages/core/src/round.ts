@@ -246,8 +246,7 @@ function label(disposition: FindingDisposition): string {
   return "Nit";
 }
 
-/** Pure Markdown rendering for a single PR-summary finding line. */
-export function renderFindingForPr(finding: Finding): string {
+export function renderFindingForPrText(finding: Finding): string {
   const location = finding.location ? ` \`${finding.location}\`` : "";
   const prefix = label(finding.disposition);
   const action =
@@ -256,7 +255,12 @@ export function renderFindingForPr(finding: Finding): string {
       : finding.action === "ask-user"
         ? " (needs user decision)"
         : "";
-  return `- ${prefix}:${location} ${finding.title} - ${finding.detail}${action}`;
+  return `${prefix}:${location} ${finding.title} - ${finding.detail}${action}`;
+}
+
+/** Pure Markdown rendering for a single PR-summary finding line. */
+export function renderFindingForPr(finding: Finding): string {
+  return `- ${renderFindingForPrText(finding)}`;
 }
 
 /** Pure Markdown rendering for one completed round in a PR summary. */
@@ -352,7 +356,7 @@ function renderNarrativeRound(
     lines.push("- Findings:");
     for (const finding of round.findings) {
       const status = statusByFinding.get(finding.id);
-      lines.push(`  - ${status ? `**${status}:** ` : ""}${renderFindingForPr(finding).slice(2)}`);
+      lines.push(`  - ${status ? `**${status}:** ` : ""}${renderFindingForPrText(finding)}`);
     }
   }
 
