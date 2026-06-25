@@ -176,6 +176,21 @@ async function releaseSourceBranchForWorktree(input: {
   }
 }
 
+async function finalizeWorktreeHandoff(input: {
+  readonly cwd: string;
+  readonly git: Git;
+  readonly sourceRelease: SourceBranchRelease;
+  readonly workspacePath?: string;
+}): Promise<void> {
+  try {
+    if (input.workspacePath !== undefined) await removeWorktree(input.cwd, input.workspacePath);
+  } finally {
+    if (input.sourceRelease.kind === "detached") {
+      await input.git.checkout(input.sourceRelease.restoreBranch);
+    }
+  }
+}
+
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
   const auto = deps.auto ?? false;
@@ -371,19 +386,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
       });
       const outcome = await runPass(phase2);
-      if (outcome.finished && workspaceToClean !== undefined) {
-        await removeWorktree(cwd, workspaceToClean);
-        workspaceToClean = undefined;
-      }
       return exitCode(outcome);
     } finally {
-      if (sourceRelease.kind === "detached") {
-        if (workspaceToClean !== undefined) {
-          await removeWorktree(cwd, workspaceToClean);
-          workspaceToClean = undefined;
-        }
-        await sourceGit.checkout(sourceRelease.restoreBranch);
-      }
+      await finalizeWorktreeHandoff({
+        cwd,
+        git: sourceGit,
+        sourceRelease,
+        workspacePath: workspaceToClean,
+      });
+      workspaceToClean = undefined;
     }
   } catch (error) {
     await setupJournal?.finish("failed").catch(() => undefined);
