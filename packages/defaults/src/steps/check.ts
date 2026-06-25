@@ -8,12 +8,10 @@ import {
   executeRoundLoop,
   makeFinding,
   parseAgentFindingsOutput,
-  type Ctx,
   type Finding,
-  type GitStatus,
   type Step,
 } from "@tml/core";
-import { revertIfWorktreeChanged } from "../git-guard.ts";
+import { guardReadOnly } from "../git-guard.ts";
 import type { FixLoopPolicy } from "./fix-loop.ts";
 import {
   type CheckMode,
@@ -27,8 +25,8 @@ import { fixCommitSubject } from "../semantic-commit.ts";
 
 interface CheckPolicy {
   readonly groundRules: string;
-  before(ctx: Ctx): Promise<GitStatus>;
-  after(ctx: Ctx, before: GitStatus): Promise<void>;
+  /** Warning logged when the read-only check pass leaves worktree edits behind, then reverted. */
+  readonly warning: string;
 }
 
 export interface CheckStepOptions extends FixLoopPolicy {
@@ -42,15 +40,7 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
       "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
       "directly instead of invoking local quality tools. If a tool can only prove or repair the " +
       "problem by changing files, return an auto-fix finding for the later fix round. ",
-    before: (ctx) => ctx.git.status(),
-    async after(ctx, before) {
-      await revertIfWorktreeChanged(
-        ctx.git,
-        before,
-        (m) => ctx.log(m),
-        "warning: a check round modified the worktree; reverting before continuing",
-      );
-    },
+    warning: "warning: a check round modified the worktree; reverting before continuing",
   },
   mixed: {
     groundRules:
@@ -60,15 +50,7 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
       "installing dependencies only when the command cannot run otherwise. Do not edit source " +
       "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
       "repaired by changing files, return an auto-fix finding for the later fix round. ",
-    before: (ctx) => ctx.git.status(),
-    async after(ctx, before) {
-      await revertIfWorktreeChanged(
-        ctx.git,
-        before,
-        (m) => ctx.log(m),
-        "check command left worktree changes; cleaning up before continuing",
-      );
-    },
+    warning: "check command left worktree changes; cleaning up before continuing",
   },
   run: {
     groundRules:
@@ -76,15 +58,7 @@ const checkPolicies: Record<CheckMode, CheckPolicy> = {
       "the repository, building or installing whatever it needs to run. Do not edit source " +
       "files, stage changes, commit, or apply a mutating auto-fix; if a problem can only be " +
       "repaired by changing files, return an auto-fix finding for the later fix round. ",
-    before: (ctx) => ctx.git.status(),
-    async after(ctx, before) {
-      await revertIfWorktreeChanged(
-        ctx.git,
-        before,
-        (m) => ctx.log(m),
-        "check command left worktree changes; cleaning up before continuing",
-      );
-    },
+    warning: "check command left worktree changes; cleaning up before continuing",
   },
 };
 
@@ -104,16 +78,11 @@ export function checkStep(
         stepName: name,
         maxAutoFixAttempts: options.maxAutoFixAttempts,
         async check(input) {
-          const before = await policy.before(ctx);
-          let agentResult: Awaited<ReturnType<typeof ctx.agent.run>>;
-          try {
-            agentResult = await ctx.agent.run(
-              checkPrompt({ name, goal, groundRules: policy.groundRules, ...input }),
-              { schema: checkFindingsSchema },
-            );
-          } finally {
-            await policy.after(ctx, before);
-          }
+          const agentResult = await guardReadOnly(ctx, policy.warning, () =>
+            ctx.agent.run(checkPrompt({ name, goal, groundRules: policy.groundRules, ...input }), {
+              schema: checkFindingsSchema,
+            }),
+          );
           return {
             findings: parseCheckResult(
               name,
