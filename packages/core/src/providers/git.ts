@@ -19,31 +19,6 @@ export interface GitStatus {
   readonly unstaged: string[];
 }
 
-export interface GitDiffCommandPlan {
-  readonly args: readonly string[];
-}
-
-export interface GitDiffPathCommandPlan {
-  readonly argsPrefix: readonly string[];
-}
-
-export interface GitDiffPlan {
-  readonly committedBranchDiff: GitDiffCommandPlan;
-  readonly trackedWorktreeDiff: GitDiffCommandPlan;
-  readonly untrackedFilesList: GitDiffCommandPlan;
-  readonly untrackedFileDiff: GitDiffPathCommandPlan;
-}
-
-export interface GitDiffScope {
-  readonly base: string;
-  readonly ref: string;
-  readonly plan?: GitDiffPlan;
-  readonly committedBranchDiffCommand: string;
-  readonly trackedWorktreeDiffCommand: string;
-  readonly untrackedFilesListCommand: string;
-  readonly untrackedFileDiffCommand: string;
-}
-
 /**
  * The outcome of a `rebase`. `clean` — it replayed (or fast-forwarded) without stopping. `conflict`
  * — it stopped on merge conflicts and is *left in progress*: the caller resolves it (e.g. hands the
@@ -86,7 +61,6 @@ export interface Git {
   status(): Promise<GitStatus>;
   /** Git diff against `base`, including committed, tracked worktree, and untracked changes. */
   diffAgainst(base: string): Promise<string>;
-  diffAgainstScope(base: string): Promise<GitDiffScope>;
   /** Discard all uncommitted changes — tracked and untracked — returning the worktree to `HEAD`. */
   discardChanges(): Promise<void>;
   /**
@@ -98,7 +72,7 @@ export interface Git {
   push(opts: { branch: string; force?: boolean }): Promise<void>;
 }
 
-async function git(cwd: string, args: readonly string[]): Promise<string> {
+async function git(cwd: string, args: string[]): Promise<string> {
   const { exitCode, stdout, stderr } = await spawnGit(cwd, args);
   if (exitCode !== 0) {
     throw new Error(`git ${args.join(" ")} failed (exit ${exitCode}): ${stderr.trim()}`);
@@ -123,49 +97,21 @@ async function comparisonRef(cwd: string, base: string): Promise<string> {
   return (await refExists(cwd, `refs/remotes/origin/${base}`)) ? `origin/${base}` : base;
 }
 
-async function untrackedDiff(cwd: string, plan: GitDiffPlan): Promise<string> {
-  const out = await git(cwd, plan.untrackedFilesList.args);
+async function untrackedDiff(cwd: string): Promise<string> {
+  const out = await git(cwd, ["ls-files", "--others", "--exclude-standard"]);
   const files = out
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const diffs: string[] = [];
   for (const file of files) {
-    const result = await spawnGit(cwd, [...plan.untrackedFileDiff.argsPrefix, file]);
+    const result = await spawnGit(cwd, ["diff", "--no-index", "--", "/dev/null", file]);
     if (result.exitCode !== 0 && result.exitCode !== 1) {
-      throw new Error(
-        `${gitCommandText([...plan.untrackedFileDiff.argsPrefix, file])} failed: ${result.stderr.trim()}`,
-      );
+      throw new Error(`git diff --no-index /dev/null ${file} failed: ${result.stderr.trim()}`);
     }
     if (result.stdout.trim().length > 0) diffs.push(result.stdout.trim());
   }
   return diffs.join("\n\n");
-}
-
-function gitCommandText(args: readonly string[]): string {
-  return `git ${args.join(" ")}`;
-}
-
-function diffPlan(ref: string): GitDiffPlan {
-  return {
-    committedBranchDiff: { args: ["diff", "--find-renames", `${ref}...HEAD`, "--"] },
-    trackedWorktreeDiff: { args: ["diff", "--find-renames", "HEAD", "--"] },
-    untrackedFilesList: { args: ["ls-files", "--others", "--exclude-standard"] },
-    untrackedFileDiff: { argsPrefix: ["diff", "--no-index", "--", "/dev/null"] },
-  };
-}
-
-function diffScope(base: string, ref: string): GitDiffScope {
-  const plan = diffPlan(ref);
-  return {
-    base,
-    ref,
-    plan,
-    committedBranchDiffCommand: gitCommandText(plan.committedBranchDiff.args),
-    trackedWorktreeDiffCommand: gitCommandText(plan.trackedWorktreeDiff.args),
-    untrackedFilesListCommand: gitCommandText(plan.untrackedFilesList.args),
-    untrackedFileDiffCommand: `${gitCommandText(plan.untrackedFileDiff.argsPrefix)} <path>`,
-  };
 }
 
 export function createGit(cwd: string): Git {
@@ -290,19 +236,15 @@ export function createGit(cwd: string): Git {
     },
 
     async diffAgainst(base) {
-      const plan = diffPlan(await comparisonRef(cwd, base));
+      const ref = await comparisonRef(cwd, base);
       const diffs = [
-        await git(cwd, plan.committedBranchDiff.args),
-        await git(cwd, plan.trackedWorktreeDiff.args),
-        await untrackedDiff(cwd, plan),
+        await git(cwd, ["diff", "--find-renames", `${ref}...HEAD`, "--"]),
+        await git(cwd, ["diff", "--find-renames", "HEAD", "--"]),
+        await untrackedDiff(cwd),
       ]
         .map((diff) => diff.trim())
         .filter((diff) => diff.length > 0);
       return diffs.join("\n\n");
-    },
-
-    async diffAgainstScope(base) {
-      return diffScope(base, await comparisonRef(cwd, base));
     },
 
     async discardChanges() {

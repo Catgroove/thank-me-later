@@ -4,13 +4,7 @@
 // engine-level tests deterministic so they never depend on the ambient checkout's branch.
 
 import { AbortError, type Pending } from "../src/pending.ts";
-import type {
-  CommitResult,
-  Git,
-  GitDiffScope,
-  GitStatus,
-  RebaseResult,
-} from "../src/providers/git.ts";
+import type { CommitResult, Git, GitStatus, RebaseResult } from "../src/providers/git.ts";
 import type {
   CheckRun,
   GitProvider,
@@ -87,16 +81,6 @@ export class FakeGit implements Git {
   }
   diffAgainst(): Promise<string> {
     return Promise.resolve("");
-  }
-  diffAgainstScope(base: string): Promise<GitDiffScope> {
-    return Promise.resolve({
-      base,
-      ref: base,
-      committedBranchDiffCommand: `git diff --find-renames ${base}...HEAD --`,
-      trackedWorktreeDiffCommand: "git diff --find-renames HEAD --",
-      untrackedFilesListCommand: "git ls-files --others --exclude-standard",
-      untrackedFileDiffCommand: "git diff --no-index -- /dev/null <path>",
-    });
   }
   discardChanges(): Promise<void> {
     return Promise.resolve();

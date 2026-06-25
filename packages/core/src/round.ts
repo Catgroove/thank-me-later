@@ -449,11 +449,6 @@ export function renderRoundsForAgentPrompt(rounds: readonly RoundRecordInput[]):
   return rounds.map(renderRoundForAgentPrompt).join("\n\n");
 }
 
-/** @deprecated Use renderRoundsForAgentPrompt. */
-export function renderRoundsForPrompt(rounds: readonly RoundRecordInput[]): string {
-  return renderRoundsForAgentPrompt(rounds);
-}
-
 /** Whether round-history text holds real prior rounds, not the empty-history sentinel. */
 export function hasPriorRounds(historyText: string): boolean {
   const trimmed = historyText.trim();

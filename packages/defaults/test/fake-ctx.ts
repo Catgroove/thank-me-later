@@ -14,7 +14,6 @@ import {
   type Ctx,
   type GitProvider,
   type Git,
-  type GitDiffScope,
   type GitStatus,
   type Harness,
   type MergeState,
@@ -100,17 +99,6 @@ export class FakeGit implements Git {
   diffAgainst(base: string): Promise<string> {
     this.calls.push(`diffAgainst ${base}`);
     return Promise.resolve("diff --git a/file.ts b/file.ts\n+changed");
-  }
-  diffAgainstScope(base: string): Promise<GitDiffScope> {
-    this.calls.push(`diffAgainstScope ${base}`);
-    return Promise.resolve({
-      base,
-      ref: base,
-      committedBranchDiffCommand: `git diff --find-renames ${base}...HEAD --`,
-      trackedWorktreeDiffCommand: "git diff --find-renames HEAD --",
-      untrackedFilesListCommand: "git ls-files --others --exclude-standard",
-      untrackedFileDiffCommand: "git diff --no-index -- /dev/null <path>",
-    });
   }
   push(opts: { branch: string; force?: boolean }): Promise<void> {
     this.calls.push(`push ${opts.force ? "(force) " : ""}${opts.branch}`);

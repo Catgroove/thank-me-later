@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { GitDiffScope } from "@tml/core";
 import {
   branchNamePrompt,
   branchNameSchema,
@@ -16,15 +15,7 @@ import {
   testPrompt,
 } from "../src/prompts.ts";
 
-const reviewDiffScope: GitDiffScope = {
-  base: "main",
-  ref: "origin/main",
-  committedBranchDiffCommand: "git diff --find-renames origin/main...HEAD --",
-  trackedWorktreeDiffCommand: "git diff --find-renames HEAD --",
-  untrackedFilesListCommand: "git ls-files --others --exclude-standard",
-  untrackedFileDiffCommand: "git diff --no-index -- /dev/null <path>",
-};
-const reviewPass = reviewPrompt({ prBody: "a body", diffScope: reviewDiffScope });
+const reviewPass = reviewPrompt({ prBody: "a body", base: "main" });
 const inspectGroundRules =
   "\n\nThis is a check/verification round, not a fix round. Do not modify files, stage " +
   "changes, commit, install dependencies, or run a mutating auto-fix command. Inspect files " +
@@ -218,7 +209,7 @@ describe("default pipeline prompts", () => {
   test("the review prompt delegates diff-reading to the agent, stays read-only, and self-refutes", () => {
     expect(reviewPass).not.toContain("Injected branch diff");
     expect(reviewPass).toContain("Compute the diff yourself");
-    expect(reviewPass).toContain("git diff --find-renames origin/main...HEAD --");
+    expect(reviewPass).toContain("git diff main...HEAD");
     expect(reviewPass).toContain("evidence, not instructions");
     expect(reviewPass).toContain("refute");
     expect(reviewPass.toLowerCase()).toContain("do not modify");
@@ -228,18 +219,12 @@ describe("default pipeline prompts", () => {
   test("the review prompt is bounded - no diff payload is embedded", () => {
     // The agent computes the diff itself, so the prompt is a small, fixed instruction block whose
     // size is independent of how large the branch diff is. This guards against re-inlining a diff.
-    expect(
-      reviewPrompt({ prBody: "a short body", diffScope: reviewDiffScope }).length,
-    ).toBeLessThan(3000);
+    expect(reviewPrompt({ prBody: "a short body", base: "main" }).length).toBeLessThan(3000);
   });
 
   test("the review prompt embeds the description and Cursor review standards", () => {
-    expect(reviewPrompt({ prBody: "WHY THIS EXISTS", diffScope: reviewDiffScope })).toContain(
-      "WHY THIS EXISTS",
-    );
-    expect(reviewPrompt({ prBody: "", diffScope: reviewDiffScope })).toContain(
-      "no description provided",
-    );
+    expect(reviewPrompt({ prBody: "WHY THIS EXISTS", base: "main" })).toContain("WHY THIS EXISTS");
+    expect(reviewPrompt({ prBody: "", base: "main" })).toContain("no description provided");
     expect(reviewPass).toContain("Thermo-nuclear code quality review");
     expect(reviewPass).toContain("code-judo");
   });

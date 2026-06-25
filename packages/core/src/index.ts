@@ -51,7 +51,6 @@ export {
   renderPipelineSummaryForPr,
   renderRoundNarrativeForPr,
   renderRoundsForAgentPrompt,
-  renderRoundsForPrompt,
   renderRoundsForPr,
   renderUnresolvedFindingsForPr,
   summarizeStepRounds,
@@ -88,10 +87,6 @@ export {
   type CommitResult,
   createGit,
   type Git,
-  type GitDiffCommandPlan,
-  type GitDiffPathCommandPlan,
-  type GitDiffPlan,
-  type GitDiffScope,
   type GitStatus,
   type RebaseResult,
 } from "./providers/git.ts";
