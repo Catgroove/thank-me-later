@@ -87,6 +87,7 @@ export {
   type CommitResult,
   createGit,
   type Git,
+  type GitDiffScope,
   type GitStatus,
   type RebaseResult,
 } from "./providers/git.ts";

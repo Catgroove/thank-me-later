@@ -4,6 +4,7 @@ import type { Ctx } from "../src/context.ts";
 import {
   type CommitResult,
   type Git,
+  type GitDiffScope,
   type GitStatus,
   type RebaseResult,
 } from "../src/providers/git.ts";
@@ -75,8 +76,15 @@ class FakeGit implements Git {
   diffAgainst(_base: string): Promise<string> {
     return Promise.resolve("diff --git a/file.ts b/file.ts\n+changed");
   }
-  diffAgainstInstructions(_base: string): Promise<string> {
-    return Promise.resolve("");
+  diffAgainstScope(base: string): Promise<GitDiffScope> {
+    return Promise.resolve({
+      base,
+      ref: base,
+      committedBranchDiffCommand: `git diff --find-renames ${base}...HEAD --`,
+      trackedWorktreeDiffCommand: "git diff --find-renames HEAD --",
+      untrackedFilesListCommand: "git ls-files --others --exclude-standard",
+      untrackedFileDiffCommand: "git diff --no-index -- /dev/null <path>",
+    });
   }
   discardChanges(): Promise<void> {
     this.calls.push("discardChanges");

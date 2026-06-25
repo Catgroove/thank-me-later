@@ -56,7 +56,7 @@ async function runReviewPass(
   const base = await ctx.git.defaultBranch();
   const prompt = reviewPrompt({
     prBody: ctx.read(prBody),
-    diffScope: await ctx.git.diffAgainstInstructions(base),
+    diffScope: await ctx.git.diffAgainstScope(base),
   });
   return ctx.phase(
     REVIEW_PASS_TITLE,
