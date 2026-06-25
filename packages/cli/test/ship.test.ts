@@ -9,11 +9,14 @@ import {
   type EngineOptions,
   type RunEvent,
   type RunEventInput,
+  type RunJournal,
+  type RunJournalSnapshot,
 } from "@tml/core";
 import { createTerminalRenderer, type InteractiveRenderer, type Renderer } from "@tml/view";
 import { assembleShipConfig } from "../src/config.ts";
+import { inCheckoutIsolation } from "../src/isolated-run.ts";
 import type { Loaded } from "../src/load.ts";
-import { parseShipArgs, ship } from "../src/index.ts";
+import { parseShipArgs, ship, type ShipDeps } from "../src/index.ts";
 
 /** A plain (append-only) renderer for tests; forwards each emitted line to `onLine`. */
 function plainRenderer(onLine: (line: string) => void = () => {}): Renderer {
@@ -63,6 +66,43 @@ function engineYielding(events: RunEventInput[]): Engine {
 }
 
 const dummyConfig = { pipeline: [], providers: {} } as unknown as Config;
+
+/** An in-memory Run Journal so lifecycle tests neither touch git nor write journal files. */
+function fakeJournal(snapshot: Partial<RunJournalSnapshot["metadata"]> = {}): RunJournal {
+  const begun: RunJournalSnapshot = {
+    metadata: {
+      runId: "run-test",
+      checkoutKey: "test",
+      checkoutPath: "/repo",
+      pipeline: [],
+      status: "running",
+      startedAt: "",
+      updatedAt: "",
+      completedSteps: [],
+      workspacePath: "/repo/.worktree",
+      ...snapshot,
+    },
+    artifacts: new Map(),
+    completedSteps: new Set(snapshot.completedSteps ?? []),
+    rounds: [],
+    roundIndexes: new Map(),
+  };
+  return {
+    begin: () => Promise.resolve(begun),
+    recordResumeKey: () => Promise.resolve(),
+    recordWorktreeHandoff: () => Promise.resolve(),
+    recordArtifact: () => Promise.resolve(),
+    recordStepCompleted: () => Promise.resolve(),
+    recordRound: () => Promise.resolve(),
+    recordEvent: () => Promise.resolve(),
+    finish: () => Promise.resolve(),
+  };
+}
+
+/** Run `ship` with hermetic defaults: the in-checkout adapter (no git) and an in-memory journal. */
+function shipLifecycle(deps: ShipDeps): Promise<number> {
+  return ship({ journal: fakeJournal(), isolation: inCheckoutIsolation, ...deps });
+}
 
 describe("tml CLI", () => {
   test("unknown command exits non-zero with a hint", async () => {
@@ -196,7 +236,7 @@ describe("ship() run lifecycle", () => {
   test("runs in the checkout and returns 0 on success", async () => {
     const lines: string[] = [];
 
-    const code = await ship({
+    const code = await shipLifecycle({
       cwd: "/repo",
       buildConfig: () => dummyConfig,
       engineFor: () =>
@@ -209,7 +249,7 @@ describe("ship() run lifecycle", () => {
   });
 
   test("returns 1 when the run fails", async () => {
-    const code = await ship({
+    const code = await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:failed", step: "test", error: "boom" }]),
       renderer: plainRenderer(),
@@ -219,7 +259,7 @@ describe("ship() run lifecycle", () => {
   });
 
   test("returns 130 (SIGINT) on cancellation", async () => {
-    const code = await ship({
+    const code = await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: () => engineYielding([{ type: "run:cancelled" }]),
       renderer: plainRenderer(),
@@ -261,7 +301,11 @@ describe("ship() run lifecycle", () => {
     }) as typeof process.exit;
 
     const before = process.listenerCount("SIGINT");
-    const run = ship({ buildConfig: () => dummyConfig, engineFor: () => engine, renderer });
+    const run = shipLifecycle({
+      buildConfig: () => dummyConfig,
+      engineFor: () => engine,
+      renderer,
+    });
     try {
       await startedAt; // handlers are registered before the run loop starts
 
@@ -309,7 +353,11 @@ describe("ship() run lifecycle", () => {
     }) as typeof process.exit;
 
     const before = process.listenerCount("SIGTERM");
-    const run = ship({ buildConfig: () => dummyConfig, engineFor: () => engine, renderer });
+    const run = shipLifecycle({
+      buildConfig: () => dummyConfig,
+      engineFor: () => engine,
+      renderer,
+    });
     try {
       await startedAt;
 
@@ -329,7 +377,7 @@ describe("ship() run lifecycle", () => {
   test("a non-interactive renderer wires clear failing Ask/approval responders into the engine", async () => {
     let captured: EngineOptions | undefined;
 
-    const code = await ship({
+    const code = await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: (_config, opts) => {
         captured = opts;
@@ -376,7 +424,7 @@ describe("ship() run lifecycle", () => {
       approveFindings: () => Promise.resolve({ action: "approve" }),
     };
 
-    await ship({
+    await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: (_config, opts) => {
         captured = opts;
@@ -404,11 +452,16 @@ describe("ship() run lifecycle", () => {
     };
 
     // Interactive TTY → builds the TUI.
-    await ship({ buildConfig: () => dummyConfig, engineFor: noopEngine, isTTY: true, createTui });
+    await shipLifecycle({
+      buildConfig: () => dummyConfig,
+      engineFor: noopEngine,
+      isTTY: true,
+      createTui,
+    });
     expect(tuiBuilds).toBe(1);
 
     // --plain over a TTY → inline terminal renderer, no TUI.
-    await ship({
+    await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: noopEngine,
       isTTY: true,
@@ -416,7 +469,12 @@ describe("ship() run lifecycle", () => {
       createTui,
     });
     // Non-TTY → plain renderer, no TUI.
-    await ship({ buildConfig: () => dummyConfig, engineFor: noopEngine, isTTY: false, createTui });
+    await shipLifecycle({
+      buildConfig: () => dummyConfig,
+      engineFor: noopEngine,
+      isTTY: false,
+      createTui,
+    });
     expect(tuiBuilds).toBe(1);
   });
 
@@ -430,7 +488,7 @@ describe("ship() run lifecycle", () => {
       },
     };
 
-    await ship({
+    await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: () =>
         engineYielding([{ type: "run:started", pipeline: [] }, { type: "run:finished" }]),
@@ -441,7 +499,7 @@ describe("ship() run lifecycle", () => {
   });
 
   test("returns 1 when engine setup throws", async () => {
-    const code = await ship({
+    const code = await shipLifecycle({
       buildConfig: () => dummyConfig,
       engineFor: () => {
         throw new Error("engine construction failed");
