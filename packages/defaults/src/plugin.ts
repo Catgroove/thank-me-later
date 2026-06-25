@@ -1,5 +1,5 @@
 // `tmlDefaults` - the blessed default pipeline as an injected-API Plugin. In order:
-//   branch -> describe -> commit(the change) | rebase -> format -> lint -> typecheck -> test
+//   branch -> describe -> commit(the change) | rebase -> quality -> test
 //          -> review -> open-pr -> ci-wait -> merge-gate
 // The `|` marks the isolation boundary (carried on commit-change): branch/describe/commit-change run
 // in the source checkout, then the host switches the checkout back to the default branch and hands
@@ -22,7 +22,7 @@ import type { Plugin } from "@tml/core";
 import { prTitle } from "./artifacts.ts";
 import { BRANCH_MODES, type BranchMode, branchStep } from "./steps/branch.ts";
 import { ciWaitStep } from "./steps/ci-wait.ts";
-import { formatStep, lintStep, testStep, typecheckStep } from "./steps/check.ts";
+import { qualityStep, testStep } from "./steps/check.ts";
 import { commitStep } from "./steps/commit.ts";
 import type { FixLoopPolicy } from "./steps/fix-loop.ts";
 import { describeStep } from "./steps/describe.ts";
@@ -42,9 +42,7 @@ export const tmlDefaults: Plugin = (tml) => {
     // host hands the feature branch to a disposable worktree where the rest of the pipeline runs.
     { ...commitStep("commit-change", prTitle), isolate: true }, // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the checks/review/CI run against it
-    formatStep(fixLoopPolicy),
-    lintStep(fixLoopPolicy),
-    typecheckStep(fixLoopPolicy),
+    qualityStep(fixLoopPolicy),
     testStep(fixLoopPolicy),
     reviewStep(fixLoopPolicy),
     openPrStep(), // performs a final base sync before pushing the branch
@@ -55,7 +53,7 @@ export const tmlDefaults: Plugin = (tml) => {
 
 export default tmlDefaults;
 
-/** Narrow the opaque `branch` knob to a Branch mode; absent → `ai`, invalid → a clear error. */
+/** Narrow the opaque `branch` knob to a Branch mode; absent -> `ai`, invalid -> a clear error. */
 function asBranchMode(value: string | undefined): BranchMode {
   if (value === undefined) return "ai";
   if ((BRANCH_MODES as readonly string[]).includes(value)) return value as BranchMode;

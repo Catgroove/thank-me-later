@@ -41,20 +41,20 @@ describe("loadTmlConfig", () => {
       branch: "auto",
       maxFixAttempts: 2,
       models: { default: "haiku", review: "sonnet" },
-      disable: ["typecheck"],
+      disable: ["quality"],
     });
     writeConfig(projectRoot, {
       branch: "require",
       maxFixAttempts: 4,
       models: { review: "opus" },
-      disable: ["lint"],
+      disable: ["test"],
     });
     const { selection } = load(globalDir, projectRoot);
     expect(selection.harness).toBe("pi"); // global, not overridden
     expect(selection.branch).toBe("require"); // project wins
     expect(selection.maxFixAttempts).toBe(4); // project wins
     expect(selection.models).toEqual({ default: "haiku", review: "opus" }); // merged, project key wins
-    expect(selection.disable).toEqual(["typecheck", "lint"]); // union, order-preserving
+    expect(selection.disable).toEqual(["quality", "test"]); // union, order-preserving
   });
 
   test("plugins concatenate global-then-project, each resolved against its own config dir", () => {
@@ -89,7 +89,7 @@ describe("loadTmlConfig", () => {
 
   test("a wrong-typed key is rejected", () => {
     const projectRoot = tempDir();
-    writeConfig(projectRoot, { disable: "typecheck" }); // should be an array
+    writeConfig(projectRoot, { disable: "quality" }); // should be an array
     expect(() => load(tempDir(), projectRoot)).toThrow(/"disable".*array of strings/);
   });
 

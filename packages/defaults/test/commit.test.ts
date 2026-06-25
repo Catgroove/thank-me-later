@@ -56,15 +56,15 @@ describe("commitStep", () => {
 
 describe("commitGroup", () => {
   test("returns the wrapped Steps followed by a commit Step named + messaged after them", async () => {
-    const steps = commitGroup(noop("format"), noop("lint"));
+    const steps = commitGroup(noop("quality"), noop("test"));
 
-    expect(steps.map((s) => s.name)).toEqual(["format", "lint", "commit(format+lint)"]);
+    expect(steps.map((s) => s.name)).toEqual(["quality", "test", "commit(quality+test)"]);
 
     const git = new FakeGit();
     git.stagedFiles = ["a.ts"];
     const { ctx } = fakeCtx({ git });
     await steps[2]?.run(ctx);
 
-    expect(git.calls).toEqual(["stageAll", "commit chore: apply fixes from format, lint"]);
+    expect(git.calls).toEqual(["stageAll", "commit chore: apply fixes from quality, test"]);
   });
 });

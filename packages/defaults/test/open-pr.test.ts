@@ -18,7 +18,7 @@ const finding = makeFinding("review", {
 });
 
 const rounds: RoundRecord[] = [
-  { step: "lint", index: 0, trigger: "initial", findings: [] },
+  { step: "quality", index: 0, trigger: "initial", findings: [] },
   { step: "review", index: 0, trigger: "initial", findings: [finding] },
 ];
 

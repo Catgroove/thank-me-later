@@ -36,9 +36,9 @@ tml ship      # snapshot this checkout and run the pipeline in an isolated works
 local Run Journal, then runs there. You can keep editing the source checkout while the Run
 continues; those later edits are not part of the shipment. The pipeline puts the snapshot on
 a feature branch (AI-named by default), then commits a clean history - your change, then the
-gate's fixes as their own commits - as it runs model-backed format, lint, and type-check
-passes, tests, and reviews (the agent applies fixes), before pushing and opening a PR and
-watching CI.
+gate's fixes as their own commits - as it runs one quality pass covering format, lint, and
+type-check, then tests and review (the agent applies fixes), before pushing and opening a PR
+and watching CI.
 
 By default, each `tml ship` starts a fresh journaled Run. Use `tml ship --resume` to
 continue the latest compatible parked Run for the current branch, or `tml ship --resume <id>`
@@ -58,7 +58,7 @@ machine-wide defaults; the two deep-merge, project winning):
   "branch": "require",                          // ai | auto | require
   "maxFixAttempts": 3,                           // auto-fix cap per round loop
   "models": { "default": "haiku", "review": "opus" },
-  "disable": ["typecheck"],                     // drop a default Step
+  "disable": ["quality"],                       // drop a default Step
   "plugins": ["./.tml/deep-review.ts"]          // local paths only (for now)
 }
 ```

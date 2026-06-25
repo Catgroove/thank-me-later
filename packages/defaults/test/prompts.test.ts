@@ -8,13 +8,11 @@ import {
   checkPrompt,
   findingsSchema,
   fixPrompt,
-  formatPrompt,
-  lintPrompt,
+  qualityPrompt,
   prDescriptionPrompt,
   prDescriptionSchema,
   reviewPrompt,
   testPrompt,
-  typecheckPrompt,
 } from "../src/prompts.ts";
 
 const reviewDiff = "diff --git a/src/a.ts b/src/a.ts\n+const marker = true;";
@@ -32,44 +30,41 @@ const runGroundRules =
 
 describe("default pipeline prompts", () => {
   test("check + review prompts are non-empty and avoid specific toolchains", () => {
-    for (const prompt of [formatPrompt, lintPrompt, typecheckPrompt, testPrompt, reviewPass]) {
+    for (const prompt of [qualityPrompt, testPrompt, reviewPass]) {
       expect(prompt.length).toBeGreaterThan(0);
       expect(prompt.toLowerCase()).not.toContain("npm");
       expect(prompt.toLowerCase()).not.toContain("eslint");
     }
   });
 
-  test("format and lint prompts use model-backed source inspection", () => {
-    for (const prompt of [formatPrompt, lintPrompt]) {
-      expect(prompt).toContain("model-backed source inspection");
-      expect(prompt).toContain("do not run");
-      expect(prompt).toContain("install commands");
-    }
+  test("quality prompt combines source inspection with the real typecheck", () => {
+    expect(qualityPrompt).toContain("model-backed source inspection");
+    expect(qualityPrompt).toContain("do not run formatters, linters");
+    expect(qualityPrompt).toContain("discover the type-check command");
+    expect(qualityPrompt).toContain("run it");
   });
 
-  test("typecheck and test prompts discover and run their command", () => {
-    for (const prompt of [typecheckPrompt, testPrompt]) {
-      expect(prompt).toContain("Discover the");
-      expect(prompt).toContain("run it");
-    }
+  test("test prompt discovers and runs its command", () => {
+    expect(testPrompt).toContain("Discover the");
+    expect(testPrompt).toContain("run it");
   });
 
   test("inspect-mode checkPrompt stays read-only and forbids invoking toolchains", () => {
     const initial = checkPrompt({
-      name: "lint",
-      goal: lintPrompt,
+      name: "quality",
+      goal: qualityPrompt,
       groundRules: inspectGroundRules,
       trigger: "initial",
       historyText: "No prior rounds.",
     });
     const verify = checkPrompt({
-      name: "lint",
-      goal: lintPrompt,
+      name: "quality",
+      goal: qualityPrompt,
       groundRules: inspectGroundRules,
       trigger: "verify",
       historyText: "Round 0: initial",
     });
-    expect(initial).toContain("Check step: lint");
+    expect(initial).toContain("Check step: quality");
     expect(initial).toContain("structured findings");
     expect(initial).toContain("Inspect files directly instead of invoking local quality tools");
     expect(initial.toLowerCase()).toContain("do not modify files");
@@ -96,12 +91,12 @@ describe("default pipeline prompts", () => {
 
   test("checkFixPrompt lists selected findings and avoids tml-side command detection", () => {
     const prompt = checkFixPrompt({
-      name: "typecheck",
-      goal: typecheckPrompt,
+      name: "quality",
+      goal: qualityPrompt,
       historyText: "Round 0: initial",
       findings: [
         {
-          id: "typecheck:1",
+          id: "quality:1",
           disposition: "blocker",
           action: "auto-fix",
           title: "Bad type",
@@ -110,8 +105,8 @@ describe("default pipeline prompts", () => {
         },
       ],
     });
-    expect(prompt).toContain("Fix step: typecheck");
-    expect(prompt).toContain("typecheck:1");
+    expect(prompt).toContain("Fix step: quality");
+    expect(prompt).toContain("quality:1");
     expect(prompt).toContain("Bad type");
     expect(prompt.toLowerCase()).toContain("do not add repo-specific command detection");
     expect(prompt.toLowerCase()).toContain("do not install dependencies");

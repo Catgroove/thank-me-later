@@ -1,6 +1,6 @@
 // Shared outcome records for review, checks, and CI. A Finding is the smallest
 // actionable observation; a RoundRecord is one completed pass of a Step over a
-// set of findings. The model is intentionally small so review, lint, typecheck,
+// set of findings. The model is intentionally small so review, quality checks,
 // tests, and CI all speak the same language.
 
 import { createHash } from "node:crypto";
