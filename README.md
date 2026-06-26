@@ -1,13 +1,42 @@
-# thank-me-later (tml)
+<h1 align="center">thank-me-later</h1>
 
-A fully customizable, extensible "ship it" CLI that comes with sane defaults. Run it when an
-agent finishes a unit of work and it conducts a pipeline — branch, checks, review, open PR, wait
-on CI. The defaults run **zero-config in any language**; tune them with a `tml.json` (declarative
-knobs) or extend them with a local plugin (`export default (tml) => …`). _Spend time now, thank me later._
+<p align="center">A "ship it" CLI for the end of an agent's turn.</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
+  <a href="https://bun.sh"><img alt="Runtime: Bun" src="https://img.shields.io/badge/runtime-Bun-black?style=flat-square"></a>
+</p>
+
+<p align="center"><em>Spend time now, thank me later.</em></p>
+
+```
+▶ ship
+  ✓ Branch     feat/rename-cli-flags
+  ✓ Describe
+  ✓ Commit
+  ✓ Rebase
+  ✓ Review
+  ✓ Quality
+  ✓ Test
+  ✓ PR         https://github.com/you/repo/pull/42
+  PR gate
+    ✓ CI
+    ✓ Merge
+  ── results ──────────────────
+  review     tightened two flag descriptions
+             added --resume id parsing
+  pr         https://github.com/you/repo/pull/42
+■ run finished
+```
+
+You run `tml` (shorthand for thank-me-later) when an agent has finished a unit of work.
+It conducts a code-defined pipeline: branch, commit, rebase, review, run your checks, open
+a PR, and wait on CI. The defaults run **zero-config in any language**. Tune them with a
+`tml.json`, or extend them with a local plugin.
 
 > **Status: functional.** `tml ship` runs the default pipeline end-to-end against GitHub
-> (`gh`) and the pi agent, configurable via `tml.json` + local plugins. The TUI and
-> local Run Journal resume are built; PR-comment handling is not built yet.
+> (via `gh`) and the pi agent. The TUI and local Run resume are built; PR-comment handling
+> is not built yet.
 
 ## Install
 
@@ -15,8 +44,8 @@ knobs) or extend them with a local plugin (`export default (tml) => …`). _Spen
 curl -fsSL https://raw.githubusercontent.com/Catgroove/thank-me-later/master/install.sh | sh
 ```
 
-Downloads the latest prebuilt binary (macOS/Linux, arm64/x64) to `~/.local/bin/tml`. Override
-the location with `TML_INSTALL_DIR`, or pin a release with `TML_VERSION=v0.1.0`.
+Downloads the latest prebuilt binary (macOS/Linux, arm64/x64) to `~/.local/bin/tml`. Set
+`TML_INSTALL_DIR` to change the location, or `TML_VERSION=v0.1.0` to pin a release.
 
 From source (needs [Bun](https://bun.sh)):
 
@@ -28,45 +57,48 @@ bun install && bun run build   # → dist/tml
 ## Quick start
 
 ```sh
-tml init      # scaffold a starter tml.json (optional - tml ship is zero-config)
-tml ship      # branch, commit, and run the rest of the pipeline in an isolated worktree
+tml init      # scaffold a starter tml.json (optional — ship is zero-config)
+tml ship      # run the pipeline on your current work
 ```
 
-`tml ship` creates or reuses a feature branch (AI-named by default), describes the change,
-and commits your current work in the source checkout. It then switches your checkout back to
-the default branch and hands the feature branch to a disposable worktree under the local Run
-Journal. You can keep editing the source checkout while the Run continues; those later edits
-are not part of the shipment. The default pipeline rebases onto the latest base, runs review,
-then runs one quality pass covering format, lint, and type-check, then tests. Finally it
-syncs before pushing, opening a PR, watching CI, and checking merge readiness. Fixes from the
-review and gates land as their own commits on top of your change.
+`tml ship` names or reuses a feature branch, describes your change, and commits it in your
+checkout. It then returns your checkout to the default branch and hands the feature branch to
+a disposable worktree, so you can keep editing while the Run continues — later edits are not
+part of the shipment. From there the pipeline rebases onto the latest base, reviews the diff,
+runs one quality pass (format, lint, type-check) and your tests, then pushes, opens a PR,
+watches CI, and checks merge readiness. Fixes from review and the gates land as their own
+commits on top of your change.
 
-By default, each `tml ship` starts a fresh journaled Run. Use `tml ship --resume` to
-continue the latest compatible parked Run for the current branch, or `tml ship --resume <id>`
-to resume an exact Run id.
+Each `tml ship` starts a fresh Run. Use `tml ship --resume` to continue the latest compatible
+Run for the branch, or `tml ship --resume <id>` to resume an exact one. Add `-v` for the full
+per-step trail, or `--plain` for append-only output instead of the TUI.
 
 tml is built with tml: every change to this repo ships through `tml ship`.
 
-## Configuration
+## Configure
 
-`tml ship` is **zero-config** — it runs the default pipeline anywhere, in any language. To tune
-it, run `tml init` (or hand-write a `tml.json` at the repo root, or `~/.config/tml/tml.json` for
-machine-wide defaults; the two deep-merge, project winning):
+`tml ship` is zero-config. To tune it, run `tml init` or hand-write a `tml.json` at the repo
+root (or `~/.config/tml/tml.json` for machine-wide defaults; the two deep-merge, project
+winning):
 
 ```jsonc
 {
   "$schema": "https://raw.githubusercontent.com/Catgroove/thank-me-later/master/packages/cli/schema/tml.schema.json",
-  "branch": "require",                          // ai | auto | require
-  "maxFixAttempts": 3,                           // auto-fix cap per round loop
+  "branch": "require",                    // ai | auto | require
+  "maxFixAttempts": 3,                    // auto-fix cap per round
   "models": { "default": "haiku", "review": "opus" },
-  "disable": ["quality"],                       // drop a default Step
-  "plugins": ["./.tml/deep-review.ts"]          // local paths only (for now)
+  "disable": ["quality"],                 // drop a default step
+  "plugins": ["./.tml/deep-review.ts"]    // local paths only (for now)
 }
 ```
 
-JSON only **toggles and selects** (providers by name, `branch`, `maxFixAttempts`, `models`,
-`disable`). To add or reorder Steps, write a **local plugin** - a TypeScript file that never
-imports `@tml/core`:
+JSON only **toggles and selects** — providers, models, branch mode, which steps to disable.
+To add or reorder steps, write a plugin.
+
+## Extend
+
+A plugin is a TypeScript file that authors against an injected `tml` API. It never imports
+`@tml/core`, and is referenced by local path from `tml.json`:
 
 ```ts
 // .tml/deep-review.ts
@@ -79,31 +111,41 @@ export default (tml) => {
 };
 ```
 
-## Commands
-
-```sh
-bun run typecheck  # tsc --noEmit across the workspace
-bun run lint       # oxlint --type-aware
-bun run fmt        # oxfmt (fmt:check to verify)
-bun run build      # compile the CLI to dist/tml
-bun test           # Bun's test runner
-```
+The blessed default pipeline is itself just a plugin (`@tml/defaults`) — there is nothing it
+can do that yours can't.
 
 ## Layout
 
-| Package | Description |
+| Package | What it does |
 | --- | --- |
-| `@tml/core` | Engine: step contract, artifacts, providers (Git/Git provider/Harness), event stream |
-| `@tml/defaults` | The blessed default pipeline plugin — branch modes, checks, review, commits, PR, CI |
+| `@tml/core` | Engine: step contract, artifacts, providers (Git / Git provider / Harness), event stream |
+| `@tml/defaults` | The default pipeline plugin — branch, checks, review, commits, PR, CI |
 | `@tml/github` | GitHub Git provider (via `gh`) |
 | `@tml/pi` | pi Harness adapter |
 | `@tml/view` | Presentation: folds the event stream into view state + CLI/plain renderers |
-| `tml` | CLI binary (`tml ship`, `tml init`) |
+| `tml` | The CLI binary (`tml ship`, `tml init`) |
 
-## Docs
+## Design
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full design at a glance
-- [`docs/adr/`](docs/adr/) — locked decisions + rejected alternatives
-- [`CONTEXT.md`](CONTEXT.md) — the glossary
+- **Data for knobs, code for behavior.** Config is declarative; pipelines and plugins are
+  TypeScript. No YAML pipeline DSL.
+- **Lean on model capability over machinery.** No tiers, caches, or generic mega-interfaces
+  for hypothetical needs.
+- **Steps stay mostly-pure and unit-testable.** Side effects go through Providers.
+- **Core knows nothing of the defaults.** The default pipeline is one pipeline among many.
+
+## Develop
+
+```sh
+bun run typecheck   # tsc --noEmit across the workspace
+bun run lint        # oxlint --type-aware
+bun run fmt         # oxfmt (fmt:check to verify)
+bun run build       # compile the CLI to dist/tml
+bun test            # Bun's test runner
+```
+
+See [`CONTEXT.md`](CONTEXT.md) for the glossary — the canonical meaning of every domain term.
+
+## License
 
 MIT © Martin Norberg
