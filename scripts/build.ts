@@ -10,11 +10,17 @@ import solidPlugin from "@opentui/solid/bun-plugin";
 const compileTarget = process.argv[2];
 const outfile = process.argv[3] ?? "dist/tml";
 
+// tml runs inside arbitrary project repos. By default a compiled Bun binary auto-loads bunfig.toml
+// and .env from its runtime cwd, so the host project's bun config would leak into tml - notably a
+// `preload` it can't resolve (this repo's own `@opentui/solid/preload`), which aborts startup. tml
+// reads only real shell env vars, so opt out of both autoloads to keep the binary hermetic.
+const autoload = { autoloadBunfig: false, autoloadDotenv: false };
+
 const result = await Bun.build({
   entrypoints: ["packages/cli/src/index.ts"],
   target: "bun",
   plugins: [solidPlugin],
-  compile: compileTarget ? { target: compileTarget, outfile } : { outfile },
+  compile: compileTarget ? { target: compileTarget, outfile, ...autoload } : { outfile, ...autoload },
 });
 
 if (!result.success) {
