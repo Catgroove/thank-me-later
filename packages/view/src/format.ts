@@ -1,6 +1,5 @@
 import type { RunEvent } from "@tml/core";
 import type { StepView, ViewState } from "./present.ts";
-import { displayStepName } from "./step-display.ts";
 
 export const RESULT_LABEL_WIDTH = 8;
 const INLINE_ARTIFACT_MAX = 56;
@@ -29,7 +28,7 @@ export function resultLabelWidth(
 ): number {
   return Math.max(
     RESULT_LABEL_WIDTH,
-    ...steps.map((step) => displayStepName(step).length + 2),
+    ...steps.map((step) => step.name.length + 2),
     hasPrUrl ? "pr".length + 2 : 0,
   );
 }

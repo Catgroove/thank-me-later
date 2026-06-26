@@ -9,7 +9,6 @@ import type { Accessor } from "solid-js";
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import type { ActivityEntry, ViewState } from "../present.ts";
-import { displayStepNameFor } from "../step-display.ts";
 import { sanitize } from "./sanitize.ts";
 import { runElapsed, statusColor } from "./format.ts";
 import { initialNav, navOnKey, type NavState } from "./navigation.ts";
@@ -317,7 +316,7 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
       </text>
       <text marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
         {status()}
-        {active() ? ` · ${sanitize(displayStepNameFor(props.view(), active() ?? ""))}` : ""}
+        {active() ? ` · ${sanitize(active() ?? "")}` : ""}
       </text>
       <Show when={branch() !== undefined}>
         <text marginLeft={2} fg="#94a3b8">
@@ -349,7 +348,7 @@ function stepStatusOf(status: ViewState["status"]): "active" | "done" | "failed"
 function ActivityLine(props: { entry: ActivityEntry; view: ViewState }) {
   const e = props.entry;
   const line = () => {
-    const prefix = `${displayStepNameFor(props.view, e.step)}: `;
+    const prefix = `${e.step}: `;
     if (e.kind === "tool") {
       const label = `${e.tool?.name ?? ""}${e.tool?.detail ? ` · ${e.tool.detail}` : ""}`;
       return `${prefix}⚙ ${label}${e.phase === "end" ? " (done)" : ""}`;

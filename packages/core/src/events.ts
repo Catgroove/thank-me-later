@@ -15,9 +15,9 @@
 import type { ApprovalFindingsInput } from "./approval.ts";
 import type { AgentProgress } from "./providers/harness.ts";
 import type { Finding, RoundRecord } from "./round.ts";
-import type { StepDisplay } from "./step.ts";
 
-export type PipelineStep = string | { readonly name: string; readonly display?: StepDisplay };
+/** A Step's identity in the assembled Pipeline, as surfaced on `run:started`. */
+export type PipelineStep = string;
 
 export type RunEvent =
   | { type: "run:started"; at: number; pipeline: PipelineStep[] }

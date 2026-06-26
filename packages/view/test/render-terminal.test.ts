@@ -593,7 +593,7 @@ describe("createTerminalRenderer (plain)", () => {
     const lines = renderLines([
       {
         type: "run:started",
-        pipeline: ["open-pr", { name: "ci-wait", display: { group: "pr-gate", label: "ci" } }],
+        pipeline: ["open-pr", "ci-wait"],
       },
       { type: "step:started", step: "open-pr" },
       { type: "pr:opened", url: "https://git-provider.test/pr/7" },
@@ -602,7 +602,7 @@ describe("createTerminalRenderer (plain)", () => {
       { type: "run:failed", step: "ci-wait", error: "checks red" },
     ]);
     expect(lines.at(-1)).toBe(
-      "✗ run failed at pr-gate/ci: checks red · https://git-provider.test/pr/7",
+      "✗ run failed at ci-wait: checks red · https://git-provider.test/pr/7",
     );
   });
 });

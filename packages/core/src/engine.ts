@@ -13,7 +13,7 @@
 import type { ApprovalDecision, ApprovalFindingsInput } from "./approval.ts";
 import type { Artifact } from "./artifact.ts";
 import type { Ctx } from "./context.ts";
-import type { PipelineStep, RunEvent, RunEventInput } from "./events.ts";
+import type { RunEvent, RunEventInput } from "./events.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import { type Git, createGit } from "./providers/git.ts";
 import type { AgentRunOpts, Harness } from "./providers/harness.ts";
@@ -174,7 +174,7 @@ async function drive(
 
   await emit(run, {
     type: "run:started",
-    pipeline: pipeline.map(pipelineStepEvent),
+    pipeline: pipeline.map((step) => step.name),
   });
   // Surface the starting branch right away. For a resumed run in an isolated worktree this is the
   // already-created feature branch, so the view shows it without waiting for a Step to re-emit.
@@ -377,14 +377,6 @@ async function drive(
   await journal?.finish("finished");
   await emit(run, { type: "run:finished" });
   queue.close();
-}
-
-function pipelineStepEvent(step: Step): PipelineStep {
-  const display = step.display;
-  if (display === undefined || (display.label === undefined && display.group === undefined)) {
-    return step.name;
-  }
-  return { name: step.name, display };
 }
 
 function isStepReplayableFromJournal(

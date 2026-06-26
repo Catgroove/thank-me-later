@@ -56,7 +56,6 @@ function timeoutFinding(prNumber: number): Finding {
 export function mergeGateStep(): Step {
   return defineStep({
     name: "merge-gate",
-    display: { group: "PR gate", label: "Merge" },
     consumes: [pullRequest],
     resume: "reconcile",
     async run(ctx: Ctx) {

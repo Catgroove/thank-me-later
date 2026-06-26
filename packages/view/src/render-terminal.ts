@@ -19,7 +19,6 @@ import type { RunEvent } from "@tml/core";
 import { approvalPrompt, isNarrativeArtifact, narrativeSteps, resultLabelWidth } from "./format.ts";
 import type { ViewState } from "./present.ts";
 import type { Renderer } from "./renderer.ts";
-import { displayStepName, displayStepNameFor, pipelineDisplayRows } from "./step-display.ts";
 
 const SYNC_ON = "\x1b[?2026h";
 const SYNC_OFF = "\x1b[?2026l";
@@ -265,7 +264,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
       const tail = wrapped.length > 0 ? (wrapped[wrapped.length - 1]?.line ?? "") : "";
       return clip(tail === "" ? `${BODY_INDENT}${spinner}` : `${tail} ${spinner}`);
     }
-    const head = `${STEP_INDENT}${spinner} ${displayStepNameFor(view, view.activeStep)}`;
+    const head = `${STEP_INDENT}${spinner} ${view.activeStep}`;
     const activity = activityTail(view);
     return clip(activity === "" ? head : `${head}  ${dim(activity)}`);
   }
@@ -311,14 +310,13 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
   function stepResult(view: ViewState, name: string): string {
     const step = view.steps.find((candidate) => candidate.name === name);
     const rendered = step?.headline;
-    const label = step === undefined ? name : displayStepName(step);
     if (rendered === undefined) {
       // No artifact (a check, a commit) - structural, so de-emphasize it.
-      return dim(`${STEP_INDENT}${glyphs.done} ${label}${elapsed()}`);
+      return dim(`${STEP_INDENT}${glyphs.done} ${name}${elapsed()}`);
     }
     // Narrative artifacts go to the results block in full; only short ones read inline here.
     const inline = isNarrativeArtifact(rendered) ? "" : `  ${rendered}`;
-    return `${STEP_INDENT}${green(glyphs.done)} ${label}${inline}${dim(elapsed())}`;
+    return `${STEP_INDENT}${green(glyphs.done)} ${name}${inline}${dim(elapsed())}`;
   }
 
   /** The end-of-run results block: narrative artifacts (in full) + the PR URL. */
@@ -338,7 +336,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
       ? Number.POSITIVE_INFINITY
       : Math.max(1, Math.min(termColumns(), MAX_WIDTH) - gutter);
     for (const step of narrative) {
-      const label = `${STEP_INDENT}${displayStepName(step).padEnd(labelWidth)}`;
+      const label = `${STEP_INDENT}${step.name.padEnd(labelWidth)}`;
       wrap(step.headline, width).forEach((segment, i) =>
         lines.push((i === 0 ? label : cont) + segment),
       );
@@ -408,14 +406,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           // A sealed trail lists the pipeline upfront; the quiet live line lets each step announce
           // itself instead.
           const permanent = trail
-            ? [
-                header,
-                ...pipelineDisplayRows(view.steps).map((row) =>
-                  row.kind === "group"
-                    ? `${STEP_INDENT}${row.label}`
-                    : `${STEP_INDENT}${row.grouped ? "  " : ""}${row.label}`,
-                ),
-              ]
+            ? [header, ...view.steps.map((step) => `${STEP_INDENT}${step.name}`)]
             : [header];
           commit(permanent, liveLine(view));
           return;
@@ -426,7 +417,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           waitStartedAt = undefined;
           proseCommittedLen = 0;
           if (trail) {
-            const header = `${STEP_INDENT}${glyphs.started} ${displayStepNameFor(view, event.step)}`;
+            const header = `${STEP_INDENT}${glyphs.started} ${event.step}`;
             // The live verbose trail spaces steps apart; append-only output keeps them flush.
             const separated = !plain && verbose && anyStep ? ["", header] : [header];
             commit(separated, liveLine(view));
@@ -479,12 +470,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           return;
         case "step:skipped":
           commit(
-            [
-              ...sealed(),
-              dim(
-                `${STEP_INDENT}${glyphs.skipped} ${displayStepNameFor(view, event.step)} (skipped)`,
-              ),
-            ],
+            [...sealed(), dim(`${STEP_INDENT}${glyphs.skipped} ${event.step} (skipped)`)],
             liveLine(view),
           );
           return;
@@ -493,13 +479,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           // Leave no spinner/live line behind: readline owns the terminal until input resolves.
           pausedForInput = true;
           waitStartedAt = now();
-          commit(
-            [
-              ...sealed(),
-              `${STEP_INDENT}? ${displayStepNameFor(view, event.step)}: ${event.prompt}`,
-            ],
-            "",
-          );
+          commit([...sealed(), `${STEP_INDENT}? ${event.step}: ${event.prompt}`], "");
           showCursor();
           return;
         case "approval:pending":
@@ -507,13 +487,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           // Leave no spinner/live line behind: readline owns the terminal until input resolves.
           pausedForInput = true;
           waitStartedAt = now();
-          commit(
-            [
-              ...sealed(),
-              `${STEP_INDENT}? ${displayStepNameFor(view, event.step)}: ${approvalPrompt(event)}`,
-            ],
-            "",
-          );
+          commit([...sealed(), `${STEP_INDENT}? ${event.step}: ${approvalPrompt(event)}`], "");
           showCursor();
           return;
         case "run:paused":
@@ -526,12 +500,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
         case "run:cancelled":
           stopTimer();
           commit(
-            [
-              ...sealed(),
-              `◼ run cancelled${
-                event.step ? ` at ${displayStepNameFor(view, event.step)}` : ""
-              }${prSuffix}`,
-            ],
+            [...sealed(), `◼ run cancelled${event.step ? ` at ${event.step}` : ""}${prSuffix}`],
             "",
           );
           showCursor();
@@ -543,16 +512,11 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           // shows. A sealed trail already has it; plain quiet never retained prose, so neither dump.
           const dump =
             !trail && failedStep !== undefined && failedStep === view.activeStep
-              ? [
-                  `${STEP_INDENT}${red(glyphs.failed)} ${displayStepNameFor(view, failedStep)}`,
-                  ...failureDump(view),
-                ]
+              ? [`${STEP_INDENT}${red(glyphs.failed)} ${failedStep}`, ...failureDump(view)]
               : [];
           const line =
             red(
-              `${glyphs.failed} run failed${
-                event.step ? ` at ${displayStepNameFor(view, event.step)}` : ""
-              }: ${event.error}`,
+              `${glyphs.failed} run failed${event.step ? ` at ${event.step}` : ""}: ${event.error}`,
             ) + prSuffix;
           commit([...sealed(), ...dump, line], "");
           showCursor();

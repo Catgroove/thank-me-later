@@ -1,10 +1,9 @@
 /** @jsxImportSource @opentui/solid */
-// The left rail: the assembled Pipeline rendered as display rows. Most Steps are one row; related
-// post-PR gate Steps are grouped under a shared heading while keeping their internal Step names
-// unchanged. The active Step shows a spinner - or, when it is blocked awaiting a human decision, a
-// static amber glyph so it reads as "waiting on you", not "busy". The selected Step is highlighted.
-// An active Step that declares phases shows its current-group phases as a sub-tree, so a multi-pass
-// Step is no longer an opaque single spinner.
+// The left rail: the assembled Pipeline rendered one Step per row, by Step name. The active Step
+// shows a spinner - or, when it is blocked awaiting a human decision, a static amber glyph so it
+// reads as "waiting on you", not "busy". The selected Step is highlighted. An active Step that
+// declares phases shows its current-group phases as a sub-tree, so a multi-pass Step is no longer
+// an opaque single spinner.
 
 import { For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
@@ -29,14 +28,14 @@ export interface RailProps {
   readonly now: Accessor<number>;
 }
 
-function PhaseRow(props: { phase: PhaseView; last: boolean; now: number; grouped: boolean }) {
+function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
   const elapsed = () => phaseElapsed(props.phase, props.now);
   const count = () =>
     props.phase.status === "done" && props.phase.findings.length > 0
       ? ` ${props.phase.findings.length}`
       : "";
   return (
-    <box flexDirection="row" paddingLeft={props.grouped ? 3 : 1} paddingRight={1}>
+    <box flexDirection="row" paddingLeft={1} paddingRight={1}>
       <text flexShrink={0} fg="#475569">
         {props.last ? " └ " : " ├ "}
       </text>
@@ -60,11 +59,6 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number; grouped
 
 function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<number> }) {
   const isSelected = () => props.stepIndex() === effectiveIndex(props.nav(), props.view());
-  const grouped = () => props.step.displayGroup !== undefined;
-  const startsGroup = () => {
-    const group = props.step.displayGroup;
-    return group !== undefined && props.view().steps[props.stepIndex() - 1]?.displayGroup !== group;
-  };
   const pendingAt = () => {
     const pending = props.view().pendingInteraction;
     return pending?.step === props.step.name ? pending.at : undefined;
@@ -73,58 +67,44 @@ function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<nu
   const phases = () => (props.step.status === "active" ? latestGroupPhases(props.step) : []);
   return (
     <box flexDirection="column">
-      <Show when={startsGroup()}>
-        <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-          <text fg="#64748b" wrapMode="none" truncate>
-            {sanitize(props.step.displayGroup ?? "")}
+      <box
+        flexDirection="row"
+        paddingLeft={1}
+        paddingRight={1}
+        backgroundColor={isSelected() ? "#1e293b" : undefined}
+      >
+        {props.step.status !== "active" ? (
+          <text flexShrink={0} fg={statusColor(props.step.status)}>
+            {statusGlyph(props.step.status)}
           </text>
-        </box>
-      </Show>
-      <box flexDirection="column">
-        <box
-          flexDirection="row"
-          paddingLeft={grouped() ? 3 : 1}
-          paddingRight={1}
-          backgroundColor={isSelected() ? "#1e293b" : undefined}
+        ) : pendingAt() !== undefined ? (
+          <text flexShrink={0} fg={WAITING_COLOR}>
+            {WAITING_GLYPH}
+          </text>
+        ) : (
+          <spinner name="dots" color={statusColor("active")} />
+        )}
+        <text
+          flexGrow={1}
+          flexShrink={1}
+          marginLeft={1}
+          fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}
+          wrapMode="none"
+          truncate
         >
-          {props.step.status !== "active" ? (
-            <text flexShrink={0} fg={statusColor(props.step.status)}>
-              {statusGlyph(props.step.status)}
-            </text>
-          ) : pendingAt() !== undefined ? (
-            <text flexShrink={0} fg={WAITING_COLOR}>
-              {WAITING_GLYPH}
-            </text>
-          ) : (
-            <spinner name="dots" color={statusColor("active")} />
-          )}
-          <text
-            flexGrow={1}
-            flexShrink={1}
-            marginLeft={1}
-            fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}
-            wrapMode="none"
-            truncate
-          >
-            {sanitize(props.step.displayLabel)}
-          </text>
-          <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
-            {elapsed()}
-          </text>
-        </box>
-        <Show when={phases().length > 0}>
-          <For each={phases()}>
-            {(phase, i) => (
-              <PhaseRow
-                phase={phase}
-                last={i() === phases().length - 1}
-                now={props.now()}
-                grouped={grouped()}
-              />
-            )}
-          </For>
-        </Show>
+          {sanitize(props.step.name)}
+        </text>
+        <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
+          {elapsed()}
+        </text>
       </box>
+      <Show when={phases().length > 0}>
+        <For each={phases()}>
+          {(phase, i) => (
+            <PhaseRow phase={phase} last={i() === phases().length - 1} now={props.now()} />
+          )}
+        </For>
+      </Show>
     </box>
   );
 }

@@ -42,7 +42,6 @@ export const tmlDefaults: Plugin = (tml) => {
     // host hands the feature branch to a disposable worktree where the rest of the pipeline runs.
     {
       ...commitStep("commit-change", prTitle),
-      display: { label: "Commit" },
       isolate: true,
     }, // your work, subject = the PR title
     rebaseStep(), // sync onto the latest base before the review/checks/CI run against it

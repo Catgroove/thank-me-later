@@ -11,7 +11,6 @@ import { syncBase } from "./rebase.ts";
 export function openPrStep(): Step {
   return defineStep({
     name: "open-pr",
-    display: { label: "PR" },
     consumes: [branchName, prTitle, prBody, reviewSummary],
     produces: [pullRequest],
     resume: "reconcile",
