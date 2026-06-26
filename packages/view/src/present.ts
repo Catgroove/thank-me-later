@@ -60,8 +60,6 @@ export interface ActivityEntry {
 
 export interface StepView {
   readonly name: string;
-  readonly displayLabel: string;
-  readonly displayGroup?: string;
   readonly status: "pending" | "active" | "done" | "skipped" | "failed";
   readonly startedAt?: number;
   readonly finishedAt?: number;
@@ -188,13 +186,9 @@ function mapStep(steps: StepView[], name: string, fn: (step: StepView) => StepVi
   return steps.map((step) => (step.name === name ? fn(step) : step));
 }
 
-function stepViewFor(input: PipelineStep): StepView {
-  const name = typeof input === "string" ? input : input.name;
-  const display = typeof input === "string" ? undefined : input.display;
+function stepViewFor(name: PipelineStep): StepView {
   return {
     name,
-    displayLabel: display?.label ?? name,
-    ...(display?.group !== undefined ? { displayGroup: display.group } : {}),
     status: "pending",
     artifacts: [],
     rounds: [],

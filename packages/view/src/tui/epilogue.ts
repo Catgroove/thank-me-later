@@ -5,7 +5,6 @@
 
 import { sanitize } from "./sanitize.ts";
 import type { ViewState } from "../present.ts";
-import { displayStepName } from "../step-display.ts";
 import { runElapsed } from "./format.ts";
 
 /** The compact epilogue lines for a finished/failed/cancelled Run. */
@@ -20,14 +19,14 @@ export function epilogueLines(view: ViewState, now: number): string[] {
       break;
     case "failed": {
       const failed = view.steps.find((s) => s.status === "failed");
-      const where = failed ? ` at ${displayStepName(failed)}` : "";
+      const where = failed ? ` at ${failed.name}` : "";
       lines.push(`✗ ship failed${where}${elapsedSuffix}`);
       if (view.error) lines.push(`  ${sanitize(view.error)}`);
       break;
     }
     case "cancelled": {
       const active = view.steps.find((s) => s.status === "active");
-      const where = active ? ` at ${displayStepName(active)}` : "";
+      const where = active ? ` at ${active.name}` : "";
       lines.push(`◼ ship cancelled${where}${elapsedSuffix}`);
       break;
     }

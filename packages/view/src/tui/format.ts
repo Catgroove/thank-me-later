@@ -3,7 +3,6 @@
 
 import type { Finding, FindingDisposition } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
-import { pipelineDisplayRows } from "../step-display.ts";
 import { sanitize } from "./sanitize.ts";
 
 export type StepStatus = StepView["status"];
@@ -121,7 +120,6 @@ const RAIL_MIN_WIDTH = 30; // never shrink below the historical fixed width
 const RAIL_MAX_WIDTH = 56; // cap so the Step inspector keeps room on narrow terminals
 const RAIL_TRAIL = 11; // leading space + widest elapsed ("10m 09s") + a findings count (" 99")
 const RAIL_STEP_LEAD = 2; // status glyph + one-space margin before the name
-const RAIL_GROUPED_STEP_EXTRA = 2; // extra indentation for a child Step inside a display group
 const RAIL_PHASE_LEAD = 5; // " └ " tree branch + glyph + one-space margin before the label
 const RAIL_FRAME = 4; // left+right border (2) + left+right row padding (2)
 
@@ -134,17 +132,11 @@ const RAIL_FRAME = 4; // left+right border (2) + left+right row padding (2)
  */
 export function railWidth(view: ViewState): number {
   let widest = 0;
-  for (const row of pipelineDisplayRows(view.steps)) {
-    if (row.kind === "group") {
-      widest = Math.max(widest, sanitize(row.label).length);
-      continue;
-    }
-    const stepLead = RAIL_STEP_LEAD + (row.grouped ? RAIL_GROUPED_STEP_EXTRA : 0);
-    widest = Math.max(widest, stepLead + sanitize(row.label).length);
-    if (row.step.status === "active") {
-      const phaseLead = RAIL_PHASE_LEAD + (row.grouped ? RAIL_GROUPED_STEP_EXTRA : 0);
-      for (const phase of latestGroupPhases(row.step)) {
-        widest = Math.max(widest, phaseLead + sanitize(phase.label).length);
+  for (const step of view.steps) {
+    widest = Math.max(widest, RAIL_STEP_LEAD + sanitize(step.name).length);
+    if (step.status === "active") {
+      for (const phase of latestGroupPhases(step)) {
+        widest = Math.max(widest, RAIL_PHASE_LEAD + sanitize(phase.label).length);
       }
     }
   }

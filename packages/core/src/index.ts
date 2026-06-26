@@ -67,7 +67,7 @@ export {
   type RoundLoopResult,
   type RoundStopPolicyInput,
 } from "./round-executor.ts";
-export { defineStep, type Step, type StepDisplay, type StepResult, type StepRun } from "./step.ts";
+export { defineStep, type Step, type StepResult, type StepRun } from "./step.ts";
 export { type Config, type ModelMap, type Pipeline, type Providers } from "./pipeline.ts";
 export {
   type Assembly,

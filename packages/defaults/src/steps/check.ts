@@ -135,11 +135,7 @@ function parseCheckResult(name: string, output: unknown, summary: string, ok: bo
   return parseAgentFindingsOutput(output, { namespace: name, sourceName: name });
 }
 
-export const qualityStep = (policy: FixLoopPolicy = {}): Step => ({
-  ...checkStep("quality", qualityPrompt, { ...policy, mode: "mixed" }),
-  display: { label: "Quality" },
-});
-export const testStep = (policy: FixLoopPolicy = {}): Step => ({
-  ...checkStep("test", testPrompt, { ...policy, mode: "run" }),
-  display: { label: "Test" },
-});
+export const qualityStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("quality", qualityPrompt, { ...policy, mode: "mixed" });
+export const testStep = (policy: FixLoopPolicy = {}): Step =>
+  checkStep("test", testPrompt, { ...policy, mode: "run" });

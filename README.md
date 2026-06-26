@@ -105,7 +105,6 @@ A plugin is a TypeScript file that authors against an injected `tml` API. It nev
 export default (tml) => {
   tml.pipeline.insertAfter("review", tml.defineStep({
     name: "deep-review",
-    display: { label: "Security" },
     run: (ctx) => ctx.agent.run("Second, security-focused pass over the diff.").then(() => ({})),
   }));
 };

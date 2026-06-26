@@ -85,7 +85,6 @@ function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): stri
 export function reviewStep(): Step {
   return defineStep({
     name: "review",
-    display: { label: "Review" },
     consumes: [prBody],
     produces: [reviewSummary],
     async run(ctx) {

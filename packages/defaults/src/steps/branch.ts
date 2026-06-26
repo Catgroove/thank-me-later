@@ -40,7 +40,6 @@ function asBranchName(output: unknown): string {
 export function branchStep(mode: BranchMode = "ai"): Step {
   return defineStep({
     name: "branch",
-    display: { label: "Branch" },
     produces: [branchName],
     async run(ctx) {
       const current = await ctx.git.currentBranch();
