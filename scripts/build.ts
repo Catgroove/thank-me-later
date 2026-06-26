@@ -20,7 +20,9 @@ const result = await Bun.build({
   entrypoints: ["packages/cli/src/index.ts"],
   target: "bun",
   plugins: [solidPlugin],
-  compile: compileTarget ? { target: compileTarget, outfile, ...autoload } : { outfile, ...autoload },
+  compile: compileTarget
+    ? { target: compileTarget, outfile, ...autoload }
+    : { outfile, ...autoload },
 });
 
 if (!result.success) {
