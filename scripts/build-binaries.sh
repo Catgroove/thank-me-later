@@ -6,6 +6,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# OpenTUI ships its native core as per-platform optional dependencies; a plain `bun install`
+# only fetches the host's. Cross-compiling a target embeds that target's native package, so
+# every target's binary must be present first. `--os '*' --cpu '*'` fetches them all (lockfile
+# unchanged, so --frozen-lockfile still holds).
+bun install --frozen-lockfile --os '*' --cpu '*'
+
 targets=(darwin-arm64 darwin-x64 linux-x64 linux-arm64)
 
 mkdir -p dist
