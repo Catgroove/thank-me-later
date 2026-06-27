@@ -6,4 +6,4 @@
 // deferred role. ACP is a future *additional* backend, not the boundary.
 
 export { createPiHarness, type PiHarnessOptions } from "./harness.ts";
-export type { PiProcess, PiSpawn } from "./spawn.ts";
+export type { PiProcess, PiSpawn, PiWhich } from "./spawn.ts";

@@ -15,8 +15,14 @@ export interface PiProcess {
 
 export type PiSpawn = (args: string[], opts: { cwd: string }) => PiProcess;
 
+/** Resolve an executable to its absolute path, or null when absent. Mirrors `Bun.which`. */
+export type PiWhich = (command: string) => string | null;
+
 /** Default seam: `pi <args>` via `Bun.spawn`, run in `cwd` so pi sees the repo. */
 export const defaultSpawn: PiSpawn = (args, opts) => spawnCommand(["pi", ...args], opts);
+
+/** Default seam: resolve `pi` on PATH via `Bun.which`. Tests inject a fake. */
+export const defaultWhich: PiWhich = (command) => Bun.which(command);
 
 /**
  * Spawn an arbitrary command and adapt it to {@link PiProcess}. Factored out of

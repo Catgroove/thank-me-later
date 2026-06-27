@@ -8,15 +8,18 @@ import { AbortError, type AgentResult, type Harness } from "@tml/core";
 
 import { isAgentEnd, parseModels, parsePiEvent, toProgress } from "./map.ts";
 import { parseStructuredText, withInlinedSchema } from "./schema.ts";
-import { defaultSpawn, type PiSpawn } from "./spawn.ts";
+import { defaultSpawn, defaultWhich, type PiSpawn, type PiWhich } from "./spawn.ts";
 
 export interface PiHarnessOptions {
   /** Override the spawn seam; tests inject a fake yielding canned JSONL. */
   readonly spawn?: PiSpawn;
+  /** Override the executable-resolution seam; tests inject a fake. */
+  readonly which?: PiWhich;
 }
 
 export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harness {
   const spawn = opts.spawn ?? defaultSpawn;
+  const which = opts.which ?? defaultWhich;
 
   return {
     async run(task, runOpts) {
@@ -69,6 +72,11 @@ export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harne
         throw new Error(`pi --list-models failed (exit ${exitCode}): ${stderr.trim()}`);
       }
       return parseModels(out);
+    },
+
+    async detect() {
+      const path = which("pi");
+      return path === null ? { installed: false } : { installed: true, path };
     },
   };
 }

@@ -41,6 +41,14 @@ export interface AgentRunOpts {
   readonly signal?: AbortSignal;
 }
 
+/** Whether a Harness's underlying agent CLI is actually present on this machine. */
+export interface HarnessDetection {
+  /** True when the agent's executable is resolvable on this machine. */
+  readonly installed: boolean;
+  /** The resolved executable path when found. */
+  readonly path?: string;
+}
+
 export interface Harness {
   /**
    * Execute one isolated agent task.
@@ -53,4 +61,9 @@ export interface Harness {
   run(task: string, opts?: AgentRunOpts): Promise<AgentResult>;
   /** Optional capability: the engine validates pinned models when present. */
   listModels?(): Promise<string[]>;
+  /**
+   * Optional capability: report whether the backing agent CLI is installed on this
+   * machine. `tml agents` surfaces this; a Harness that omits it is reported as unknown.
+   */
+  detect?(): Promise<HarnessDetection>;
 }

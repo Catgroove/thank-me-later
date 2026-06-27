@@ -72,6 +72,7 @@ export { type Config, type ModelMap, type Pipeline, type Providers } from "./pip
 export {
   type Assembly,
   createAssembly,
+  DEFAULT_HARNESS,
   type GitProviderFactory,
   type HarnessFactory,
   type PipelineBuilder,
@@ -100,7 +101,13 @@ export type {
   UnsettledMergeState,
 } from "./providers/git-provider.ts";
 export { isMergeable, mergeStateKind } from "./providers/git-provider.ts";
-export type { AgentProgress, AgentResult, AgentRunOpts, Harness } from "./providers/harness.ts";
+export type {
+  AgentProgress,
+  AgentResult,
+  AgentRunOpts,
+  Harness,
+  HarnessDetection,
+} from "./providers/harness.ts";
 export type { PipelineStep, RunEvent, RunEventInput } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions } from "./engine.ts";
 export {
