@@ -97,11 +97,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // the default `buildConfig` captures it off the same load instead of parsing config a second time.
   // An injected `buildConfig` (tests) leaves it false unless overridden via `deps.openInBrowser`.
   let configOpenInBrowser = false;
+  let configOpenInBrowserLoaded = false;
   const buildConfig =
     deps.buildConfig ??
     ((dir: string) => {
       const loaded = loadTmlConfig(dir);
-      configOpenInBrowser = loaded.openInBrowser;
+      if (!configOpenInBrowserLoaded) {
+        configOpenInBrowser = loaded.openInBrowser;
+        configOpenInBrowserLoaded = true;
+      }
       return assembleShipConfig(dir, loaded);
     });
   const engineFor = deps.engineFor ?? createEngine;
