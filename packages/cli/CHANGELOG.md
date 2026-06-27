@@ -1,5 +1,24 @@
 # tml
 
+## 0.3.0
+
+### Minor Changes
+
+- 93dafcb: Make running the pipeline the default command: `tml` (no subcommand) now runs the pipeline on the current checkout, with all the former ship options (`--verbose`, `--plain`, `--resume`, `--fresh`). `tml ship` keeps working as an alias but is no longer required or advertised - the help text and the TUI banner now read `tml`.
+- a2b94ef: Add an `openInBrowser` knob to `tml.json` (default `false`). When set, `tml ship` opens the run's PR in your default browser when the run finishes or fails after opening one - the same action as pressing `o` in the TUI - so a hands-off run still surfaces the PR. It is best set in your global `~/.config/tml/tml.json`. The browser-opener is now shared (`openSystemUrl`, exported from `@tml/view`) by both the TUI keybind and the CLI lifecycle.
+- d3e06f4: Add self-update. `tml update` moves the installed binary to the latest GitHub release by re-running the curl installer pinned to that version (`--check` reports without installing), and `tml --version` / `-V` prints the installed version. After a command, when a newer release exists, the CLI prints a one-line update notice. The check runs in the background and is cached for a day, so it adds no latency, and it is suppressed in CI, in pipes, and via `NO_UPDATE_NOTIFIER` / `TML_NO_UPDATE_NOTIFIER`.
+
+### Patch Changes
+
+- Updated dependencies [93dafcb]
+- Updated dependencies [a2b94ef]
+- Updated dependencies [2c74ebe]
+  - @tml/view@3.0.0
+  - @tml/core@0.3.0
+  - @tml/defaults@3.0.0
+  - @tml/github@3.0.0
+  - @tml/pi@3.0.0
+
 ## 0.2.1
 
 ### Patch Changes
