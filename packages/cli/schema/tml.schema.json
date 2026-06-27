@@ -44,7 +44,7 @@
     },
     "openInBrowser": {
       "type": "boolean",
-      "description": "Open the run's PR in your default browser when the run finishes (same as pressing 'o' in the TUI). Best suited to your global ~/.config/tml/tml.json. Default: false."
+      "description": "Open the run's PR in your default browser when the run finishes or fails after opening one (same as pressing 'o' in the TUI). Best suited to your global ~/.config/tml/tml.json. Default: false."
     }
   }
 }

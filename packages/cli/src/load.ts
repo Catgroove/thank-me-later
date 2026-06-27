@@ -40,11 +40,11 @@ export interface LoadOptions {
 }
 
 export interface Loaded {
-  /** The merged declarative knobs, ready to hand to `createAssembly`. */
+  /** The merged pipeline-assembly knobs, ready to hand to `createAssembly`. */
   selection: Selection;
   /** Absolute paths to local plugin files, global first then project. */
   pluginPaths: string[];
-  /** Open the Run's PR in the browser when the Run finishes (same as the TUI `o` key). Default false. */
+  /** Open the Run's PR in the browser when the Run finishes or fails (same as the TUI `o` key). Default false. */
   openInBrowser: boolean;
 }
 

@@ -30,6 +30,9 @@ import {
   worktreeIsolation,
 } from "./isolated-run.ts";
 import { loadTmlConfig } from "./load.ts";
+import { update } from "./update.ts";
+import { maybeStartCheck, updateNotice } from "./update-check.ts";
+import { VERSION } from "./version.ts";
 
 /** Seams, injected by tests; production snapshots the checkout into an isolated run workspace. */
 export interface ShipDeps {
@@ -49,7 +52,7 @@ export interface ShipDeps {
   verbose?: boolean;
   /** Force the append-only/inline terminal renderer instead of the full-screen TUI (`--plain`). */
   plain?: boolean;
-  /** Open the Run's PR in the browser when it finishes; overrides the `tml.json` `openInBrowser` knob. */
+  /** Open the Run's PR in the browser when it finishes or fails; overrides the `tml.json` `openInBrowser` knob. */
   openInBrowser?: boolean;
   /** Whether stdout is a TTY. Defaults to `process.stdout.isTTY`; injected by tests. */
   isTTY?: boolean;
@@ -99,6 +102,8 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     deps.buildConfig ??
     ((dir: string) => {
       const loaded = loadTmlConfig(dir);
+      // Capture the knob off the first (source-checkout) load only; later calls reload config in
+      // the isolated worktree and must not redefine the user's source intent.
       if (!configOpenInBrowserLoaded) {
         configOpenInBrowser = loaded.openInBrowser;
         configOpenInBrowserLoaded = true;
@@ -278,6 +283,7 @@ Usage:
 Commands:
   ship    Run the pipeline on the current checkout.
   init    Scaffold a starter tml.json at the project root.
+  update  Update tml to the latest release.
 
 Ship options:
   -v, --verbose       Seal the full per-step trail instead of the quiet,
@@ -292,17 +298,42 @@ Ship options:
 Init options:
   -f, --force         Overwrite an existing tml.json.
 
+Update options:
+      --check         Report whether a newer release exists without installing.
+
 Global options:
-  -h, --help          Show this help.`;
+  -h, --help          Show this help.
+  -V, --version       Print the installed version.`;
 
 const isHelp = (arg: string | undefined): boolean => arg === "--help" || arg === "-h";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === "--version" || command === "-V") {
+    console.log(VERSION);
+    return 0;
+  }
   if (command === undefined || isHelp(command)) {
     console.log(HELP);
     return 0;
   }
+
+  // Fire the background update check (best-effort, non-blocking); it caches its result for the
+  // notice printed after the command completes.
+  void maybeStartCheck();
+
+  const code = await dispatch(command, rest);
+
+  // Print the cached "new version" notice after the command — and after any TUI teardown — so it
+  // never corrupts the alternate screen or a piped stdout. `update` reports versions itself.
+  if (command !== "update") {
+    const notice = updateNotice();
+    if (notice !== null) console.error(notice);
+  }
+  return code;
+}
+
+async function dispatch(command: string, rest: string[]): Promise<number> {
   if (command === "ship") {
     if (rest.some(isHelp)) {
       console.log(HELP);
@@ -325,7 +356,14 @@ async function main(argv: string[]): Promise<number> {
     const force = rest.includes("--force") || rest.includes("-f");
     return init({ force });
   }
-  console.error(`Unknown command: ${command}. Try: tml ship | tml init | tml --help`);
+  if (command === "update") {
+    if (rest.some(isHelp)) {
+      console.log(HELP);
+      return 0;
+    }
+    return update({ check: rest.includes("--check") });
+  }
+  console.error(`Unknown command: ${command}. Try: tml ship | tml init | tml update | tml --help`);
   return 1;
 }
 
