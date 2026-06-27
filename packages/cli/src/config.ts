@@ -8,14 +8,19 @@
 // language. Built-ins are seeded before plugins so a plugin can override a Provider name or
 // register a new one.
 
-import { type Config, createAssembly, type Plugin } from "@tml/core";
+import { type Assembly, type Config, createAssembly, type Plugin } from "@tml/core";
 import tmlDefaults from "@tml/defaults";
 import { createGitHubProvider } from "@tml/github";
 import { createPiHarness } from "@tml/pi";
 import { errorMessage } from "./error.ts";
 import type { Loaded } from "./load.ts";
 
-export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<Config> {
+/**
+ * Seed the built-in Providers and run the plugins over a fresh Assembly, stopping short of
+ * `build()`. Both `tml ship` (which builds the Config) and `tml agents` (which inspects the
+ * registered Harnesses) share this so they discover exactly the same set of Providers.
+ */
+export async function assemble(cwd: string, loaded: Loaded): Promise<Assembly> {
   const assembly = createAssembly(loaded.selection, cwd);
   assembly.tml.registerGitProvider("github", createGitHubProvider);
   assembly.tml.registerHarness("pi", createPiHarness);
@@ -32,7 +37,11 @@ export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<C
     }
   }
 
-  return assembly.build();
+  return assembly;
+}
+
+export async function assembleShipConfig(cwd: string, loaded: Loaded): Promise<Config> {
+  return (await assemble(cwd, loaded)).build();
 }
 
 async function loadPlugin(path: string): Promise<Plugin> {

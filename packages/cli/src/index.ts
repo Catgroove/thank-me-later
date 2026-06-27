@@ -20,6 +20,7 @@ import {
   present,
   type Renderer,
 } from "@tml/view";
+import { agents } from "./agents.ts";
 import { assembleShipConfig } from "./config.ts";
 import { errorMessage } from "./error.ts";
 import { init } from "./init.ts";
@@ -278,6 +279,8 @@ Usage:
   tml update               Update tml to the latest release.
   tml version              Print the installed version.
 
+  tml agents              List available agents and the configured default.
+
 Options:
   -v, --verbose       Seal the full per-step trail instead of the quiet,
                       results-forward default.
@@ -349,6 +352,13 @@ async function dispatch(
       return 0;
     }
     return update({ check: rest.includes("--check") });
+  }
+  if (command === "agents") {
+    if (rest.some(isHelp)) {
+      console.log(HELP);
+      return 0;
+    }
+    return agents();
   }
   // Running the pipeline is the default command: `tml [options]`. `ship` remains accepted as an
   // explicit alias so existing invocations keep working, but it is no longer required or advertised.

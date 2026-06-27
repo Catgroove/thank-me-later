@@ -74,10 +74,17 @@ export type Plugin = (tml: Tml) => void | Promise<void>;
 export interface Assembly {
   readonly tml: Tml;
   build(): Config;
+  /**
+   * Every registered Harness (built-in + plugin) built for this `cwd`, keyed by name in
+   * registration order. Lets a host introspect the available agents (e.g. `tml agents`)
+   * without selecting one through `build()`.
+   */
+  harnesses(): ReadonlyMap<string, Harness>;
 }
 
 const DEFAULT_GIT_PROVIDER = "github";
-const DEFAULT_HARNESS = "pi";
+/** The Harness selected when `tml.json` omits `harness`. */
+export const DEFAULT_HARNESS = "pi";
 
 export function createAssembly(selection: Selection, cwd: string): Assembly {
   const steps: Step[] = [];
@@ -171,6 +178,9 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
         providers,
         ...(models !== undefined ? { models } : {}),
       };
+    },
+    harnesses(): ReadonlyMap<string, Harness> {
+      return new Map([...harnesses].map(([name, factory]) => [name, factory(cwd)]));
     },
   };
 }
