@@ -55,7 +55,7 @@ export async function init(deps: InitDeps = {}): Promise<number> {
 
     write(target, STARTER);
     log(`✓ wrote ${target}`);
-    log("Run `tml ship` to ship your work.");
+    log("Run `tml` to ship your work.");
     return 0;
   } catch (caught) {
     error(`tml init: ${errorMessage(caught)}`);

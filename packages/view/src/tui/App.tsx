@@ -312,7 +312,7 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
       <text fg="#38bdf8" attributes={1}>
-        tml ship
+        tml
       </text>
       <text marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
         {status()}

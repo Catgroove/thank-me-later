@@ -105,10 +105,10 @@ function shipLifecycle(deps: ShipDeps): Promise<number> {
 }
 
 describe("tml CLI", () => {
-  test("unknown command exits non-zero with a hint", async () => {
-    const { stderr, exitCode } = await runCli("bogus");
+  test("an unknown option exits non-zero with a hint", async () => {
+    const { stderr, exitCode } = await runCli("--bogus");
     expect(exitCode).not.toBe(0);
-    expect(stderr).toContain("tml ship");
+    expect(stderr).toContain("Unknown ship option: --bogus");
   });
 
   test("ship validates empty resume ids before building a run", async () => {

@@ -34,7 +34,7 @@ It conducts a code-defined pipeline: branch, commit, rebase, review, run your ch
 a PR, and wait on CI. The defaults run **zero-config in any language**. Tune them with a
 `tml.json`, or extend them with a local plugin.
 
-> **Status: functional.** `tml ship` runs the default pipeline end-to-end against GitHub
+> **Status: functional.** `tml` runs the default pipeline end-to-end against GitHub
 > (via `gh`) and the pi agent. The TUI and local Run resume are built; PR-comment handling
 > is not built yet.
 
@@ -57,11 +57,11 @@ bun install && bun run build   # → dist/tml
 ## Quick start
 
 ```sh
-tml init      # scaffold a starter tml.json (optional — ship is zero-config)
-tml ship      # run the pipeline on your current work
+tml init      # scaffold a starter tml.json (optional — tml is zero-config)
+tml           # run the pipeline on your current work
 ```
 
-`tml ship` names or reuses a feature branch, describes your change, and commits it in your
+`tml` names or reuses a feature branch, describes your change, and commits it in your
 checkout. It then returns your checkout to the default branch and hands the feature branch to
 a disposable worktree, so you can keep editing while the Run continues — later edits are not
 part of the shipment. From there the pipeline rebases onto the latest base, reviews the diff,
@@ -69,15 +69,15 @@ runs one quality pass (format, lint, type-check) and your tests, then pushes, op
 watches CI, and checks merge readiness. Fixes from review and the gates land as their own
 commits on top of your change.
 
-Each `tml ship` starts a fresh Run. Use `tml ship --resume` to continue the latest compatible
-Run for the branch, or `tml ship --resume <id>` to resume an exact one. Add `-v` for the full
+Each `tml` run starts a fresh Run. Use `tml --resume` to continue the latest compatible
+Run for the branch, or `tml --resume <id>` to resume an exact one. Add `-v` for the full
 per-step trail, or `--plain` for append-only output instead of the TUI.
 
-tml is built with tml: every change to this repo ships through `tml ship`.
+tml is built with tml: every change to this repo ships through `tml`.
 
 ## Configure
 
-`tml ship` is zero-config. To tune it, run `tml init` or hand-write a `tml.json` at the repo
+`tml` is zero-config. To tune it, run `tml init` or hand-write a `tml.json` at the repo
 root (or `~/.config/tml/tml.json` for machine-wide defaults; the two deep-merge, project
 winning):
 
@@ -125,7 +125,7 @@ can do that yours can't.
 | `@tml/github` | GitHub Git provider (via `gh`) |
 | `@tml/pi` | pi Harness adapter |
 | `@tml/view` | Presentation: folds the event stream into view state, CLI/plain renderers, and browser helpers |
-| `tml` | The CLI binary (`tml ship`, `tml init`) |
+| `tml` | The CLI binary (`tml`, `tml init`) |
 
 ## Design
 

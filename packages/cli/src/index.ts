@@ -269,15 +269,12 @@ Run it when an agent has finished a unit of work; it conducts a code-defined
 pipeline that branches, runs checks, reviews, opens a PR, and waits on CI.
 
 Usage:
-  tml <command> [options]
+  tml [options]            Run the pipeline on the current checkout.
+  tml init [options]       Scaffold a starter tml.json at the project root.
+  tml update               Update tml to the latest release.
+  tml version              Print the installed version.
 
-Commands:
-  ship     Run the pipeline on the current checkout.
-  init     Scaffold a starter tml.json at the project root.
-  update   Update tml to the latest release.
-  version  Print the installed version.
-
-Ship options:
+Options:
   -v, --verbose       Seal the full per-step trail instead of the quiet,
                       results-forward default.
       --plain         Force the append-only/inline renderer instead of the
@@ -295,11 +292,13 @@ Update options:
 
 Global options:
   -h, --help          Show this help.
-  -v, --version       Print the installed version. (alias: -V)`;
+      --version       Print the installed version. (alias: -V)`;
 
 const isHelp = (arg: string | undefined): boolean => arg === "--help" || arg === "-h";
+// `-v` is the verbose pipeline flag, not a version alias: bare `tml` runs the pipeline, so `tml -v`
+// means a verbose run. Version is `version` / `--version` / `-V` only.
 const isVersion = (arg: string | undefined): boolean =>
-  arg === "version" || arg === "--version" || arg === "-v" || arg === "-V";
+  arg === "version" || arg === "--version" || arg === "-V";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -307,7 +306,7 @@ async function main(argv: string[]): Promise<number> {
     console.log(VERSION);
     return 0;
   }
-  if (command === undefined || isHelp(command)) {
+  if (isHelp(command)) {
     console.log(HELP);
     return 0;
   }
@@ -316,7 +315,7 @@ async function main(argv: string[]): Promise<number> {
   // notice printed after the command completes.
   void maybeStartCheck();
 
-  const code = await dispatch(command, rest);
+  const code = await dispatch(command, rest, argv);
 
   // Print the cached "new version" notice after the command — and after any TUI teardown — so it
   // never corrupts the alternate screen or a piped stdout. `update` reports versions itself.
@@ -327,21 +326,11 @@ async function main(argv: string[]): Promise<number> {
   return code;
 }
 
-async function dispatch(command: string, rest: string[]): Promise<number> {
-  if (command === "ship") {
-    if (rest.some(isHelp)) {
-      console.log(HELP);
-      return 0;
-    }
-    let args: ShipArgs;
-    try {
-      args = parseShipArgs(rest);
-    } catch (error) {
-      console.error(errorMessage(error));
-      return 1;
-    }
-    return ship(args);
-  }
+async function dispatch(
+  command: string | undefined,
+  rest: string[],
+  argv: string[],
+): Promise<number> {
   if (command === "init") {
     if (rest.some(isHelp)) {
       console.log(HELP);
@@ -357,10 +346,21 @@ async function dispatch(command: string, rest: string[]): Promise<number> {
     }
     return update({ check: rest.includes("--check") });
   }
-  console.error(
-    `Unknown command: ${command}. Try: tml ship | tml init | tml update | tml version | tml --help`,
-  );
-  return 1;
+  // Running the pipeline is the default command: `tml [options]`. `ship` remains accepted as an
+  // explicit alias so existing invocations keep working, but it is no longer required or advertised.
+  const shipArgv = command === "ship" ? rest : argv;
+  if (shipArgv.some(isHelp)) {
+    console.log(HELP);
+    return 0;
+  }
+  let args: ShipArgs;
+  try {
+    args = parseShipArgs(shipArgv);
+  } catch (error) {
+    console.error(errorMessage(error));
+    return 1;
+  }
+  return ship(args);
 }
 
 // Only run the CLI when invoked directly — importing this module (e.g. from tests) must not

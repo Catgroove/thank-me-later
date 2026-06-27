@@ -37,7 +37,7 @@ describe("TUI App (no real terminal)", () => {
     await t.flush();
     const frame = t.captureCharFrame();
     for (const name of PIPELINE) expect(frame).toContain(name);
-    expect(frame).toContain("tml ship");
+    expect(frame).toContain("tml");
     t.renderer.destroy();
   });
 
