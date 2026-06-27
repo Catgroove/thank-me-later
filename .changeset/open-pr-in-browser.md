@@ -1,6 +1,5 @@
 ---
-"tml": minor
-"@tml/view": patch
+"tml": patch
 ---
 
-Add an `openInBrowser` knob to `tml.json` (default `false`). When set, `tml ship` opens the run's PR in your default browser once the run finishes - the same action as pressing `o` in the TUI - so a hands-off run still surfaces the PR. It is best set in your global `~/.config/tml/tml.json`. The browser-opener is now shared (`openSystemUrl`, exported from `@tml/view`) by both the TUI keybind and the CLI lifecycle.
+Refine `openInBrowser` handling so `tml ship` keeps the checkout's setting during isolated-run config rebuilds and opens the PR only after renderer teardown and the TUI epilogue.
