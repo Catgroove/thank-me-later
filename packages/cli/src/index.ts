@@ -94,11 +94,15 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   // the default `buildConfig` captures it off the same load instead of parsing config a second time.
   // An injected `buildConfig` (tests) leaves it false unless overridden via `deps.openInBrowser`.
   let configOpenInBrowser = false;
+  let configOpenInBrowserLoaded = false;
   const buildConfig =
     deps.buildConfig ??
     ((dir: string) => {
       const loaded = loadTmlConfig(dir);
-      configOpenInBrowser = loaded.openInBrowser;
+      if (!configOpenInBrowserLoaded) {
+        configOpenInBrowser = loaded.openInBrowser;
+        configOpenInBrowserLoaded = true;
+      }
       return assembleShipConfig(dir, loaded);
     });
   const engineFor = deps.engineFor ?? createEngine;
@@ -196,7 +200,11 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     // has a PR and reached a non-cancelled terminal state. Opening here (after teardown) avoids
     // stealing focus from a live TUI; a user-cancelled Run is left alone.
     const openInBrowser = deps.openInBrowser ?? configOpenInBrowser;
-    if (openInBrowser && view.prUrl !== undefined && view.status !== "cancelled") {
+    if (
+      openInBrowser &&
+      view.prUrl !== undefined &&
+      (view.status === "finished" || view.status === "failed")
+    ) {
       openSystemUrl(view.prUrl);
     }
     if (fatalErrorMessage !== undefined) console.error(fatalErrorMessage);
