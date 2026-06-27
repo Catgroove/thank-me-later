@@ -9,6 +9,7 @@ import type { Finding, FindingAction } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
 import { actionOptions, findingSections, SECTION_LABEL, summaryLine } from "./approval.ts";
 import { DISPOSITION_COLOR, findingMarker } from "./format.ts";
+import { theme } from "./theme.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
 export type ApprovalFocusArea = "findings" | "actions";
@@ -18,9 +19,9 @@ export type ApprovalFocusArea = "findings" | "actions";
 // own, or a note that changes nothing. The icon repeats the meaning the color carries so it survives
 // in a monochrome terminal; the header label is shared with the findings inspector (SECTION_LABEL).
 const SECTION_STYLE: Record<FindingAction, { readonly icon: string; readonly color: string }> = {
-  "ask-user": { icon: "◆", color: "#f59e0b" },
-  "auto-fix": { icon: "↻", color: "#38bdf8" },
-  "no-op": { icon: "▪", color: "#94a3b8" },
+  "ask-user": { icon: "◆", color: theme.waiting },
+  "auto-fix": { icon: "↻", color: theme.accent },
+  "no-op": { icon: "▪", color: theme.textMuted },
 };
 
 export interface DrawerProps {
@@ -44,10 +45,10 @@ export function InteractionDrawer(props: DrawerProps) {
         <box
           flexDirection="column"
           border
-          borderColor="#f59e0b"
+          borderColor={theme.borderWarn}
           title={prompt().kind === "ask" ? "input needed" : "approval needed"}
           padding={1}
-          backgroundColor="#1c1917"
+          backgroundColor={theme.overlayBg}
         >
           <Show when={prompt().kind === "ask"}>
             <AskBody
@@ -76,17 +77,17 @@ function AskBody(props: {
 }) {
   return (
     <box flexDirection="column">
-      <text fg="#fde68a" wrapMode="word">
+      <text fg={theme.waiting} wrapMode="word">
         {sanitize(props.prompt.prompt, { preserveNewlines: true })}
       </text>
-      <box marginTop={1} border borderColor="#57534e">
+      <box marginTop={1} border borderColor={theme.border}>
         {/* OpenTUI's input passes the typed string on submit; widen the param to satisfy JSX typing. */}
         <input
           focused
           onSubmit={(value: unknown) => props.onAskSubmit(typeof value === "string" ? value : "")}
         />
       </box>
-      <text fg="#78716c" marginTop={1}>
+      <text fg={theme.textFaint} marginTop={1}>
         enter to submit
       </text>
     </box>
@@ -113,10 +114,10 @@ function ApprovalBody(props: {
   const sections = () => findingSections(input().findings);
   return (
     <box flexDirection="column">
-      <text fg="#fde68a" wrapMode="word">
+      <text fg={theme.waiting} wrapMode="word">
         {sanitize(input().prompt, { preserveNewlines: true })}
       </text>
-      <text fg="#a8a29e" marginTop={1}>
+      <text fg={theme.textMuted} marginTop={1}>
         {summaryLine(input().findings)} · {props.selectedFindingIds().length} selected for fix
       </text>
       <For each={sections()}>
@@ -140,12 +141,12 @@ function ApprovalBody(props: {
                     offset() + findingIndex() === props.focusedFinding();
                   return (
                     <box
-                      backgroundColor={focused() ? "#334155" : "#1c1917"}
+                      backgroundColor={focused() ? theme.focusBg : undefined}
                       paddingLeft={1}
                       paddingRight={1}
                     >
                       <text
-                        fg={focused() ? "#e2e8f0" : DISPOSITION_COLOR[finding.disposition]}
+                        fg={focused() ? theme.focusFg : DISPOSITION_COLOR[finding.disposition]}
                         wrapMode="word"
                       >
                         {selected(finding.id) ? "[x] " : "[ ] "}
@@ -166,11 +167,14 @@ function ApprovalBody(props: {
               props.focusArea() === "actions" && index() === props.focusedAction();
             return (
               <box
-                backgroundColor={focused() ? "#f59e0b" : "#1c1917"}
+                backgroundColor={focused() ? theme.actionFocusBg : undefined}
                 paddingLeft={1}
                 paddingRight={1}
               >
-                <text fg={focused() ? "#1c1917" : "#e7e5e4"} attributes={focused() ? 1 : 0}>
+                <text
+                  fg={focused() ? theme.actionFocusFg : theme.text}
+                  attributes={focused() ? 1 : 0}
+                >
                   {focused() ? "▸ " : "  "}
                   {option.label} ({option.key})
                 </text>
@@ -179,7 +183,7 @@ function ApprovalBody(props: {
           }}
         </For>
       </box>
-      <text fg="#78716c" marginTop={1}>
+      <text fg={theme.textFaint} marginTop={1}>
         tab findings/actions · ↑/↓ move · space toggles finding · enter confirm/toggle · f fixes
         selected
       </text>

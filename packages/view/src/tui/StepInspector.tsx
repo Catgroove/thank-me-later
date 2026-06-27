@@ -21,6 +21,7 @@ import {
   statusGlyph,
   stepElapsed,
 } from "./format.ts";
+import { theme } from "./theme.ts";
 import { SECTION_LABEL, SECTION_ORDER } from "./approval.ts";
 import { TABS, effectiveIndex, type NavState, type Tab } from "./navigation.ts";
 
@@ -43,7 +44,7 @@ function TabBar(props: { active: Tab }) {
         {(tab) => (
           <text
             marginRight={2}
-            fg={tab === props.active ? "#38bdf8" : "#64748b"}
+            fg={tab === props.active ? theme.accent : theme.textFaint}
             attributes={tab === props.active ? 1 : 0}
           >
             {tab}
@@ -79,10 +80,10 @@ function PhaseLine(props: { phase: PhaseView; now: number }) {
   return (
     <box flexDirection="row">
       <text fg={statusColor(props.phase.status)}>{statusGlyph(props.phase.status)}</text>
-      <text flexGrow={1} marginLeft={1} fg="#94a3b8">
+      <text flexGrow={1} marginLeft={1} fg={theme.textMuted}>
         {sanitize(props.phase.label)}
       </text>
-      <text fg="#64748b">
+      <text fg={theme.textFaint}>
         {elapsed() === "" ? "" : ` ${elapsed()}`}
         {props.phase.status === "done" && props.phase.findings.length > 0
           ? ` ${props.phase.findings.length}`
@@ -97,7 +98,7 @@ function Phases(props: { step: StepView; now: number }) {
   return (
     <Show when={phases().length > 0}>
       <box flexDirection="column" marginTop={1}>
-        <text fg="#64748b">phases:</text>
+        <text fg={theme.textFaint}>phases:</text>
         <For each={phases()}>{(phase) => <PhaseLine phase={phase} now={props.now} />}</For>
       </box>
     </Show>
@@ -109,17 +110,19 @@ function Summary(props: { step: StepView; now: number; pendingAt?: number }) {
   // selected Step changes under j/k - hoisting captures a stale StepView and freezes the tab.
   return (
     <box flexDirection="column">
-      <text fg="#cbd5e1">status: {props.step.status}</text>
+      <text fg={theme.text}>status: {props.step.status}</text>
       <Show when={stepElapsed(props.step, props.now, props.pendingAt) !== ""}>
-        <text fg="#94a3b8">elapsed: {stepElapsed(props.step, props.now, props.pendingAt)}</text>
+        <text fg={theme.textMuted}>
+          elapsed: {stepElapsed(props.step, props.now, props.pendingAt)}
+        </text>
       </Show>
       <Show when={props.step.headline !== undefined}>
-        <text fg="#e2e8f0" wrapMode="word">
+        <text fg={theme.text} wrapMode="word">
           {sanitize(props.step.headline ?? "", { preserveNewlines: true })}
         </text>
       </Show>
       <Show when={props.step.error !== undefined}>
-        <text fg="#ef4444" wrapMode="word">
+        <text fg={theme.failed} wrapMode="word">
           error: {sanitize(props.step.error ?? "", { preserveNewlines: true })}
         </text>
       </Show>
@@ -133,14 +136,14 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
     <box flexDirection="column">
       <Show
         when={props.step.artifacts.length > 0}
-        fallback={<text fg="#64748b">no artifacts.</text>}
+        fallback={<text fg={theme.textFaint}>no artifacts.</text>}
       >
         <For each={props.step.artifacts}>
           {(artifact) => (
             <box flexDirection="column" marginBottom={artifact.rendered ? 1 : 0}>
-              <text fg="#cbd5e1">• {sanitize(artifact.name)}</text>
+              <text fg={theme.text}>• {sanitize(artifact.name)}</text>
               <Show when={artifact.rendered !== undefined}>
-                <text fg="#94a3b8" wrapMode="word">
+                <text fg={theme.textMuted} wrapMode="word">
                   {props.expanded
                     ? sanitize(artifact.rendered ?? "", { preserveNewlines: true })
                     : sanitize((artifact.rendered ?? "").split("\n")[0] ?? "").slice(0, 200)}
@@ -167,12 +170,12 @@ const STATUS_META: Record<
     readonly resolved: boolean;
   }
 > = {
-  open: { glyph: "○", tag: "", color: "#94a3b8", resolved: false },
-  pending: { glyph: "⟳", tag: "pending", color: "#38bdf8", resolved: false },
-  fixed: { glyph: "✓", tag: "fixed", color: "#22c55e", resolved: true },
-  unresolved: { glyph: "✗", tag: "unresolved", color: "#ef4444", resolved: false },
-  accepted: { glyph: "✓", tag: "accepted as-is", color: "#22c55e", resolved: true },
-  skipped: { glyph: "⤼", tag: "skipped", color: "#9ca3af", resolved: true },
+  open: { glyph: "○", tag: "", color: theme.textMuted, resolved: false },
+  pending: { glyph: "⟳", tag: "pending", color: theme.accent, resolved: false },
+  fixed: { glyph: "✓", tag: "fixed", color: theme.success, resolved: true },
+  unresolved: { glyph: "✗", tag: "unresolved", color: theme.failed, resolved: false },
+  accepted: { glyph: "✓", tag: "accepted as-is", color: theme.success, resolved: true },
+  skipped: { glyph: "⤼", tag: "skipped", color: theme.textMuted, resolved: true },
 };
 
 /** A one-line progress tally above the sections, so overall progress reads at a glance. */
@@ -203,14 +206,14 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const marker = () => findingMarker(f());
   // Resolved findings dim so the eye lands on what still needs work; open/pending keep the finding's
   // disposition color.
-  const titleColor = () => (meta().resolved ? "#64748b" : DISPOSITION_COLOR[f().disposition]);
+  const titleColor = () => (meta().resolved ? theme.textFaint : DISPOSITION_COLOR[f().disposition]);
   return (
     <box
       flexDirection="column"
       marginBottom={1}
       paddingLeft={1}
       paddingRight={1}
-      backgroundColor={props.focused ? "#334155" : undefined}
+      backgroundColor={props.focused ? theme.focusBg : undefined}
     >
       <box flexDirection="row">
         <text fg={meta().color}>{meta().glyph}</text>
@@ -222,7 +225,7 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
           <text fg={meta().color}>{meta().tag}</text>
         </Show>
       </box>
-      <text fg="#94a3b8" wrapMode="word" marginLeft={2}>
+      <text fg={theme.textMuted} wrapMode="word" marginLeft={2}>
         {sanitize(f().detail, { preserveNewlines: true })}
       </text>
     </box>
@@ -236,7 +239,7 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
 function FindingSection(props: { label: string; entries: FindingLifecycle[]; focusedId?: string }) {
   return (
     <box flexDirection="column" marginBottom={1}>
-      <text fg="#64748b" attributes={1}>
+      <text fg={theme.textFaint} attributes={1}>
         {props.label} ({props.entries.length})
       </text>
       <For each={props.entries}>
@@ -250,9 +253,12 @@ function Findings(props: { step: StepView; focusedId?: string }) {
   const entries = () => checklist(props.step);
   return (
     <box flexDirection="column">
-      <Show when={entries().length > 0} fallback={<text fg="#64748b">no current findings.</text>}>
+      <Show
+        when={entries().length > 0}
+        fallback={<text fg={theme.textFaint}>no current findings.</text>}
+      >
         <Show when={progressLine(entries()) !== ""}>
-          <text fg="#cbd5e1" marginBottom={1}>
+          <text fg={theme.text} marginBottom={1}>
             {progressLine(entries())}
           </text>
         </Show>
@@ -279,7 +285,7 @@ function RoundLine(props: { round: RoundRecord; fixNumber?: number }) {
   const r = props.round;
   return (
     <box flexDirection="column" marginBottom={1}>
-      <text fg="#cbd5e1">
+      <text fg={theme.text}>
         round {r.index} · {r.trigger}
         {props.fixNumber !== undefined ? ` · fix ${props.fixNumber}` : ""} · {r.findings.length}{" "}
         finding
@@ -287,12 +293,12 @@ function RoundLine(props: { round: RoundRecord; fixNumber?: number }) {
         {r.commitSha ? ` · ${sanitize(r.commitSha.slice(0, 8))}` : ""}
       </text>
       <Show when={r.fixSummary !== undefined && r.fixSummary.trim() !== ""}>
-        <text fg="#94a3b8" wrapMode="word" marginLeft={2}>
+        <text fg={theme.textMuted} wrapMode="word" marginLeft={2}>
           {sanitize(r.fixSummary ?? "", { preserveNewlines: true })}
         </text>
       </Show>
       <Show when={(r.selectedFindingIds?.length ?? 0) > 0}>
-        <text fg="#64748b" marginLeft={2}>
+        <text fg={theme.textFaint} marginLeft={2}>
           selected: {sanitize((r.selectedFindingIds ?? []).join(", "))}
         </text>
       </Show>
@@ -315,7 +321,7 @@ function Rounds(props: { step: StepView }) {
     <box flexDirection="column">
       <Show
         when={props.step.rounds.length > 0}
-        fallback={<text fg="#64748b">no rounds recorded.</text>}
+        fallback={<text fg={theme.textFaint}>no rounds recorded.</text>}
       >
         <For each={items()}>
           {(item) => <RoundLine round={item.round} fixNumber={item.fixNumber} />}
@@ -330,12 +336,19 @@ export function StepInspector(props: InspectorProps) {
     props.view().steps[effectiveIndex(props.nav(), props.view())];
   const tab = () => props.nav().tab;
   return (
-    <box flexGrow={1} flexDirection="column" border borderColor="#334155" title="step" padding={0}>
-      <Show when={step()} fallback={<text fg="#64748b">no step selected.</text>}>
+    <box
+      flexGrow={1}
+      flexDirection="column"
+      border
+      borderColor={theme.border}
+      title="step"
+      padding={0}
+    >
+      <Show when={step()} fallback={<text fg={theme.textFaint}>no step selected.</text>}>
         {(s: Accessor<StepView>) => (
           <box flexDirection="column" flexGrow={1}>
             <box flexDirection="row" paddingLeft={1}>
-              <text fg="#e2e8f0" attributes={1}>
+              <text fg={theme.text} attributes={1}>
                 {sanitize(s().name)}
               </text>
             </box>
