@@ -1,5 +1,19 @@
 # tml
 
+## 0.3.1
+
+### Patch Changes
+
+- b5b6f73: Refine `openInBrowser` handling so `tml ship` keeps the checkout's setting during isolated-run config rebuilds and opens the PR only after renderer teardown and the TUI epilogue.
+- Updated dependencies [b5b6f73]
+- Updated dependencies [fc374df]
+- Updated dependencies [ce80e33]
+  - @tml/core@0.4.0
+  - @tml/pi@4.0.0
+  - @tml/defaults@4.0.0
+  - @tml/view@4.0.0
+  - @tml/github@4.0.0
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @tml/github
 
+## 4.0.0
+
+### Patch Changes
+
+- Updated dependencies [b5b6f73]
+  - @tml/core@0.4.0
+
 ## 3.0.0
 
 ### Patch Changes

@@ -1,5 +1,17 @@
 # @tml/view
 
+## 4.0.0
+
+### Minor Changes
+
+- ce80e33: Restyle the TUI: a transparent base (the terminal's own background now shows through the header, footer, pipeline rail, step inspector, and activity panel) with Catppuccin Mocha accents. All color now flows from a single semantic theme module (`theme.ts`) instead of hardcoded hex scattered across the components. Blocking overlays (the interaction drawer, help, and abort confirmation) keep an opaque surface fill so they read cleanly when they overlap the panels behind them. The plain (`--plain`/non-TTY) renderer is unchanged - it stays on basic ANSI so it keeps adapting to the user's own terminal palette.
+
+### Patch Changes
+
+- fc374df: Lowercase the TUI labels to match the app's all-lowercase vibe. Review phase labels (`code review`, `apply fixes`), the findings-section and approval-drawer labels (`needs your decision`, `auto-fix`, `informational`, `approve as-is`, `skip this step`, `abort the run`, `fix selected findings`), the empty-state messages, and the key-help descriptions are now lowercase.
+- Updated dependencies [b5b6f73]
+  - @tml/core@0.4.0
+
 ## 3.0.0
 
 ### Major Changes
