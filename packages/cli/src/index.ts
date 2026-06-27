@@ -181,6 +181,14 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     fatalErrorMessage = errorMessage(error);
     return 1;
   } finally {
+    const openInBrowser = deps.openInBrowser ?? configOpenInBrowser;
+    if (
+      openInBrowser &&
+      view.prUrl !== undefined &&
+      (view.status === "finished" || view.status === "failed")
+    ) {
+      openSystemUrl(view.prUrl);
+    }
     try {
       try {
         await renderer.complete?.(view);
@@ -192,13 +200,6 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     }
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);
-    // Best-effort: with `openInBrowser` set, do for the user what the TUI `o` key does once the Run
-    // has a PR and reached a non-cancelled terminal state. Opening here (after teardown) avoids
-    // stealing focus from a live TUI; a user-cancelled Run is left alone.
-    const openInBrowser = deps.openInBrowser ?? configOpenInBrowser;
-    if (openInBrowser && view.prUrl !== undefined && view.status !== "cancelled") {
-      openSystemUrl(view.prUrl);
-    }
     if (fatalErrorMessage !== undefined) console.error(fatalErrorMessage);
   }
 }
