@@ -110,9 +110,7 @@ export async function update(deps: UpdateDeps = {}): Promise<number> {
   }
   if (code !== 0) {
     error("tml update: the installer failed. Run it yourself:");
-    error(
-      `  TML_INSTALL_DIR="${installDir}" TML_VERSION="${tag}" sh -c '${installerScript()}'`,
-    );
+    error(`  TML_INSTALL_DIR="${installDir}" TML_VERSION="${tag}" sh -c '${installerScript()}'`);
     return 1;
   }
   log(`Updated tml to ${tag}.`);
