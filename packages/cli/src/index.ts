@@ -272,9 +272,10 @@ Usage:
   tml <command> [options]
 
 Commands:
-  ship    Run the pipeline on the current checkout.
-  init    Scaffold a starter tml.json at the project root.
-  update  Update tml to the latest release.
+  ship     Run the pipeline on the current checkout.
+  init     Scaffold a starter tml.json at the project root.
+  update   Update tml to the latest release.
+  version  Print the installed version.
 
 Ship options:
   -v, --verbose       Seal the full per-step trail instead of the quiet,
@@ -294,13 +295,15 @@ Update options:
 
 Global options:
   -h, --help          Show this help.
-  -V, --version       Print the installed version.`;
+  -v, --version       Print the installed version. (alias: -V)`;
 
 const isHelp = (arg: string | undefined): boolean => arg === "--help" || arg === "-h";
+const isVersion = (arg: string | undefined): boolean =>
+  arg === "version" || arg === "--version" || arg === "-v" || arg === "-V";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
-  if (command === "--version" || command === "-V") {
+  if (isVersion(command)) {
     console.log(VERSION);
     return 0;
   }
@@ -354,7 +357,9 @@ async function dispatch(command: string, rest: string[]): Promise<number> {
     }
     return update({ check: rest.includes("--check") });
   }
-  console.error(`Unknown command: ${command}. Try: tml ship | tml init | tml update | tml --help`);
+  console.error(
+    `Unknown command: ${command}. Try: tml ship | tml init | tml update | tml version | tml --help`,
+  );
   return 1;
 }
 
