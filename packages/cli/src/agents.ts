@@ -1,8 +1,8 @@
-// `tml agents` — list the agents (Harnesses) tml knows about and which one is configured. It
+// `tml agents` - list the agents (Harnesses) tml knows about and which one is configured. It
 // reports two distinct facts per agent: that it is *registered* (a built-in or a plugin called
 // `registerHarness`) and whether its CLI is actually *installed* on this machine (the Harness's
 // own `detect()`). The list is whatever the assembly registered, so a new built-in or a
-// plugin-provided Harness appears here automatically — today that is just `pi`.
+// plugin-provided Harness appears here automatically - today that is just `pi`.
 
 import { DEFAULT_HARNESS, type Harness } from "@tml/core";
 import { assemble } from "./config.ts";
