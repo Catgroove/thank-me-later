@@ -6,9 +6,9 @@
 //
 // This is what lets a Plugin extend tml WITHOUT importing `@tml/core`: `defineStep`,
 // `defineArtifact`, flow signals, the pipeline patch ops, and `register{GitProvider,Harness}` are
-// all reachable off the injected `tml`. The declarative knobs (`tml.json`) arrive as `Selection`; JSON may only
-// toggle/select (provider names, `branch`, `maxFixAttempts`, `models`, `disable`) - reshaping the
-// pipeline (insert/replace/reorder) is a Plugin's job.
+// all reachable off the injected `tml`. The pipeline-assembly knobs from `tml.json` arrive as
+// `Selection`; JSON may only toggle/select (provider names, `branch`, `maxFixAttempts`, `models`,
+// `disable`) - reshaping the pipeline (insert/replace/reorder) is a Plugin's job.
 
 import { defineArtifact } from "./artifact.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
@@ -24,7 +24,7 @@ export type GitProviderFactory = (cwd: string) => GitProvider;
 export type HarnessFactory = (cwd: string) => Harness;
 
 /**
- * The declarative knobs from `tml.json` (merged global + project). Provider names default at
+ * The pipeline-assembly knobs from `tml.json` (merged global + project). Provider names default at
  * `build()` (`pi`/`github`). `branch` and `maxFixAttempts` are opaque here; their meaning belongs
  * to `@tml/defaults`, not the core.
  */
@@ -54,7 +54,7 @@ export interface PipelineBuilder {
 
 /** The API injected into every Plugin. A Plugin never imports `@tml/core`; it receives this. */
 export interface Tml {
-  /** Read-only merged declarative knobs from `tml.json`. */
+  /** Read-only merged pipeline knobs from `tml.json`. */
   readonly config: ResolvedKnobs;
   readonly defineStep: typeof defineStep;
   readonly defineArtifact: typeof defineArtifact;

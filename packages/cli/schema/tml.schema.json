@@ -41,6 +41,10 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Local paths (\"./…\", \"../…\", or absolute) to plugin files. Each must `export default (tml) => { … }` and never import @tml/core. Remote/published plugins are not supported yet."
+    },
+    "openInBrowser": {
+      "type": "boolean",
+      "description": "Open the run's PR in your default browser when the run finishes or fails after opening one (same as pressing 'o' in the TUI). Best suited to your global ~/.config/tml/tml.json. Default: false."
     }
   }
 }
