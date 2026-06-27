@@ -4,6 +4,7 @@
 
 import { spawnSync } from "node:child_process";
 
+/** Open a URL in the user's default browser. Best-effort; failure is silent. */
 export function openSystemUrl(url: string): void {
   const [command, args] = openCommand();
   spawnSync(command, [...args, url], { stdio: "ignore" });

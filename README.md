@@ -88,12 +88,15 @@ winning):
   "maxFixAttempts": 3,                    // auto-fix cap per round
   "models": { "default": "haiku", "review": "opus" },
   "disable": ["quality"],                 // drop a default step
-  "plugins": ["./.tml/deep-review.ts"]    // local paths only (for now)
+  "plugins": ["./.tml/deep-review.ts"],   // local paths only (for now)
+  "openInBrowser": true                   // open the PR after finish/failure (same as TUI o)
 }
 ```
 
-JSON only **toggles and selects** — providers, models, branch mode, which steps to disable.
-To add or reorder steps, write a plugin.
+JSON only **toggles and selects** pipeline behavior: providers, models, branch mode, fix
+attempts, and which steps to disable. `openInBrowser` is a presentation toggle - best set
+in your global config - that opens the Run's PR in your default browser when the Run
+finishes or fails after opening one. It defaults to false. To add or reorder steps, write a plugin.
 
 ## Extend
 
@@ -121,7 +124,7 @@ can do that yours can't.
 | `@tml/defaults` | The default pipeline plugin — branch, checks, review, commits, PR, CI |
 | `@tml/github` | GitHub Git provider (via `gh`) |
 | `@tml/pi` | pi Harness adapter |
-| `@tml/view` | Presentation: folds the event stream into view state + CLI/plain renderers |
+| `@tml/view` | Presentation: folds the event stream into view state, CLI/plain renderers, and browser helpers |
 | `tml` | The CLI binary (`tml ship`, `tml init`) |
 
 ## Design

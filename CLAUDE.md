@@ -20,7 +20,7 @@ packages/
   defaults/  @tml/defaults  — the blessed default pipeline (just a plugin)
   github/    @tml/github    — Git provider
   pi/        @tml/pi        — pi host adapter
-  view/      @tml/view      — presentation: event fold + CLI/plain renderers
+  view/      @tml/view      - presentation: event fold, CLI/plain renderers, browser helpers
   cli/       tml            — CLI/TUI binary
 docs/
   ARCHITECTURE.md           — every locked design decision, at a glance
@@ -53,8 +53,9 @@ bunx tml ship          # run the pipeline
 ## Conventions
 
 - **Data for knobs, code for behavior.** Config is `tml.json` (declarative: providers, models,
-  branch, disable, plugins). Pipelines and Plugins are TypeScript, authored against an injected
-  API and never importing `@tml/core`. No YAML pipeline DSL. See `docs/adr/` (ADR-0015).
+  branch, maxFixAttempts, openInBrowser, disable, plugins). Pipelines and Plugins are TypeScript,
+  authored against an injected API and never importing `@tml/core`. No YAML pipeline DSL. See
+  `docs/adr/` (ADR-0015).
 - **Keep it simple.** Lean on model capability over machinery; don't add abstractions
   (tiers, caches, generic mega-interfaces) for hypothetical needs. See `docs/adr/`.
 - **Plugins author against the injected `tml` API** (`export default (tml) => {…}`); they never

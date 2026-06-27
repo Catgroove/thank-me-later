@@ -49,7 +49,7 @@ export interface ShipDeps {
   verbose?: boolean;
   /** Force the append-only/inline terminal renderer instead of the full-screen TUI (`--plain`). */
   plain?: boolean;
-  /** Open the Run's PR in the browser when it finishes; overrides the `tml.json` `openInBrowser` knob. */
+  /** Open the Run's PR in the browser when it finishes or fails; overrides the `tml.json` `openInBrowser` knob. */
   openInBrowser?: boolean;
   /** Whether stdout is a TTY. Defaults to `process.stdout.isTTY`; injected by tests. */
   isTTY?: boolean;
