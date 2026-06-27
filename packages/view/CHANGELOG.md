@@ -1,5 +1,18 @@
 # @tml/view
 
+## 3.0.0
+
+### Major Changes
+
+- 2c74ebe: Remove the Step display layer. Steps no longer carry renderer metadata: the `StepDisplay` type and the `display` field on `Step`/`defineStep` are gone from `@tml/core`, the default pipeline drops its `display` labels, and `@tml/view` renders each Step by its `name`. The CLI and TUI now show the raw Step name (e.g. `open-pr`, `ci-wait`, `merge-gate`) instead of a pretty label, and the "PR gate" rail grouping is removed.
+
+### Patch Changes
+
+- 93dafcb: Make running the pipeline the default command: `tml` (no subcommand) now runs the pipeline on the current checkout, with all the former ship options (`--verbose`, `--plain`, `--resume`, `--fresh`). `tml ship` keeps working as an alias but is no longer required or advertised - the help text and the TUI banner now read `tml`.
+- a2b94ef: Add an `openInBrowser` knob to `tml.json` (default `false`). When set, `tml ship` opens the run's PR in your default browser when the run finishes or fails after opening one - the same action as pressing `o` in the TUI - so a hands-off run still surfaces the PR. It is best set in your global `~/.config/tml/tml.json`. The browser-opener is now shared (`openSystemUrl`, exported from `@tml/view`) by both the TUI keybind and the CLI lifecycle.
+- Updated dependencies [2c74ebe]
+  - @tml/core@0.3.0
+
 ## 2.0.0
 
 ### Major Changes

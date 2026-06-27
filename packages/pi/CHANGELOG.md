@@ -1,5 +1,12 @@
 # @tml/pi
 
+## 3.0.0
+
+### Patch Changes
+
+- Updated dependencies [2c74ebe]
+  - @tml/core@0.3.0
+
 ## 2.0.0
 
 ### Patch Changes
