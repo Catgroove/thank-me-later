@@ -20,7 +20,7 @@
     },
     "packages/cli": {
       "name": "tml",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "bin": {
         "tml": "./src/index.ts",
       },
@@ -34,11 +34,11 @@
     },
     "packages/core": {
       "name": "@tml/core",
-      "version": "0.2.0",
+      "version": "0.3.0",
     },
     "packages/defaults": {
       "name": "@tml/defaults",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "devDependencies": {
         "@tml/core": "workspace:*",
       },
@@ -48,7 +48,7 @@
     },
     "packages/github": {
       "name": "@tml/github",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "devDependencies": {
         "@tml/core": "workspace:*",
       },
@@ -58,7 +58,7 @@
     },
     "packages/pi": {
       "name": "@tml/pi",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "devDependencies": {
         "@tml/core": "workspace:*",
       },
@@ -68,7 +68,7 @@
     },
     "packages/view": {
       "name": "@tml/view",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "dependencies": {
         "@opentui/core": "0.4.1",
         "@opentui/solid": "0.4.1",
