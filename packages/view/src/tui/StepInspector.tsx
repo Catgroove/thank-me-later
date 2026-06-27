@@ -133,7 +133,7 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
     <box flexDirection="column">
       <Show
         when={props.step.artifacts.length > 0}
-        fallback={<text fg="#64748b">No artifacts.</text>}
+        fallback={<text fg="#64748b">no artifacts.</text>}
       >
         <For each={props.step.artifacts}>
           {(artifact) => (
@@ -250,7 +250,7 @@ function Findings(props: { step: StepView; focusedId?: string }) {
   const entries = () => checklist(props.step);
   return (
     <box flexDirection="column">
-      <Show when={entries().length > 0} fallback={<text fg="#64748b">No current findings.</text>}>
+      <Show when={entries().length > 0} fallback={<text fg="#64748b">no current findings.</text>}>
         <Show when={progressLine(entries()) !== ""}>
           <text fg="#cbd5e1" marginBottom={1}>
             {progressLine(entries())}
@@ -315,7 +315,7 @@ function Rounds(props: { step: StepView }) {
     <box flexDirection="column">
       <Show
         when={props.step.rounds.length > 0}
-        fallback={<text fg="#64748b">No rounds recorded.</text>}
+        fallback={<text fg="#64748b">no rounds recorded.</text>}
       >
         <For each={items()}>
           {(item) => <RoundLine round={item.round} fixNumber={item.fixNumber} />}
@@ -331,7 +331,7 @@ export function StepInspector(props: InspectorProps) {
   const tab = () => props.nav().tab;
   return (
     <box flexGrow={1} flexDirection="column" border borderColor="#334155" title="step" padding={0}>
-      <Show when={step()} fallback={<text fg="#64748b">No Step selected.</text>}>
+      <Show when={step()} fallback={<text fg="#64748b">no step selected.</text>}>
         {(s: Accessor<StepView>) => (
           <box flexDirection="column" flexGrow={1}>
             <box flexDirection="row" paddingLeft={1}>

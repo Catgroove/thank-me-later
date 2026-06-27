@@ -4,14 +4,14 @@
 import { For } from "solid-js";
 
 const KEYS: ReadonlyArray<readonly [string, string]> = [
-  ["j / k, ↑ / ↓", "move Step selection"],
-  [".", "follow the active Step"],
+  ["j / k, ↑ / ↓", "move step selection"],
+  [".", "follow the active step"],
   ["tab / shift-tab", "switch inspector tabs"],
   ["enter", "expand / collapse the focused item"],
   ["mouse select, y / cmd-c", "copy the selection"],
   ["o", "open the PR in your browser (once opened)"],
   ["?", "toggle this help"],
-  ["q / ctrl-c", "abort the Run (confirm)"],
+  ["q / ctrl-c", "abort the run (confirm)"],
 ];
 
 export function KeyHelp() {

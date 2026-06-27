@@ -385,7 +385,7 @@ function ActivityPanel(props: { view: Accessor<ViewState> }) {
       <scrollbox flexGrow={1} stickyScroll stickyStart="bottom" paddingLeft={1} paddingRight={1}>
         <Show
           when={props.view().globalActivity.length > 0}
-          fallback={<text fg="#64748b">No activity yet.</text>}
+          fallback={<text fg="#64748b">no activity yet.</text>}
         >
           <For each={props.view().globalActivity}>
             {(entry) => <ActivityLine entry={entry} view={props.view()} />}

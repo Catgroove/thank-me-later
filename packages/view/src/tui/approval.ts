@@ -21,9 +21,9 @@ export const SECTION_ORDER: readonly FindingAction[] = ["ask-user", "auto-fix", 
 // The canonical header label for each action group, shared by the findings inspector and the
 // approval drawer so the two surfaces name a group identically.
 export const SECTION_LABEL: Record<FindingAction, string> = {
-  "ask-user": "Needs your decision",
-  "auto-fix": "Auto-fix",
-  "no-op": "Informational",
+  "ask-user": "needs your decision",
+  "auto-fix": "auto-fix",
+  "no-op": "informational",
 };
 
 /** Group findings by action into the canonical section order, dropping empty sections. */
@@ -48,9 +48,9 @@ export interface ActionOption {
 }
 
 const TERMINAL_OPTIONS: readonly ActionOption[] = [
-  { action: "approve", label: "Approve as-is", key: "a" },
-  { action: "skip", label: "Skip this step", key: "s" },
-  { action: "abort", label: "Abort the run", key: "x" },
+  { action: "approve", label: "approve as-is", key: "a" },
+  { action: "skip", label: "skip this step", key: "s" },
+  { action: "abort", label: "abort the run", key: "x" },
 ];
 
 export function suggestedSelection(input: ApproveFindingsInput): readonly string[] {
@@ -64,7 +64,7 @@ export function actionOptions(selectedFindingIds: readonly string[]): readonly A
     ? [
         {
           action: "fix",
-          label: `Fix selected findings (${selectedFindingIds.length})`,
+          label: `fix selected findings (${selectedFindingIds.length})`,
           key: "f",
         },
         ...TERMINAL_OPTIONS,
@@ -106,7 +106,7 @@ function plural(count: number, word: string): string {
 
 /** One-line disposition tally for the drawer header. */
 export function summaryLine(findings: readonly Finding[]): string {
-  if (findings.length === 0) return "No findings.";
+  if (findings.length === 0) return "no findings.";
   let blockers = 0;
   let shouldFix = 0;
   let consider = 0;

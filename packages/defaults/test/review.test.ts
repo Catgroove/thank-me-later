@@ -50,7 +50,7 @@ describe("review step", () => {
 
     await reviewStep().run(ctx);
 
-    expect(phases.map((p) => p.label)).toEqual(["Code review"]);
+    expect(phases.map((p) => p.label)).toEqual(["code review"]);
     expect(phases.map((p) => p.group)).toEqual(["initial"]);
   });
 
@@ -75,7 +75,7 @@ describe("review step", () => {
     expect(agent.tasks[1]).toContain("Prior review round history");
     expect(agent.tasks[1]).toContain("Round 0: initial");
     expect(phases.map((p) => p.group)).toEqual(["initial", "fix · attempt 1"]);
-    expect(phases.find((p) => p.group?.startsWith("fix"))?.label).toBe("Apply fixes");
+    expect(phases.find((p) => p.group?.startsWith("fix"))?.label).toBe("apply fixes");
     expect(recordedRounds.map((r) => r.trigger)).toEqual(["initial", "auto_fix"]);
     expect(recordedRounds.map((r) => r.trigger)).not.toContain("verify");
     expect(summaryOf(result)).toContain("fixed");

@@ -23,7 +23,7 @@ import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
 import { parseReviewFindings, summarize } from "../review/synthesize.ts";
 import { fixCommitSubject } from "../semantic-commit.ts";
 
-const REVIEW_PASS_TITLE = "Code review";
+const REVIEW_PASS_TITLE = "code review";
 
 // Review fixes obvious, safe findings once (fire-and-forget, no re-review) and routes judgement
 // calls to the human gate. Unlike the objective checks (quality/test/ci), re-reviewing a
@@ -96,7 +96,7 @@ export function reviewStep(): Step {
         },
         async fix(input) {
           return ctx.phase(
-            "Apply fixes",
+            "apply fixes",
             async () => {
               const result = await ctx.agent.run(fixPrompt(input.findings, input.historyText));
               return { summary: result.summary };

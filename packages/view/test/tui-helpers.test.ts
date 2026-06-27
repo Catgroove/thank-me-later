@@ -127,7 +127,7 @@ describe("tui approval helpers", () => {
   test("summaryLine tallies dispositions, dropping the redundant total for one bucket", () => {
     expect(summaryLine([f1, f2])).toBe("1 blocker · 1 should-fix · 2 findings");
     expect(summaryLine([f1])).toBe("1 blocker");
-    expect(summaryLine([])).toBe("No findings.");
+    expect(summaryLine([])).toBe("no findings.");
   });
 
   test("findingSections groups by action, most-actionable first, dropping empty sections", () => {
