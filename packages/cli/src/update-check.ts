@@ -67,6 +67,7 @@ export function maybeStartCheck(deps: CheckDeps = {}): Promise<void> | undefined
 
 async function runCheck(input: { fetch: Fetch; now: number; path: string }): Promise<void> {
   const latestVersion = await resolveLatestVersion(input.fetch);
+  if (latestVersion === null) return;
   const state: CacheState = { lastCheckAt: input.now, latestVersion };
   try {
     await mkdir(dirname(input.path), { recursive: true });

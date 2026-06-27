@@ -111,7 +111,7 @@ export async function update(deps: UpdateDeps = {}): Promise<number> {
   if (code !== 0) {
     error("tml update: the installer failed. Run it yourself:");
     error(
-      `  TML_INSTALL_DIR="${installDir}" TML_VERSION="${tag}" sh -c 'curl -fsSL ${INSTALL_URL} | sh'`,
+      `  TML_INSTALL_DIR="${installDir}" TML_VERSION="${tag}" sh -c '${installerScript()}'`,
     );
     return 1;
   }
@@ -121,13 +121,20 @@ export async function update(deps: UpdateDeps = {}): Promise<number> {
 
 /** Re-run the canonical installer, pinned to `tag` and targeting the current install dir. */
 async function defaultSpawn(input: { tag: string; installDir: string }): Promise<number> {
-  const proc = Bun.spawn(["sh", "-c", `curl -fsSL ${INSTALL_URL} | sh`], {
+  const proc = Bun.spawn(["sh", "-c", installerScript()], {
     env: { ...process.env, TML_VERSION: input.tag, TML_INSTALL_DIR: input.installDir },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });
   return proc.exited;
+}
+
+function installerScript(): string {
+  return [
+    `tmp=$(mktemp) && curl -fsSL ${INSTALL_URL} -o "$tmp" && sh "$tmp"`,
+    `code=$?; rm -f "$tmp"; exit "$code"`,
+  ].join("; ");
 }
 
 function isDevExecPath(execPath: string): boolean {
