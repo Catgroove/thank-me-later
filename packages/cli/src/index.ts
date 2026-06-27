@@ -16,6 +16,7 @@ import {
   failingAskResponder,
   initialView,
   type InteractiveRenderer,
+  openSystemUrl,
   present,
   type Renderer,
 } from "@tml/view";
@@ -48,6 +49,8 @@ export interface ShipDeps {
   verbose?: boolean;
   /** Force the append-only/inline terminal renderer instead of the full-screen TUI (`--plain`). */
   plain?: boolean;
+  /** Open the Run's PR in the browser when it finishes; overrides the `tml.json` `openInBrowser` knob. */
+  openInBrowser?: boolean;
   /** Whether stdout is a TTY. Defaults to `process.stdout.isTTY`; injected by tests. */
   isTTY?: boolean;
   /** Override the renderer; defaults to the TTY-vs-plain-vs-TUI selection below. */
@@ -87,8 +90,17 @@ const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 14
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
+  // `openInBrowser` is a presentation knob read from `tml.json`, not part of the pipeline Config, so
+  // the default `buildConfig` captures it off the same load instead of parsing config a second time.
+  // An injected `buildConfig` (tests) leaves it false unless overridden via `deps.openInBrowser`.
+  let configOpenInBrowser = false;
   const buildConfig =
-    deps.buildConfig ?? ((dir: string) => assembleShipConfig(dir, loadTmlConfig(dir)));
+    deps.buildConfig ??
+    ((dir: string) => {
+      const loaded = loadTmlConfig(dir);
+      configOpenInBrowser = loaded.openInBrowser;
+      return assembleShipConfig(dir, loaded);
+    });
   const engineFor = deps.engineFor ?? createEngine;
   const verbose = deps.verbose ?? false;
   // Closing the TUI while the Run is active aborts it through this controller (ending the Run with
@@ -180,6 +192,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     }
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);
+    // Best-effort: with `openInBrowser` set, do for the user what the TUI `o` key does once the Run
+    // has a PR and reached a non-cancelled terminal state. Opening here (after teardown) avoids
+    // stealing focus from a live TUI; a user-cancelled Run is left alone.
+    const openInBrowser = deps.openInBrowser ?? configOpenInBrowser;
+    if (openInBrowser && view.prUrl !== undefined && view.status !== "cancelled") {
+      openSystemUrl(view.prUrl);
+    }
     if (fatalErrorMessage !== undefined) console.error(fatalErrorMessage);
   }
 }

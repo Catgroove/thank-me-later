@@ -13,6 +13,7 @@ import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { render } from "@opentui/solid";
 import { createSignal } from "solid-js";
 import type { ApprovalDecision, ApprovalFindingsInput, RunEvent } from "@tml/core";
+import { openSystemUrl } from "./open-url.ts";
 import { initialView, type ViewState } from "./present.ts";
 import type { InteractiveRenderer } from "./renderer.ts";
 import { App } from "./tui/App.tsx";
@@ -67,19 +68,6 @@ function clipboardCommands(): ReadonlyArray<readonly [string, readonly string[]]
     ["xclip", ["-selection", "clipboard"]],
     ["xsel", ["--clipboard", "--input"]],
   ];
-}
-
-/** Open a URL in the user's default browser, the OS-native way. Best-effort; failure is silent. */
-function openSystemUrl(url: string): void {
-  const [command, args] = openCommand();
-  spawnSync(command, [...args, url], { stdio: "ignore" });
-}
-
-function openCommand(): readonly [string, readonly string[]] {
-  if (process.platform === "darwin") return ["open", []];
-  // `start` is a cmd builtin; the empty "" is its window-title argument so a quoted URL is not eaten.
-  if (process.platform === "win32") return ["cmd", ["/c", "start", ""]];
-  return ["xdg-open", []];
 }
 
 export async function createTuiRenderer(

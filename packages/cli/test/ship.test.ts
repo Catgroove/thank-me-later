@@ -43,7 +43,7 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-const NO_CONFIG: Loaded = { selection: {}, pluginPaths: [] };
+const NO_CONFIG: Loaded = { selection: {}, pluginPaths: [], openInBrowser: false };
 
 const ENTRY = new URL("../src/index.ts", import.meta.url).pathname;
 
@@ -185,6 +185,7 @@ describe("assembleShipConfig", () => {
     const config = await assembleShipConfig("/repo", {
       selection: { disable: ["quality"], models: { review: "opus" } },
       pluginPaths: [],
+      openInBrowser: false,
     });
     expect(config.pipeline.map((s) => s.name)).not.toContain("quality");
     expect(config.pipeline.map((s) => s.name)).toContain("test");
@@ -197,7 +198,11 @@ describe("assembleShipConfig", () => {
          tml.pipeline.insertAfter("review", tml.defineStep({ name: "deep-review", run: () => Promise.resolve({}) }));
        };`,
     );
-    const config = await assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] });
+    const config = await assembleShipConfig("/repo", {
+      selection: {},
+      pluginPaths: [path],
+      openInBrowser: false,
+    });
     const names = config.pipeline.map((s) => s.name);
     expect(names).toContain("deep-review");
     expect(names.indexOf("deep-review")).toBe(names.indexOf("review") + 1);
@@ -206,7 +211,11 @@ describe("assembleShipConfig", () => {
   test("rejects a plugin whose default export is not a function", async () => {
     const path = pluginFile(`export default 42;`);
     try {
-      await assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] });
+      await assembleShipConfig("/repo", {
+        selection: {},
+        pluginPaths: [path],
+        openInBrowser: false,
+      });
       throw new Error("assembleShipConfig unexpectedly resolved");
     } catch (error) {
       expect(error instanceof Error ? error.message : String(error)).toMatch(
@@ -218,7 +227,11 @@ describe("assembleShipConfig", () => {
   test("names the plugin path when a plugin throws while patching", async () => {
     const path = pluginFile(`export default () => { throw new Error("boom"); };`);
     try {
-      await assembleShipConfig("/repo", { selection: {}, pluginPaths: [path] });
+      await assembleShipConfig("/repo", {
+        selection: {},
+        pluginPaths: [path],
+        openInBrowser: false,
+      });
       throw new Error("assembleShipConfig unexpectedly resolved");
     } catch (error) {
       expect(error instanceof Error ? error.message : String(error)).toMatch(

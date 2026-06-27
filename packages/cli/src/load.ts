@@ -2,7 +2,7 @@
 //   • global   — $XDG_CONFIG_HOME/tml/tml.json  (or ~/.config/tml/tml.json)
 //   • project  — <git-root>/tml.json            (walking up from cwd; falls back to cwd)
 // They deep-merge with the project winning per key; the `plugins` arrays concatenate (global
-// then project) and `disable` unions; provider/branch/maxFixAttempts scalars are project-over-global. Plugin
+// then project) and `disable` unions; provider/branch/maxFixAttempts/openInBrowser scalars are project-over-global. Plugin
 // entries are resolved to absolute paths against *their own* config file's directory (so a
 // global plugin path isn't reinterpreted relative to the repo). Missing files → empty config,
 // which is the zero-config path: `tml ship` then runs the bundled defaults unchanged.
@@ -27,6 +27,7 @@ const ALLOWED_KEYS = new Set([
   "models",
   "disable",
   "plugins",
+  "openInBrowser",
 ]);
 
 export interface LoadOptions {
@@ -43,6 +44,8 @@ export interface Loaded {
   selection: Selection;
   /** Absolute paths to local plugin files, global first then project. */
   pluginPaths: string[];
+  /** Open the Run's PR in the browser when the Run finishes (same as the TUI `o` key). Default false. */
+  openInBrowser: boolean;
 }
 
 interface RawConfig {
@@ -53,6 +56,7 @@ interface RawConfig {
   models?: ModelMap;
   disable?: string[];
   plugins?: string[];
+  openInBrowser?: boolean;
 }
 
 export function loadTmlConfig(cwd: string, opts: LoadOptions = {}): Loaded {
@@ -70,7 +74,9 @@ export function loadTmlConfig(cwd: string, opts: LoadOptions = {}): Loaded {
     ...resolvePlugins(project?.plugins, projectRoot, projectFile),
   ];
 
-  return { selection: mergeSelection(global, project), pluginPaths };
+  const openInBrowser = project?.openInBrowser ?? global?.openInBrowser ?? false;
+
+  return { selection: mergeSelection(global, project), pluginPaths, openInBrowser };
 }
 
 function defaultConfigHome(env: Record<string, string | undefined>): string {
@@ -126,7 +132,14 @@ function validate(data: unknown, path: string): RawConfig {
   assertModels(obj, path);
   assertStringArray(obj, "disable", path);
   assertStringArray(obj, "plugins", path);
+  assertBoolean(obj, "openInBrowser", path);
   return obj as RawConfig;
+}
+
+function assertBoolean(obj: Record<string, unknown>, key: string, path: string): void {
+  if (obj[key] !== undefined && typeof obj[key] !== "boolean") {
+    throw new Error(`tml: "${key}" in ${path} must be a boolean.`);
+  }
 }
 
 function assertString(obj: Record<string, unknown>, key: string, path: string): void {
