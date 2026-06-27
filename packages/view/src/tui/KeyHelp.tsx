@@ -2,6 +2,7 @@
 // The help overlay (toggled with `?`): the fixed, generic keybindings. No Step-specific entries.
 
 import { For } from "solid-js";
+import { theme } from "./theme.ts";
 
 const KEYS: ReadonlyArray<readonly [string, string]> = [
   ["j / k, ↑ / ↓", "move step selection"],
@@ -19,18 +20,18 @@ export function KeyHelp() {
     <box
       flexDirection="column"
       border
-      borderColor="#38bdf8"
+      borderColor={theme.borderAccent}
       title="keys"
       padding={1}
-      backgroundColor="#0f172a"
+      backgroundColor={theme.overlayBg}
     >
       <For each={KEYS}>
         {([key, description]) => (
           <box flexDirection="row">
-            <text fg="#38bdf8" width={18}>
+            <text fg={theme.accent} width={18}>
               {key}
             </text>
-            <text fg="#cbd5e1">{description}</text>
+            <text fg={theme.text}>{description}</text>
           </box>
         )}
       </For>

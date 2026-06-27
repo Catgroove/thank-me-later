@@ -11,6 +11,7 @@ import { useKeyboard } from "@opentui/solid";
 import type { ActivityEntry, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import { runElapsed, statusColor } from "./format.ts";
+import { theme } from "./theme.ts";
 import { initialNav, navOnKey, type NavState } from "./navigation.ts";
 import {
   actionOptions,
@@ -210,7 +211,7 @@ export function App(props: AppProps) {
   };
 
   return (
-    <box flexDirection="column" width="100%" height="100%" paddingTop={1} backgroundColor="#0b1120">
+    <box flexDirection="column" width="100%" height="100%" paddingTop={1}>
       <Header view={props.view} now={props.now} />
       <box flexGrow={7} flexBasis={0} flexDirection="row">
         <PipelineRail view={props.view} nav={nav} now={props.now} />
@@ -261,14 +262,14 @@ function DoneBanner(props: { view: Accessor<ViewState> }) {
   const detail = () =>
     status() === "failed" ? (props.view().error ?? "") : (props.view().prUrl ?? "");
   return (
-    <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
+    <box flexDirection="row" paddingLeft={1} paddingRight={1}>
       <text fg={statusColor(stepStatusOf(status()))} attributes={1}>
         {label()}
       </text>
-      <text flexGrow={1} marginLeft={2} fg={status() === "failed" ? "#fca5a5" : "#22d3ee"}>
+      <text flexGrow={1} marginLeft={2} fg={status() === "failed" ? theme.failed : theme.info}>
         {sanitize(detail())}
       </text>
-      <text fg="#94a3b8">
+      <text fg={theme.textMuted}>
         {props.view().prUrl !== undefined ? "o open PR · " : ""}press q to exit
       </text>
     </box>
@@ -310,8 +311,8 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
   const branch = () => props.view().currentBranch;
   const elapsed = () => runElapsed(props.view(), props.now());
   return (
-    <box flexDirection="row" paddingLeft={1} paddingRight={1} backgroundColor="#111827">
-      <text fg="#38bdf8" attributes={1}>
+    <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+      <text fg={theme.accent} attributes={1}>
         tml
       </text>
       <text marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
@@ -319,16 +320,16 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
         {active() ? ` · ${sanitize(active() ?? "")}` : ""}
       </text>
       <Show when={branch() !== undefined}>
-        <text marginLeft={2} fg="#94a3b8">
+        <text marginLeft={2} fg={theme.textMuted}>
           {`⎇ ${sanitize(truncateBranch(branch() ?? ""))}`}
         </text>
       </Show>
       <box flexGrow={1} />
       <Show when={elapsed() !== ""}>
-        <text fg="#64748b">total {elapsed()}</text>
+        <text fg={theme.textFaint}>total {elapsed()}</text>
       </Show>
       <Show when={props.view().prUrl !== undefined}>
-        <text marginLeft={2} fg="#22d3ee">
+        <text marginLeft={2} fg={theme.info}>
           {sanitize(props.view().prUrl ?? "")}
         </text>
       </Show>
@@ -358,7 +359,7 @@ function ActivityLine(props: { entry: ActivityEntry; view: ViewState }) {
   };
   return (
     <text
-      fg={e.kind === "tool" ? "#a78bfa" : e.kind === "log" ? "#94a3b8" : "#cbd5e1"}
+      fg={e.kind === "tool" ? theme.tool : e.kind === "log" ? theme.textMuted : theme.text}
       wrapMode="word"
     >
       {sanitize(line())}
@@ -379,13 +380,13 @@ function ActivityPanel(props: { view: Accessor<ViewState> }) {
       flexBasis={0}
       flexDirection="column"
       border
-      borderColor="#a78bfa"
+      borderColor={theme.tool}
       title="activity"
     >
       <scrollbox flexGrow={1} stickyScroll stickyStart="bottom" paddingLeft={1} paddingRight={1}>
         <Show
           when={props.view().globalActivity.length > 0}
-          fallback={<text fg="#64748b">no activity yet.</text>}
+          fallback={<text fg={theme.textFaint}>no activity yet.</text>}
         >
           <For each={props.view().globalActivity}>
             {(entry) => <ActivityLine entry={entry} view={props.view()} />}
@@ -398,8 +399,14 @@ function ActivityPanel(props: { view: Accessor<ViewState> }) {
 
 function AbortConfirm() {
   return (
-    <box border borderColor="#ef4444" title="abort" padding={1} backgroundColor="#1f1311">
-      <text fg="#fca5a5">
+    <box
+      border
+      borderColor={theme.borderError}
+      title="abort"
+      padding={1}
+      backgroundColor={theme.overlayBg}
+    >
+      <text fg={theme.failed}>
         Abort the Run? y to confirm · n to keep going · ctrl-c again to abort now
       </text>
     </box>
@@ -410,8 +417,8 @@ function FooterKeys(props: { view: Accessor<ViewState> }) {
   // The PR-open hint only appears once a PR exists, so the key we advertise always does something.
   const openHint = () => (props.view().prUrl !== undefined ? " · o open PR" : "");
   return (
-    <box paddingLeft={1} backgroundColor="#0b1120">
-      <text fg="#475569">
+    <box paddingLeft={1}>
+      <text fg={theme.textFaint}>
         j/k move · . follow · tab tabs · enter expand · y/cmd-c copy selection{openHint()} · ? help
         · q abort
       </text>

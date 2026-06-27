@@ -1,19 +1,15 @@
 // Small pure formatting helpers shared by the TUI components: status glyphs/labels and human
 // duration/elapsed strings.
 
-import type { Finding, FindingDisposition } from "@tml/core";
+import type { Finding } from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
+import { theme } from "./theme.ts";
 
 export type StepStatus = StepView["status"];
 
 /** Disposition accent color, shared by the findings inspector and the approval drawer. */
-export const DISPOSITION_COLOR: Record<FindingDisposition, string> = {
-  blocker: "#ef4444",
-  "should-fix": "#f59e0b",
-  consider: "#38bdf8",
-  nit: "#94a3b8",
-};
+export const DISPOSITION_COLOR = theme.disposition;
 
 /** The `[disposition]` marker prefixing a finding line in both finding surfaces. */
 export function findingMarker(finding: Finding): string {
@@ -44,11 +40,11 @@ const GLYPHS: Record<StepStatus, string> = {
 };
 
 const COLORS: Record<StepStatus, string> = {
-  pending: "#6b7280",
-  active: "#38bdf8",
-  done: "#22c55e",
-  skipped: "#9ca3af",
-  failed: "#ef4444",
+  pending: theme.textFaint,
+  active: theme.accent,
+  done: theme.success,
+  skipped: theme.textMuted,
+  failed: theme.failed,
 };
 
 export function statusGlyph(status: StepStatus): string {
@@ -61,11 +57,11 @@ export function statusColor(status: StepStatus): string {
 
 /**
  * Glyph and color for an active Step blocked on a human decision (an `ask`/`approval` gate). Such a
- * Step is not working - it is waiting on *you* - so it must not wear the busy spinner. The amber
- * matches the interaction drawer's "input needed"/"approval needed" framing.
+ * Step is not working - it is waiting on *you* - so it must not wear the busy spinner. The `waiting`
+ * accent matches the interaction drawer's "input needed"/"approval needed" framing.
  */
 export const WAITING_GLYPH = "?";
-export const WAITING_COLOR = "#f59e0b";
+export const WAITING_COLOR = theme.waiting;
 
 /** A compact human duration: "0.4s", "12s", "3m 05s". Empty when unknown. */
 export function formatDuration(ms: number | undefined): string {

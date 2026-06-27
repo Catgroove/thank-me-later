@@ -19,6 +19,7 @@ import {
   WAITING_COLOR,
   WAITING_GLYPH,
 } from "./format.ts";
+import { theme } from "./theme.ts";
 import { effectiveIndex, type NavState } from "./navigation.ts";
 import { ensureSpinner } from "./spinner.ts";
 
@@ -36,7 +37,7 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
       : "";
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-      <text flexShrink={0} fg="#475569">
+      <text flexShrink={0} fg={theme.textFaint}>
         {props.last ? " └ " : " ├ "}
       </text>
       {props.phase.status === "active" ? (
@@ -46,10 +47,17 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
           {statusGlyph(props.phase.status)}
         </text>
       )}
-      <text flexGrow={1} flexShrink={1} marginLeft={1} fg="#94a3b8" wrapMode="none" truncate>
+      <text
+        flexGrow={1}
+        flexShrink={1}
+        marginLeft={1}
+        fg={theme.textMuted}
+        wrapMode="none"
+        truncate
+      >
         {sanitize(props.phase.label)}
       </text>
-      <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
+      <text flexShrink={0} marginLeft={1} fg={theme.textFaint} wrapMode="none">
         {elapsed()}
         {count()}
       </text>
@@ -71,7 +79,7 @@ function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<nu
         flexDirection="row"
         paddingLeft={1}
         paddingRight={1}
-        backgroundColor={isSelected() ? "#1e293b" : undefined}
+        backgroundColor={isSelected() ? theme.selectionBg : undefined}
       >
         {props.step.status !== "active" ? (
           <text flexShrink={0} fg={statusColor(props.step.status)}>
@@ -88,13 +96,13 @@ function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<nu
           flexGrow={1}
           flexShrink={1}
           marginLeft={1}
-          fg={isSelected() ? "#e2e8f0" : "#cbd5e1"}
+          fg={isSelected() ? theme.focusFg : theme.text}
           wrapMode="none"
           truncate
         >
           {sanitize(props.step.name)}
         </text>
-        <text flexShrink={0} marginLeft={1} fg="#64748b" wrapMode="none">
+        <text flexShrink={0} marginLeft={1} fg={theme.textFaint} wrapMode="none">
           {elapsed()}
         </text>
       </box>
@@ -116,7 +124,7 @@ export function PipelineRail(props: RailProps) {
       flexDirection="column"
       width={railWidth(props.view())}
       border
-      borderColor="#334155"
+      borderColor={theme.border}
       title="pipeline"
       padding={0}
     >
