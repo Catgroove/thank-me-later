@@ -142,11 +142,11 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
 }
 
 // The detailed view of a finding: the status glyph, the `[disposition]` severity badge, and the
-// title share the header row (the title takes the remaining width and wraps under itself); the
-// file:line sits below as a dim secondary header, then the evidence. The glyph and its colour carry
-// the lifecycle status - the aggregate tally at the top of the tab spells it out in words - so the
-// header row stays free of a right-hand tag that would collide with a wrapping title. The badge
-// carries severity colour; the title carries prominence. Focused background matches the drawer.
+// title flow as one wrapping line (inline spans, so a long title wraps to the full left edge rather
+// than hanging-indenting under the badge); the file:line sits below as a dim secondary header, then
+// the evidence. The glyph and its colour carry the lifecycle status - the aggregate tally at the top
+// of the tab spells it out in words - so there is no right-hand tag to collide with the title. The
+// badge carries severity colour; the title carries prominence. Focused background matches the drawer.
 function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const f = () => props.entry.finding;
   const meta = () => STATUS_META[props.entry.status];
@@ -163,24 +163,11 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
       paddingRight={1}
       backgroundColor={props.focused ? theme.focusBg : undefined}
     >
-      <box flexDirection="row">
-        <text flexShrink={0} fg={meta().color}>
-          {meta().glyph}
-        </text>
-        <text flexShrink={0} marginLeft={1} fg={badgeColor()}>
-          {marker()}
-        </text>
-        <text
-          flexGrow={1}
-          flexShrink={1}
-          marginLeft={1}
-          fg={titleColor()}
-          attributes={1}
-          wrapMode="word"
-        >
-          {sanitize(f().title)}
-        </text>
-      </box>
+      <text wrapMode="word">
+        <span style={{ fg: meta().color }}>{meta().glyph} </span>
+        <span style={{ fg: badgeColor() }}>{marker()} </span>
+        <strong style={{ fg: titleColor() }}>{sanitize(f().title)}</strong>
+      </text>
       <Show when={f().location}>
         <text fg={theme.textFaint} wrapMode="word">
           {sanitize(f().location ?? "")}

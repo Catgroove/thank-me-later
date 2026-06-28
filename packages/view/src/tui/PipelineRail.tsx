@@ -10,11 +10,9 @@ import type { Accessor } from "solid-js";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
-  findingTally,
   latestGroupPhases,
   phaseElapsed,
   railWidth,
-  stepChecklist,
   stepElapsed,
   statusColor,
   statusGlyph,
@@ -33,10 +31,6 @@ export interface RailProps {
 
 function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
   const elapsed = () => phaseElapsed(props.phase, props.now);
-  const count = () =>
-    props.phase.status === "done" && props.phase.findings.length > 0
-      ? ` ${props.phase.findings.length}`
-      : "";
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1}>
       <text flexShrink={0} fg={theme.textFaint}>
@@ -61,35 +55,8 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
       </text>
       <text flexShrink={0} marginLeft={1} fg={theme.textFaint} wrapMode="none">
         {elapsed()}
-        {count()}
       </text>
     </box>
-  );
-}
-
-/** A dim sub-line beneath the Step name with compact glyph+count chips summarising its finding
- *  lifecycle: ✓ fixed, ✗ unresolved, ? needs you, ⟳ pending - so "is it fixed / does it need me" reads
- *  off the rail without opening the inspector. On its own row (not the trailing zone) so the elapsed
- *  column stays aligned across every step. Renders nothing for Steps with no findings. The two-space
- *  lead aligns the chips under the Step name (past the status glyph). */
-function RailTally(props: { step: StepView }) {
-  const segments = () => findingTally(stepChecklist(props.step));
-  return (
-    <Show when={segments().length > 0}>
-      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-        <text flexShrink={0} fg={theme.textFaint} wrapMode="none">
-          {"  "}
-        </text>
-        <For each={segments()}>
-          {(segment, i) => (
-            <text flexShrink={0} marginLeft={i() === 0 ? 0 : 1} fg={segment.color} wrapMode="none">
-              {segment.glyph}
-              {segment.count}
-            </text>
-          )}
-        </For>
-      </box>
-    </Show>
   );
 }
 
@@ -134,7 +101,6 @@ function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<nu
           {elapsed()}
         </text>
       </box>
-      <RailTally step={props.step} />
       <Show when={phases().length > 0}>
         <For each={phases()}>
           {(phase, i) => (

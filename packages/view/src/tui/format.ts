@@ -242,7 +242,7 @@ export function runElapsed(view: ViewState, now: number): string {
 // Column budget for the pipeline rail, beyond the longest Step name / Phase label:
 const RAIL_MIN_WIDTH = 30; // never shrink below the historical fixed width
 const RAIL_MAX_WIDTH = 56; // cap so the Step inspector keeps room on narrow terminals
-const RAIL_TRAIL = 11; // leading space + widest elapsed ("10m 09s") + a findings count (" 99")
+const RAIL_TRAIL = 8; // leading space + widest elapsed ("10m 09s")
 const RAIL_STEP_LEAD = 2; // status glyph + one-space margin before the name
 const RAIL_PHASE_LEAD = 5; // " └ " tree branch + glyph + one-space margin before the label
 const RAIL_FRAME = 4; // left+right border (2) + left+right row padding (2)
