@@ -57,6 +57,53 @@ the Git provider. A long-lived `--watch` is merely a loop of re-entries; a multi
 a non-goal.
 _Avoid_: Resume, retrigger, wake
 
+**Parked Run**:
+A Run that ended without finishing - cancelled, failed, or interrupted - and so sits in the Run
+Journal as resumable. A bare `tml` on the same branch surfaces the parked Run through the Startup
+gate rather than silently starting over.
+_Avoid_: Stopped run, saved run, draft
+
+**Orphaned Run**:
+A Run still marked `running` whose owning process is gone - a crash or hard kill skipped the
+cancellation path, so it never reached a terminal status. Distinguished from a genuinely live Run by
+its recorded `owner` (pid + host): a dead pid on this host, or staleness on another, marks it
+orphaned and therefore resumable. See Liveness.
+_Avoid_: Stale run, zombie, dead session
+
+**Liveness**:
+The classification of a `running` Run as `live` (its owner process is running on this host),
+`orphaned` (the owner is gone), or `unknown` (it is on another host we cannot probe). The Run's
+metadata is its lock: `begin` refuses to re-enter a Run whose owner is live, so two engines never
+share one journal and workspace ([[0021-reruns-consult-run-history]]).
+_Avoid_: Heartbeat, lease, lock file
+
+**Viewer**:
+A read-only presentation of a Run, reconstructed by folding its recorded Event stream through the
+same `present` reducer the live renderers use ([[0011-presentation-is-a-pure-fold]]). It conducts
+nothing - no engine, no Providers, no mutation. It replays a finished Run's outcome, or tails a live
+one (see Attach).
+_Avoid_: Replayer, log viewer, history renderer
+
+**Attach**:
+Following a still-running Run read-only from another terminal: the Viewer tails the Run's growing
+Event stream until a terminal Event. Attach never takes ownership - the Run stays owned by its
+original process - so quitting detaches rather than aborting. Distinct from Re-entry (a new Run) and
+resume (reclaiming a parked Run).
+_Avoid_: Reattach, takeover, join
+
+**Startup gate**:
+The choice a bare `tml` presents on an interactive TTY when an unfinished Run for the current branch
+exists: resume it, attach to it, start fresh, or list all Runs - instead of unconditionally starting
+fresh. A non-TTY/CI run, `--plain`, or an explicit `--fresh`/`--resume` skips the gate
+([[0021-reruns-consult-run-history]]).
+_Avoid_: Prompt, menu, wizard
+
+**Run picker**:
+The interactive list of a checkout's recent Runs (`tml runs`, alias `tml ls`), from which one can be
+opened: a finished Run in the Viewer, an unfinished one resumed, a live one attached to. Piped, the
+same command prints a plain table.
+_Avoid_: Run browser, dashboard, history list
+
 **Conductor**:
 The principle that tml — not the agent — owns the control loop. tml decides what runs
 next; steps may delegate work to an agent but do not seize control.

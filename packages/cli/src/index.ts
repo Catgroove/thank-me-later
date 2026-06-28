@@ -1,11 +1,15 @@
 #!/usr/bin/env bun
 
 import {
+  classifyLiveness,
   type Config,
   createEngine,
+  createGit,
   type Engine,
   type EngineOptions,
   createRunJournal,
+  listRuns,
+  runMatchesBranch,
   type RunEvent,
   type RunJournal,
   type RunJournalResumeMode,
@@ -31,6 +35,7 @@ import {
   worktreeIsolation,
 } from "./isolated-run.ts";
 import { loadTmlConfig } from "./load.ts";
+import { runs, viewRun } from "./runs.ts";
 import { update } from "./update.ts";
 import { maybeStartCheck, updateNotice } from "./update-check.ts";
 import { VERSION } from "./version.ts";
@@ -278,6 +283,8 @@ pipeline that branches, runs checks, reviews, opens a PR, and waits on CI.
 
 Usage:
   tml [options]            Run the pipeline on the current checkout.
+  tml runs                 List recent runs for this checkout. (alias: ls)
+  tml runs <id>            View a past run, or attach to one still running.
   tml init [options]       Scaffold a starter tml.json at the project root.
   tml update               Update tml to the latest release.
   tml version              Print the installed version.
@@ -363,6 +370,17 @@ async function dispatch(
     }
     return agents();
   }
+  if (command === "runs" || command === "ls") {
+    if (rest.some(isHelp)) {
+      console.log(HELP);
+      return 0;
+    }
+    const id = rest.find((arg) => !arg.startsWith("-"));
+    if (id !== undefined) return viewRun({ runId: id });
+    // A TTY opens the interactive picker; piped output prints the plain table.
+    if (process.stdout.isTTY) return pickRun();
+    return runs();
+  }
   // Running the pipeline is the default command: `tml [options]`. `ship` remains accepted as an
   // explicit alias so existing invocations keep working, but it is no longer required or advertised.
   const shipArgv = command === "ship" ? rest : argv;
@@ -377,7 +395,77 @@ async function dispatch(
     console.error(errorMessage(error));
     return 1;
   }
+  // Bare `tml` on a TTY consults run history first: if an unfinished run for this branch exists, the
+  // gate offers resume/attach/list before starting fresh. An explicit --fresh/--resume, --plain, or
+  // a non-TTY skips it and runs straight through (scripts and CI are unaffected).
+  if (shouldGate(args, !!process.stdout.isTTY)) return gateAndRun(args);
   return ship(args);
+}
+
+/** Whether bare `tml` should consult the startup gate: an interactive TTY with no explicit selection. */
+export function shouldGate(args: ShipArgs, isTTY: boolean): boolean {
+  return isTTY && !args.plain && args.journalResume === undefined;
+}
+
+/**
+ * Consult run history for the current branch and act on the user's choice. With no unfinished run for
+ * the branch, it starts fresh exactly as before; otherwise it shows the gate and maps the decision
+ * onto resume, the viewer (attach), the picker (list all), a fresh run, or quitting.
+ */
+async function gateAndRun(args: ShipArgs): Promise<number> {
+  const cwd = process.cwd();
+  const branch = await currentBranchOrUndefined(cwd);
+  const all = await listRuns({ checkoutPath: cwd });
+  // The newest unfinished run for this branch is the candidate; listRuns is already newest-first.
+  const candidate = all.find((run) => run.status !== "finished" && runMatchesBranch(run, branch));
+  if (candidate === undefined) return ship(args);
+
+  const live = classifyLiveness(candidate, { now: Date.now() }) === "live";
+  const { runStartupGate } = await import("@tml/view/tui");
+  const decision = await runStartupGate({ run: candidate, live });
+  switch (decision) {
+    case "resume":
+      return ship({ ...args, journalResume: "exact", runId: candidate.runId });
+    case "attach":
+      return viewRun({ runId: candidate.runId });
+    case "list":
+      return pickRun();
+    case "fresh":
+      return ship({ ...args, journalResume: "fresh" });
+    case "quit":
+      return 0;
+  }
+}
+
+/** The current git branch of a checkout, or undefined if HEAD is detached/unreadable. */
+async function currentBranchOrUndefined(cwd: string): Promise<string | undefined> {
+  try {
+    const branch = await createGit(cwd).currentBranch();
+    return branch.length > 0 ? branch : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Open the interactive Run picker for the current checkout and act on the choice: resume re-enters
+ * the engine (the journal surfaces a since-changed Pipeline as a clear error), view/attach open the
+ * read-only viewer. The OpenTUI picker is lazy-imported so non-TTY paths never load it.
+ */
+async function pickRun(): Promise<number> {
+  const cwd = process.cwd();
+  const all = await listRuns({ checkoutPath: cwd });
+  if (all.length === 0) {
+    console.log("No runs recorded for this checkout yet.");
+    return 0;
+  }
+  const { runPicker } = await import("@tml/view/tui");
+  const outcome = await runPicker(all);
+  if (outcome.kind === "quit") return 0;
+  if (outcome.action === "resume") {
+    return ship({ journalResume: "exact", runId: outcome.run.runId });
+  }
+  return viewRun({ runId: outcome.run.runId });
 }
 
 // Only run the CLI when invoked directly — importing this module (e.g. from tests) must not

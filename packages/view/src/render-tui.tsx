@@ -15,10 +15,15 @@ import { createSignal } from "solid-js";
 import type { ApprovalDecision, ApprovalFindingsInput, RunEvent } from "@tml/core";
 import { openSystemUrl } from "./open-url.ts";
 import { initialView, type ViewState } from "./present.ts";
-import type { InteractiveRenderer } from "./renderer.ts";
+import type { InteractiveRenderer, Renderer } from "./renderer.ts";
+import type { RunMetadata } from "@tml/core";
+import type { GateDecision } from "./gate.ts";
+import type { PickerOutcome } from "./picker.ts";
 import { App } from "./tui/App.tsx";
 import { createInteractions, type ActivePrompt } from "./tui/interaction.ts";
 import { epilogueLines } from "./tui/epilogue.ts";
+import { RunList } from "./tui/RunList.tsx";
+import { StartupGate } from "./tui/StartupGate.tsx";
 
 export interface TuiRendererOptions {
   /** Abort the Run when the user closes the TUI while it is active. */
@@ -161,4 +166,173 @@ export async function createTuiRenderer(
       if (lines.length > 0) process.stdout.write(`${lines.join("\n")}\n`);
     },
   };
+}
+
+export interface ViewerRendererOptions {
+  /** Clock for live elapsed displays. Defaults to `Date.now`; injectable for tests. */
+  readonly now?: () => number;
+}
+
+/** A read-only renderer that also reports when the user has detached, so an attach loop can stop. */
+export interface ViewerRenderer extends Renderer {
+  dismissed(): boolean;
+}
+
+/**
+ * The read-only viewer renderer: the same OpenTUI dashboard as `createTuiRenderer`, mounted in
+ * read-only mode. It conducts nothing - it folds a Run's recorded events (replay) or tails a live
+ * Run (attach). `complete` keeps the dashboard up until the user detaches, for any terminal status
+ * (a cancelled Run is just as worth reading as a finished one); a quit key resolves the wait.
+ */
+export async function createViewerRenderer(
+  options: ViewerRendererOptions = {},
+): Promise<ViewerRenderer> {
+  const now = options.now ?? (() => Date.now());
+  const [view, setView] = createSignal<ViewState>(initialView);
+  const [nowSig, setNow] = createSignal<number>(now());
+  const [prompt] = createSignal<ActivePrompt | undefined>(undefined);
+
+  let dismissedFlag = false;
+  let resolveDismiss: (() => void) | undefined;
+  const dismissed = new Promise<void>((resolve) => {
+    resolveDismiss = resolve;
+  });
+  const onDismiss = (): void => {
+    dismissedFlag = true;
+    resolveDismiss?.();
+  };
+
+  const cli = await createCliRenderer({
+    exitOnCtrlC: false,
+    useMouse: true,
+    targetFps: 30,
+    screenMode: "alternate-screen",
+  });
+
+  await render(
+    () =>
+      App({
+        view,
+        now: nowSig,
+        prompt,
+        readOnly: true,
+        onCopySelection: () => copySelectedText(cli),
+        onOpenUrl: openSystemUrl,
+        onAbort: () => undefined,
+        onDismiss,
+      }),
+    cli,
+  );
+
+  const clock = setInterval(() => setNow(now()), 1000);
+  (clock as { unref?: () => void }).unref?.();
+
+  let latest = initialView;
+  let scheduled = false;
+  const flush = () => {
+    scheduled = false;
+    setView(latest);
+  };
+
+  let closed = false;
+  return {
+    render(next: ViewState, event: RunEvent): void {
+      latest = next;
+      if (isUrgent(event)) {
+        scheduled = false;
+        setView(next);
+      } else if (!scheduled) {
+        scheduled = true;
+        queueMicrotask(flush);
+      }
+    },
+    complete(): Promise<void> {
+      return dismissed; // stay up until the user detaches, whatever the terminal status
+    },
+    dismissed(): boolean {
+      return dismissedFlag;
+    },
+    close(): void {
+      if (closed) return;
+      closed = true;
+      dismissedFlag = true;
+      resolveDismiss?.();
+      clearInterval(clock);
+      cli.destroy();
+    },
+  };
+}
+
+/**
+ * Open the Run picker: mount the read-only list, wait for the user to choose a Run (or quit), tear
+ * the screen down, and return the outcome. The CLI maps it onto resume or the viewer. Mounting and
+ * teardown are fully contained here so the next renderer (viewer / engine) starts from a clean terminal.
+ */
+export async function runPicker(
+  runs: readonly RunMetadata[],
+  options: { now?: number } = {},
+): Promise<PickerOutcome> {
+  const now = options.now ?? Date.now();
+  const cli = await createCliRenderer({
+    exitOnCtrlC: false,
+    useMouse: true,
+    targetFps: 30,
+    screenMode: "alternate-screen",
+  });
+
+  let resolveOutcome: ((outcome: PickerOutcome) => void) | undefined;
+  const chosen = new Promise<PickerOutcome>((resolve) => {
+    resolveOutcome = resolve;
+  });
+
+  await render(
+    () => RunList({ runs, now, onResolve: (outcome) => resolveOutcome?.(outcome) }),
+    cli,
+  );
+
+  try {
+    return await chosen;
+  } finally {
+    cli.destroy();
+  }
+}
+
+/**
+ * Show the startup gate for a candidate Run and return the user's decision. Mounting and teardown
+ * are contained here so the chosen action (resume / viewer / picker / fresh run) starts clean.
+ */
+export async function runStartupGate(input: {
+  run: RunMetadata;
+  live: boolean;
+  now?: number;
+}): Promise<GateDecision> {
+  const now = input.now ?? Date.now();
+  const cli = await createCliRenderer({
+    exitOnCtrlC: false,
+    useMouse: true,
+    targetFps: 30,
+    screenMode: "alternate-screen",
+  });
+
+  let resolveDecision: ((decision: GateDecision) => void) | undefined;
+  const decided = new Promise<GateDecision>((resolve) => {
+    resolveDecision = resolve;
+  });
+
+  await render(
+    () =>
+      StartupGate({
+        run: input.run,
+        live: input.live,
+        now,
+        onResolve: (decision) => resolveDecision?.(decision),
+      }),
+    cli,
+  );
+
+  try {
+    return await decided;
+  } finally {
+    cli.destroy();
+  }
 }
