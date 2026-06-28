@@ -1,5 +1,16 @@
 # @tml/pi
 
+## 4.0.0
+
+### Minor Changes
+
+- b5b6f73: Expose harness discovery APIs: core now exports registered harness inspection and optional harness detection metadata, and the pi harness exposes configurable binary resolution for detection.
+
+### Patch Changes
+
+- Updated dependencies [b5b6f73]
+  - @tml/core@0.4.0
+
 ## 3.0.0
 
 ### Patch Changes
