@@ -123,9 +123,8 @@ export function reviewTally(rounds: readonly RoundRecordInput[]): ReviewTally {
     userFixed: lifecycle.filter(
       (e) => e.status === "fixed" && fixedBy.get(e.finding.id) === "user_fix",
     ).length,
-    unresolvedAutoFix: lifecycle.filter(
-      (e) => e.finding.action === "auto-fix" && awaitingAction(e),
-    ).length,
+    unresolvedAutoFix: lifecycle.filter((e) => e.finding.action === "auto-fix" && awaitingAction(e))
+      .length,
     needsYou: lifecycle.filter((e) => e.finding.action === "ask-user" && awaitingAction(e)).length,
     accepted: lifecycle.filter((e) => e.status === "accepted").length,
     skipped: lifecycle.filter((e) => e.status === "skipped").length,
