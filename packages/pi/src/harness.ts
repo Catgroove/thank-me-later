@@ -45,8 +45,15 @@ export function createPiHarness(cwd: string, opts: PiHarnessOptions = {}): Harne
           if (isAgentEnd(event)) sawEnd = true;
           const progress = toProgress(event);
           if (progress !== null) {
-            runOpts?.onProgress?.(progress);
-            if (progress.kind === "text") text += progress.text;
+            // A schema run's text deltas are the JSON structured payload, not human narration:
+            // accumulate them for parsing but never stream them as progress. Tool activity (and the
+            // prose of non-schema runs) still flows through so the trail stays alive.
+            if (progress.kind === "text") {
+              text += progress.text;
+              if (schema === undefined) runOpts?.onProgress?.(progress);
+            } else {
+              runOpts?.onProgress?.(progress);
+            }
           }
         }
 

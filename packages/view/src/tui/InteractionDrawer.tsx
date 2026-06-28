@@ -8,7 +8,6 @@ import type { Accessor } from "solid-js";
 import type { Finding, FindingAction } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
 import { actionOptions, findingSections, SECTION_LABEL, summaryLine } from "./approval.ts";
-import { DISPOSITION_COLOR, findingMarker } from "./format.ts";
 import { theme } from "./theme.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
@@ -94,11 +93,25 @@ function AskBody(props: {
   );
 }
 
-// The action category is carried by the section header now, so the per-row label drops the
-// redundant `(action)` tag and leads with the disposition instead.
-function findingLabel(finding: Finding): string {
-  const location = finding.location ? ` - ${finding.location}` : "";
-  return `${findingMarker(finding)} ${finding.title}${location}`;
+// The drawer is a pick-list, not a detail view: each finding is just its selection checkbox and
+// title. Severity, location, and evidence live in the step's findings tab, so repeating them here
+// would only duplicate that detailed view and crowd the decision surface.
+function FindingRow(props: { finding: Finding; selected: boolean; focused: boolean }) {
+  return (
+    <box
+      flexDirection="row"
+      backgroundColor={props.focused ? theme.focusBg : undefined}
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      <text flexShrink={0} fg={theme.text}>
+        {props.selected ? "[x]" : "[ ]"}
+      </text>
+      <text flexGrow={1} flexShrink={1} marginLeft={1} fg={theme.text} wrapMode="word">
+        {sanitize(props.finding.title)}
+      </text>
+    </box>
+  );
 }
 
 function ApprovalBody(props: {
@@ -140,19 +153,11 @@ function ApprovalBody(props: {
                     props.focusArea() === "findings" &&
                     offset() + findingIndex() === props.focusedFinding();
                   return (
-                    <box
-                      backgroundColor={focused() ? theme.focusBg : undefined}
-                      paddingLeft={1}
-                      paddingRight={1}
-                    >
-                      <text
-                        fg={focused() ? theme.focusFg : DISPOSITION_COLOR[finding.disposition]}
-                        wrapMode="word"
-                      >
-                        {selected(finding.id) ? "[x] " : "[ ] "}
-                        {sanitize(findingLabel(finding))}
-                      </text>
-                    </box>
+                    <FindingRow
+                      finding={finding}
+                      selected={selected(finding.id)}
+                      focused={focused()}
+                    />
                   );
                 }}
               </For>

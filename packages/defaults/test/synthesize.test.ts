@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import type { RoundRecordInput } from "@tml/core";
 import { type Finding, parseReviewFindings, riskOf, summarize } from "../src/review/synthesize.ts";
 
 function finding(over: Partial<Finding> = {}): Finding {
   return { id: "finding:1", disposition: "nit", action: "no-op", title: "T", detail: "D", ...over };
+}
+
+/** A single recorded review round (defaults to the initial check pass). */
+function round(findings: Finding[], over: Partial<RoundRecordInput> = {}): RoundRecordInput {
+  return { trigger: "initial", findings, ...over };
 }
 
 describe("parseReviewFindings", () => {
@@ -70,25 +76,36 @@ describe("summarize", () => {
   test("renders risk, the findings breakdown, disposition labels, and fixes", () => {
     const findings = [
       finding({
+        id: "f1",
         disposition: "should-fix",
         action: "auto-fix",
         title: "Scope creep",
         detail: "two",
       }),
-      finding({ disposition: "blocker", action: "auto-fix", title: "NPE", detail: "null deref" }),
+      finding({
+        id: "f2",
+        disposition: "blocker",
+        action: "auto-fix",
+        title: "NPE",
+        detail: "null deref",
+      }),
     ];
-    const out = summarize(findings, "fixed the NPE");
-    expect(out).toContain("**Risk: high**"); // blocker present
+    const out = summarize([round(findings)], "fixed the NPE");
+    expect(out).toContain("**Risk: high**"); // unresolved blocker present
     expect(out).toContain("<details>"); // full breakdown is collapsible
     expect(out).toContain("Should fix:");
     expect(out).toContain("Blocker:");
-    expect(out).toContain("2 still need an auto-fix"); // headline tally
+    expect(out).toContain("2 still need a fix"); // found-to-outcome overview
     expect(out).toContain("**Fixes applied:** fixed the NPE");
   });
 
   test("ask-user findings are listed with a decision hint", () => {
     const out = summarize(
-      [finding({ action: "ask-user", title: "API shape", detail: "confirm the contract" })],
+      [
+        round([
+          finding({ action: "ask-user", title: "API shape", detail: "confirm the contract" }),
+        ]),
+      ],
       "",
     );
     expect(out).toContain("API shape");

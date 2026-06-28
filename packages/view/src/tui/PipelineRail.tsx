@@ -31,10 +31,6 @@ export interface RailProps {
 
 function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
   const elapsed = () => phaseElapsed(props.phase, props.now);
-  const count = () =>
-    props.phase.status === "done" && props.phase.findings.length > 0
-      ? ` ${props.phase.findings.length}`
-      : "";
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1}>
       <text flexShrink={0} fg={theme.textFaint}>
@@ -59,7 +55,6 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
       </text>
       <text flexShrink={0} marginLeft={1} fg={theme.textFaint} wrapMode="none">
         {elapsed()}
-        {count()}
       </text>
     </box>
   );

@@ -1,7 +1,13 @@
 // Small pure formatting helpers shared by the TUI components: status glyphs/labels and human
 // duration/elapsed strings.
 
-import type { Finding } from "@tml/core";
+import {
+  findingLifecycle,
+  type Finding,
+  type FindingDisposition,
+  type FindingLifecycle,
+  type FindingStatus,
+} from "@tml/core";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import { theme } from "./theme.ts";
@@ -11,9 +17,131 @@ export type StepStatus = StepView["status"];
 /** Disposition accent color, shared by the findings inspector and the approval drawer. */
 export const DISPOSITION_COLOR = theme.disposition;
 
+/** Severity order, worst first, so the eye lands on blockers before nits. */
+const DISPOSITION_RANK: Record<FindingDisposition, number> = {
+  blocker: 0,
+  "should-fix": 1,
+  consider: 2,
+  nit: 3,
+};
+
+/** Sort comparator: strongest disposition first, stable for equal dispositions. */
+export function byDisposition(a: Finding, b: Finding): number {
+  return DISPOSITION_RANK[a.disposition] - DISPOSITION_RANK[b.disposition];
+}
+
 /** The `[disposition]` marker prefixing a finding line in both finding surfaces. */
 export function findingMarker(finding: Finding): string {
   return `[${finding.disposition}]`;
+}
+
+// Each lifecycle status gets a checkbox-style glyph, a short tag, and a color, so a Step's findings
+// read as a to-do list that checks itself off: queued fixes show ⟳ pending, a verified fix shows a
+// green ✓, an operator decision shows its outcome. Resolved items recede (dim) so attention lands on
+// what still needs work. Shared by the rail tally and the Findings inspector.
+export const STATUS_META: Record<
+  FindingStatus,
+  {
+    readonly glyph: string;
+    readonly tag: string;
+    readonly color: string;
+    readonly resolved: boolean;
+  }
+> = {
+  open: { glyph: "○", tag: "", color: theme.textMuted, resolved: false },
+  pending: { glyph: "⟳", tag: "pending", color: theme.accent, resolved: false },
+  fixed: { glyph: "✓", tag: "fixed", color: theme.success, resolved: true },
+  unresolved: { glyph: "✗", tag: "unresolved", color: theme.failed, resolved: false },
+  accepted: { glyph: "✓", tag: "accepted as-is", color: theme.success, resolved: true },
+  skipped: { glyph: "⤼", tag: "skipped", color: theme.textMuted, resolved: true },
+};
+
+/**
+ * A Step's findings as a cumulative checklist with their lifecycle status, derived from the whole
+ * round history (not just the latest round) so resolved findings stay visible with a ✓ instead of
+ * silently vanishing. A finding the current passes have surfaced but not yet recorded in a round is
+ * appended as a live `open` preview, so findings appear the moment a pass lands. Shared by the rail
+ * (compact tally) and the inspector (full checklist).
+ */
+export function stepChecklist(step: StepView): FindingLifecycle[] {
+  const lifecycle = findingLifecycle(step.rounds, { settled: step.status !== "active" });
+  const known = new Set(lifecycle.map((entry) => entry.finding.id));
+  const preview: FindingLifecycle[] = [];
+  for (const phase of latestGroupPhases(step)) {
+    for (const finding of phase.findings) {
+      if (known.has(finding.id)) continue;
+      known.add(finding.id);
+      preview.push({ finding, status: "open" });
+    }
+  }
+  return [...lifecycle, ...preview];
+}
+
+/** A single glyph+count chip in a findings tally, coloured and labelled by its lifecycle bucket. */
+export interface TallySegment {
+  readonly glyph: string;
+  readonly count: number;
+  readonly color: string;
+  readonly label: string;
+}
+
+/**
+ * The lifecycle buckets a findings tally reports, in priority order: what needs attention first
+ * (pending fixes, your decisions, unresolved) before what is already settled (fixed, accepted,
+ * skipped). The "needs you" bucket is the open findings routed to the human gate, so it carries the
+ * waiting glyph rather than a status glyph. Shared so the rail chips and the inspector's one-line
+ * tally never drift apart.
+ */
+export function findingTally(entries: readonly FindingLifecycle[]): TallySegment[] {
+  const count = (predicate: (entry: FindingLifecycle) => boolean) =>
+    entries.filter(predicate).length;
+  const chip = (status: FindingStatus, label: string, n: number): TallySegment => ({
+    glyph: STATUS_META[status].glyph,
+    color: STATUS_META[status].color,
+    label,
+    count: n,
+  });
+  const buckets: TallySegment[] = [
+    chip(
+      "pending",
+      "pending",
+      count((e) => e.status === "pending"),
+    ),
+    {
+      glyph: WAITING_GLYPH,
+      color: WAITING_COLOR,
+      label: "needs you",
+      count: count((e) => e.status === "open" && e.finding.action === "ask-user"),
+    },
+    chip(
+      "unresolved",
+      "unresolved",
+      count((e) => e.status === "unresolved"),
+    ),
+    chip(
+      "fixed",
+      "fixed",
+      count((e) => e.status === "fixed"),
+    ),
+    chip(
+      "accepted",
+      "accepted",
+      count((e) => e.status === "accepted"),
+    ),
+    chip(
+      "skipped",
+      "skipped",
+      count((e) => e.status === "skipped"),
+    ),
+  ];
+  return buckets.filter((segment) => segment.count > 0);
+}
+
+/** A one-line, human-readable rendering of {@link findingTally}, for the inspector header. */
+export function progressLine(entries: readonly FindingLifecycle[]): string {
+  return findingTally(entries)
+    .map((segment) => `${segment.glyph} ${segment.count} ${segment.label}`)
+    .join(" · ");
 }
 
 /**
@@ -114,7 +242,7 @@ export function runElapsed(view: ViewState, now: number): string {
 // Column budget for the pipeline rail, beyond the longest Step name / Phase label:
 const RAIL_MIN_WIDTH = 30; // never shrink below the historical fixed width
 const RAIL_MAX_WIDTH = 56; // cap so the Step inspector keeps room on narrow terminals
-const RAIL_TRAIL = 11; // leading space + widest elapsed ("10m 09s") + a findings count (" 99")
+const RAIL_TRAIL = 8; // leading space + widest elapsed ("10m 09s")
 const RAIL_STEP_LEAD = 2; // status glyph + one-space margin before the name
 const RAIL_PHASE_LEAD = 5; // " └ " tree branch + glyph + one-space margin before the label
 const RAIL_FRAME = 4; // left+right border (2) + left+right row padding (2)
