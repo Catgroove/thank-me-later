@@ -94,11 +94,48 @@ function AskBody(props: {
   );
 }
 
-// The action category is carried by the section header now, so the per-row label drops the
-// redundant `(action)` tag and leads with the disposition instead.
-function findingLabel(finding: Finding): string {
-  const location = finding.location ? ` - ${finding.location}` : "";
-  return `${findingMarker(finding)} ${finding.title}${location}`;
+// A finding in the drawer mirrors the inspector's findings tab: the title leads (prefixed by the
+// selection checkbox), then a dim metadata line carries the `[disposition]` badge and the file:line,
+// indented to sit under the title. Keeping the layout identical means the two surfaces read as the
+// same finding rather than two different renderings.
+const FINDING_INDENT = 4; // the width of the "[x] " checkbox, so metadata lines align under the title
+
+function FindingRow(props: { finding: Finding; selected: boolean; focused: boolean }) {
+  const f = () => props.finding;
+  return (
+    <box
+      flexDirection="column"
+      backgroundColor={props.focused ? theme.focusBg : undefined}
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      <box flexDirection="row">
+        <text flexShrink={0} fg={theme.text}>
+          {props.selected ? "[x]" : "[ ]"}
+        </text>
+        <text
+          flexGrow={1}
+          flexShrink={1}
+          marginLeft={1}
+          fg={theme.text}
+          attributes={1}
+          wrapMode="word"
+        >
+          {sanitize(f().title)}
+        </text>
+      </box>
+      <box flexDirection="row" marginLeft={FINDING_INDENT}>
+        <text flexShrink={0} fg={DISPOSITION_COLOR[f().disposition]}>
+          {findingMarker(f())}
+        </text>
+        <Show when={f().location}>
+          <text flexShrink={1} marginLeft={1} fg={theme.textFaint} wrapMode="none" truncate>
+            {sanitize(f().location ?? "")}
+          </text>
+        </Show>
+      </box>
+    </box>
+  );
 }
 
 function ApprovalBody(props: {
@@ -140,19 +177,11 @@ function ApprovalBody(props: {
                     props.focusArea() === "findings" &&
                     offset() + findingIndex() === props.focusedFinding();
                   return (
-                    <box
-                      backgroundColor={focused() ? theme.focusBg : undefined}
-                      paddingLeft={1}
-                      paddingRight={1}
-                    >
-                      <text
-                        fg={focused() ? theme.focusFg : DISPOSITION_COLOR[finding.disposition]}
-                        wrapMode="word"
-                      >
-                        {selected(finding.id) ? "[x] " : "[ ] "}
-                        {sanitize(findingLabel(finding))}
-                      </text>
-                    </box>
+                    <FindingRow
+                      finding={finding}
+                      selected={selected(finding.id)}
+                      focused={focused()}
+                    />
                   );
                 }}
               </For>

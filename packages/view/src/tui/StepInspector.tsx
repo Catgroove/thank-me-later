@@ -141,11 +141,11 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
   );
 }
 
-// A finding reads as three stacked tiers so nothing collides: a metadata row (status glyph, the
-// `[disposition]` severity badge, and the lifecycle tag pushed hard right), then the file:line as a
-// dim secondary header, then the title as the prominent main header, then the evidence. The badge
-// carries the severity colour and the title carries the prominence, so the two concerns never fight
-// for the same line. The focused background matches the approval drawer's focused-finding row.
+// A finding reads as stacked tiers so nothing collides, the title leading as the prominent main
+// header. Below it a metadata row (status glyph, the `[disposition]` severity badge, and the
+// lifecycle tag pushed hard right), then the file:line as a dim secondary header, then the evidence.
+// The badge carries the severity colour and the title carries the prominence, so the two concerns
+// never fight for the same line. The focused background matches the approval drawer's focused row.
 function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const f = () => props.entry.finding;
   const meta = () => STATUS_META[props.entry.status];
@@ -162,6 +162,9 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
       paddingRight={1}
       backgroundColor={props.focused ? theme.focusBg : undefined}
     >
+      <text fg={titleColor()} attributes={1} wrapMode="word">
+        {sanitize(f().title)}
+      </text>
       <box flexDirection="row">
         <text flexShrink={0} fg={meta().color}>
           {meta().glyph}
@@ -180,9 +183,6 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
           {sanitize(f().location ?? "")}
         </text>
       </Show>
-      <text fg={titleColor()} attributes={1} wrapMode="word">
-        {sanitize(f().title)}
-      </text>
       <text fg={theme.textMuted} wrapMode="word">
         {sanitize(f().detail, { preserveNewlines: true })}
       </text>
