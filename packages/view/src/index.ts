@@ -27,3 +27,4 @@ export { type GateDecision, type GateOption, gateOptions } from "./gate.ts";
 export type { InteractiveRenderer, Renderer } from "./renderer.ts";
 export { failingApproveResponder, failingAskResponder } from "./responders.ts";
 export { createTerminalRenderer, type TerminalRendererOptions } from "./render-terminal.ts";
+export { renderStats, type RenderStatsOptions } from "./render-stats.ts";

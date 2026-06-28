@@ -197,7 +197,7 @@ function rootForOptions(opts: ReadRunsOptions): string {
   return join(stateHome, "tml", checkoutKeyForPath(checkoutPath));
 }
 
-function defaultStateHome(env: Record<string, string | undefined>): string {
+export function defaultStateHome(env: Record<string, string | undefined>): string {
   const xdg = env.XDG_STATE_HOME;
   return xdg !== undefined && xdg.length > 0 ? xdg : join(homedir(), ".local", "state");
 }
@@ -474,18 +474,8 @@ class FileRunJournal implements RunJournal {
 
   private async readRounds(): Promise<RoundRecord[]> {
     const path = join(this.requireRunDir(), "rounds.jsonl");
-    const rounds: RoundRecord[] = [];
-    if (!existsSync(path)) return rounds;
-    for (const line of (await readFile(path, "utf8")).split("\n")) {
-      if (line.trim().length === 0) continue;
-      const parsed = JSON.parse(line) as unknown;
-      if (typeof parsed !== "object" || parsed === null) continue;
-      const record = parsed as Partial<RoundRecord>;
-      if (typeof record.step !== "string" || typeof record.index !== "number") continue;
-      if (!Array.isArray(record.findings) || typeof record.trigger !== "string") continue;
-      rounds.push(record as RoundRecord);
-    }
-    return rounds;
+    if (!existsSync(path)) return [];
+    return parseRounds(await readFile(path, "utf8"));
   }
 
   private touch(updatedAt: string): void {
@@ -508,11 +498,31 @@ class FileRunJournal implements RunJournal {
   }
 }
 
-async function readMetadataIfExists(runDir: string): Promise<RunMetadata | undefined> {
+export async function readMetadataIfExists(runDir: string): Promise<RunMetadata | undefined> {
   const path = join(runDir, "run.json");
   if (!existsSync(path)) return undefined;
   const parsed = JSON.parse(await readFile(path, "utf8")) as RunMetadata;
   return parsed;
+}
+
+/** Parse a `rounds.jsonl` body into round records, skipping blank and malformed lines. */
+export function parseRounds(text: string): RoundRecord[] {
+  const rounds: RoundRecord[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim().length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line) as unknown;
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null) continue;
+    const record = parsed as Partial<RoundRecord>;
+    if (typeof record.step !== "string" || typeof record.index !== "number") continue;
+    if (!Array.isArray(record.findings) || typeof record.trigger !== "string") continue;
+    rounds.push(record as RoundRecord);
+  }
+  return rounds;
 }
 
 function assertCompatible(metadata: RunMetadata, pipeline: string[], runId: string): void {

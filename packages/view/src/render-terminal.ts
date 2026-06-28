@@ -16,6 +16,7 @@
 // run-ending lines - so a future host adapter inherits one policy instead of copying a third.
 
 import type { RunEvent } from "@tml/core";
+import { clip as clipTo, makeStyle } from "./ansi.ts";
 import { approvalPrompt, isNarrativeArtifact, narrativeSteps, resultLabelWidth } from "./format.ts";
 import type { ViewState } from "./present.ts";
 import type { Renderer } from "./renderer.ts";
@@ -80,22 +81,6 @@ const SPINNER_RESERVE = 2; // room the trailing " <spinner>" needs on the live l
 const RESULTS_HEAD = "results "; // after the two leading rule glyphs
 const PLAIN_RULE_FILL = 20; // the results-rule length when there is no terminal width to fill
 
-const ESC = "\x1b";
-
-// Length of the SGR escape sequence (`ESC [ … m`) starting at `i`, or 0 if none does. Used to
-// step over zero-width color codes when measuring/truncating by visible columns - a manual scan
-// instead of a regex, which can't carry a control character.
-function sgrAt(line: string, i: number): number {
-  if (line[i] !== ESC || line[i + 1] !== "[") return 0;
-  let j = i + 2;
-  while (j < line.length && line[j] !== "m") {
-    const c = line[j] ?? "";
-    if (c !== ";" && (c < "0" || c > "9")) return 0; // not an SGR sequence after all
-    j += 1;
-  }
-  return j < line.length ? j - i + 1 : 0; // include the trailing `m`
-}
-
 export function createTerminalRenderer(options: TerminalRendererOptions = {}): Renderer {
   const write = options.write ?? ((chunk: string) => void process.stdout.write(chunk));
   const plain = options.plain ?? false;
@@ -115,12 +100,7 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
   const trail = plain || verbose;
 
   // SGR helpers - identities when color is off, so plain output (and tests) is untouched.
-  const sgr = (codes: string, s: string): string => (color ? `\x1b[${codes}m${s}\x1b[0m` : s);
-  const dim = (s: string): string => sgr("2", s);
-  const bold = (s: string): string => sgr("1", s);
-  const red = (s: string): string => sgr("31", s);
-  const green = (s: string): string => sgr("32", s);
-  const cyan = (s: string): string => sgr("36", s);
+  const { dim, bold, red, green, cyan } = makeStyle(color);
 
   // The single live line currently on screen - the cursor sits on it. "" means none. Plain never
   // draws one, so this stays "".
@@ -140,40 +120,8 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
   let stepWaited = 0;
   let waitStartedAt: number | undefined;
 
-  function visibleLen(line: string): number {
-    let n = 0;
-    for (let i = 0; i < line.length; ) {
-      const len = sgrAt(line, i);
-      if (len > 0) i += len;
-      else {
-        n += 1;
-        i += 1;
-      }
-    }
-    return n;
-  }
-
   /** Truncate to the terminal's visible width (ignoring SGR codes) so a line can't soft-wrap. */
-  function clip(line: string): string {
-    const width = termColumns();
-    if (visibleLen(line) <= width) return line;
-    let out = "";
-    let shown = 0;
-    for (let i = 0; i < line.length; ) {
-      const len = sgrAt(line, i);
-      if (len > 0) {
-        out += line.slice(i, i + len);
-        i += len;
-        continue;
-      }
-      if (shown >= width) break;
-      out += line[i];
-      shown += 1;
-      i += 1;
-    }
-    if (out.includes(ESC)) out += `${ESC}[0m`; // close any SGR left open by truncation
-    return out;
-  }
+  const clip = (line: string): string => clipTo(line, termColumns());
 
   /** Content width for prose, leaving room for the indent and the trailing spinner. */
   function wrapWidth(): number {

@@ -129,6 +129,16 @@ export {
   type RunStatus,
   type RunWorktreeHandoff,
 } from "./run-journal.ts";
+export { readRunHistory, type ReadRunHistoryOptions, type RunHistoryEntry } from "./run-history.ts";
+export {
+  type OutcomeTally,
+  type RepoStats,
+  type RunStats,
+  type SeverityTally,
+  type StepStats,
+  type SummarizeOptions,
+  summarizeRunStats,
+} from "./run-stats.ts";
 export {
   createWorktree,
   currentWorkspaceSourceBranch,
