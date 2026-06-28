@@ -36,6 +36,7 @@ import {
 } from "./isolated-run.ts";
 import { loadTmlConfig } from "./load.ts";
 import { runs, viewRun } from "./runs.ts";
+import { stats } from "./stats.ts";
 import { update } from "./update.ts";
 import { maybeStartCheck, updateNotice } from "./update-check.ts";
 import { VERSION } from "./version.ts";
@@ -287,6 +288,7 @@ Usage:
   tml runs <id>            View a past run, or attach to one still running.
   tml init [options]       Scaffold a starter tml.json at the project root.
   tml update               Update tml to the latest release.
+  tml stats [options]      Summarize findings and fixes across journaled runs.
   tml version              Print the installed version.
 
   tml agents              List available agents and the configured default.
@@ -306,6 +308,11 @@ Init options:
 
 Update options:
       --check         Report whether a newer release exists without installing.
+
+Stats options:
+      --here          Only this checkout's runs, not every repo on this machine.
+      --json          Emit the aggregated figures as JSON.
+      --no-color      Disable ANSI color.
 
 Global options:
   -h, --help          Show this help.
@@ -380,6 +387,16 @@ async function dispatch(
     // A TTY opens the interactive picker; piped output prints the plain table.
     if (process.stdout.isTTY) return pickRun();
     return runs();
+  }
+  if (command === "stats") {
+    if (rest.some(isHelp)) {
+      console.log(HELP);
+      return 0;
+    }
+    return stats(
+      { here: rest.includes("--here"), json: rest.includes("--json") },
+      rest.includes("--no-color") ? { color: false } : {},
+    );
   }
   // Running the pipeline is the default command: `tml [options]`. `ship` remains accepted as an
   // explicit alias so existing invocations keep working, but it is no longer required or advertised.
