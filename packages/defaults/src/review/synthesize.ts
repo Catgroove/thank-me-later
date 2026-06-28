@@ -7,6 +7,7 @@
 
 import {
   findingLifecycle,
+  isFixAttemptRound,
   parseAgentFindingsOutput,
   renderFindingForPrText,
   type Finding,
@@ -52,10 +53,11 @@ export function findingsLogLine(findings: readonly Finding[]): string {
   return `found ${findings.length} ${noun} (risk: ${riskOf(findings)})${tail}`;
 }
 
-const RESOLVED: ReadonlySet<FindingStatus> = new Set<FindingStatus>([
-  "fixed",
-  "accepted",
-  "skipped",
+const RISK_CLEARED: ReadonlySet<FindingStatus> = new Set<FindingStatus>(["fixed", "accepted"]);
+const AWAITING_ACTION: ReadonlySet<FindingStatus> = new Set<FindingStatus>([
+  "open",
+  "pending",
+  "unresolved",
 ]);
 
 /** Worst-first severity order for the PR-body breakdown, so blockers read before nits. */
@@ -69,12 +71,14 @@ const DISPOSITION_RANK: Record<FindingDisposition, number> = {
 /** The end-of-run accounting of a review: how many findings were raised and where they landed. */
 export interface ReviewTally {
   readonly found: number;
-  readonly fixed: number;
+  readonly autoFixed: number;
+  readonly userFixed: number;
   /** auto-fix findings the fix pass did not (or could not) resolve. */
   readonly unresolvedAutoFix: number;
   /** ask-user findings still awaiting the operator's decision. */
   readonly needsYou: number;
   readonly accepted: number;
+  readonly skipped: number;
   /** purely informational (no-op) findings. */
   readonly noted: number;
 }
@@ -90,18 +94,42 @@ function lifecycleOf(rounds: readonly RoundRecordInput[]): FindingLifecycle[] {
   return findingLifecycle(stamped, { settled: true });
 }
 
+type FixOrigin = "auto_fix" | "user_fix";
+
+function fixedOriginByFinding(rounds: readonly RoundRecordInput[]): ReadonlyMap<string, FixOrigin> {
+  const origins = new Map<string, FixOrigin>();
+  for (const round of rounds) {
+    if (!isFixAttemptRound(round)) continue;
+    const origin: FixOrigin = round.trigger === "user_fix" ? "user_fix" : "auto_fix";
+    const ids =
+      round.selectedFindingIds && round.selectedFindingIds.length > 0
+        ? round.selectedFindingIds
+        : round.findings.map((finding) => finding.id);
+    for (const id of ids) origins.set(id, origin);
+  }
+  return origins;
+}
+
 /** Tally a review's recorded rounds into the found/fixed/needs-you/noted accounting. */
 export function reviewTally(rounds: readonly RoundRecordInput[]): ReviewTally {
   const lifecycle = lifecycleOf(rounds);
-  const unresolved = (entry: FindingLifecycle) => !RESOLVED.has(entry.status);
+  const fixedBy = fixedOriginByFinding(rounds);
+  const awaitingAction = (entry: FindingLifecycle) => AWAITING_ACTION.has(entry.status);
   return {
     found: lifecycle.length,
-    fixed: lifecycle.filter((e) => e.status === "fixed").length,
+    autoFixed: lifecycle.filter(
+      (e) => e.status === "fixed" && fixedBy.get(e.finding.id) !== "user_fix",
+    ).length,
+    userFixed: lifecycle.filter(
+      (e) => e.status === "fixed" && fixedBy.get(e.finding.id) === "user_fix",
+    ).length,
+    unresolvedAutoFix: lifecycle.filter(
+      (e) => e.finding.action === "auto-fix" && awaitingAction(e),
+    ).length,
+    needsYou: lifecycle.filter((e) => e.finding.action === "ask-user" && awaitingAction(e)).length,
     accepted: lifecycle.filter((e) => e.status === "accepted").length,
-    unresolvedAutoFix: lifecycle.filter((e) => e.finding.action === "auto-fix" && unresolved(e))
-      .length,
-    needsYou: lifecycle.filter((e) => e.finding.action === "ask-user" && unresolved(e)).length,
-    noted: lifecycle.filter((e) => e.finding.action === "no-op").length,
+    skipped: lifecycle.filter((e) => e.status === "skipped").length,
+    noted: lifecycle.filter((e) => e.finding.action === "no-op" && awaitingAction(e)).length,
   };
 }
 
@@ -111,7 +139,8 @@ export function overviewLine(tally: ReviewTally): string {
   if (tally.found === 0) return "no findings";
   const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
   const parts = [
-    tally.fixed > 0 ? `${tally.fixed} auto-fixed` : null,
+    tally.autoFixed > 0 ? `${tally.autoFixed} auto-fixed` : null,
+    tally.userFixed > 0 ? `${tally.userFixed} fixed by request` : null,
     tally.unresolvedAutoFix > 0
       ? `${tally.unresolvedAutoFix} still ${plural(tally.unresolvedAutoFix, "needs", "need")} a fix`
       : null,
@@ -119,6 +148,7 @@ export function overviewLine(tally: ReviewTally): string {
       ? `${tally.needsYou} ${plural(tally.needsYou, "needs", "need")} your decision`
       : null,
     tally.accepted > 0 ? `${tally.accepted} accepted` : null,
+    tally.skipped > 0 ? `${tally.skipped} skipped` : null,
     tally.noted > 0 ? `${tally.noted} noted` : null,
   ].filter((s): s is string => s !== null);
   const head = `${tally.found} ${plural(tally.found, "finding", "findings")}`;
@@ -148,7 +178,7 @@ export function summarize(rounds: readonly RoundRecordInput[], fixSummary: strin
   const lifecycle = [...lifecycleOf(rounds)].sort(
     (a, b) => DISPOSITION_RANK[a.finding.disposition] - DISPOSITION_RANK[b.finding.disposition],
   );
-  const unresolved = lifecycle.filter((e) => !RESOLVED.has(e.status)).map((e) => e.finding);
+  const unresolved = lifecycle.filter((e) => !RISK_CLEARED.has(e.status)).map((e) => e.finding);
   const tally = reviewTally(rounds);
   const fixes = fixSummary.trim();
 
