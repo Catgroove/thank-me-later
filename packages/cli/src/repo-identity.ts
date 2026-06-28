@@ -8,7 +8,7 @@ import { basename } from "node:path";
 
 export type OriginReader = (checkoutPath: string) => Promise<string | undefined>;
 
-/** Map each unique checkout path to its repo name, resolving origins concurrently. */
+/** Map each unique checkout path to its repo identity, resolving origins concurrently. */
 export async function resolveRepoNames(
   checkoutPaths: Iterable<string>,
   readOrigin: OriginReader = gitOriginUrl,
@@ -23,15 +23,23 @@ export async function resolveRepoNames(
   return new Map(resolved);
 }
 
-/** Last path segment of a git remote URL (https or ssh), without the `.git` suffix. */
+/** Host and path of a git remote URL, without credentials or the `.git` suffix. */
 export function repoNameFromUrl(url: string): string | undefined {
   const cleaned = url
     .trim()
-    .replace(/\.git$/, "")
-    .replace(/\/$/, "");
+    .replace(/\/$/, "")
+    .replace(/\.git$/, "");
   if (cleaned === "") return undefined;
-  const match = /[/:]([^/:]+)$/.exec(cleaned);
-  return match ? match[1] : undefined;
+
+  try {
+    const parsed = new URL(cleaned);
+    const path = parsed.pathname.replace(/^\/+/, "");
+    return parsed.host !== "" && path !== "" ? `${parsed.host}/${path}` : undefined;
+  } catch {
+    const scp = /^(?:[^@]+@)?([^/:]+):(.+)$/.exec(cleaned);
+    if (scp) return `${scp[1]}/${scp[2].replace(/^\/+/, "")}`;
+    return cleaned;
+  }
 }
 
 async function gitOriginUrl(checkoutPath: string): Promise<string | undefined> {
