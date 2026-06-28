@@ -24,6 +24,10 @@ export function RunList(props: RunListProps) {
   useKeyboard((key: KeyEvent) => {
     if (key.eventType === "release") return;
     const run = selected();
+    if (key.ctrl && key.name === "c") {
+      props.onResolve({ kind: "quit" });
+      return;
+    }
     switch (key.name) {
       case "q":
       case "escape":

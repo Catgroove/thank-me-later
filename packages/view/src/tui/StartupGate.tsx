@@ -25,7 +25,7 @@ export function StartupGate(props: StartupGateProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (key.eventType === "release") return;
-    if (key.name === "escape") {
+    if ((key.ctrl && key.name === "c") || key.name === "escape") {
       props.onResolve("quit");
       return;
     }

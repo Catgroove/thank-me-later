@@ -170,7 +170,12 @@ export async function readRunEvents(
   const records: RecordedEvent[] = [];
   for (const line of (await readFile(path, "utf8")).split("\n")) {
     if (line.trim().length === 0) continue;
-    const parsed = JSON.parse(line) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line) as unknown;
+    } catch {
+      break;
+    }
     if (typeof parsed !== "object" || parsed === null) continue;
     const record = parsed as Partial<RecordedEvent>;
     if (typeof record.recordedAt !== "string" || typeof record.event !== "object") continue;
@@ -283,10 +288,14 @@ class FileRunJournal implements RunJournal {
         );
       }
       // Resuming reclaims the Run: this process becomes its owner and the status returns to running.
-      const resumed: RunMetadata =
-        metadata.status === "running" ? metadata : { ...metadata, status: "running" };
+      const {
+        finishedAt: _finishedAt,
+        failureSummary: _failureSummary,
+        ...resumed
+      } = metadata;
       this.metadata = {
         ...resumed,
+        status: "running",
         runId,
         owner: currentOwner(),
         workspacePath: resumed.workspacePath ?? workspacePath,
@@ -398,7 +407,14 @@ class FileRunJournal implements RunJournal {
   async finish(status: Exclude<RunStatus, "running">): Promise<void> {
     const metadata = this.requireMetadata();
     const now = new Date().toISOString();
-    this.metadata = { ...metadata, status, finishedAt: now, updatedAt: now };
+    const { finishedAt: _finishedAt, failureSummary, ...base } = metadata;
+    this.metadata = {
+      ...base,
+      ...(status === "failed" && failureSummary !== undefined ? { failureSummary } : {}),
+      status,
+      finishedAt: now,
+      updatedAt: now,
+    };
     await this.writeMetadata();
   }
 
