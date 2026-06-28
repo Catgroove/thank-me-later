@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkoutKeyForPath, createRunJournal } from "../src/run-journal.ts";
+import {
+  checkoutKeyForPath,
+  createRunJournal,
+  listRuns,
+  readRun,
+  readRunEvents,
+} from "../src/run-journal.ts";
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -202,5 +208,122 @@ describe("RunJournal", () => {
     expect(() => createRunJournal({ stateHome, checkoutPath, runId: "run..nested" })).toThrow(
       /runId/,
     );
+  });
+
+  test("denormalizes pr url, failure, finishedAt, and owner onto run.json", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const journal = createRunJournal({ stateHome, checkoutPath, runId: "run-1" });
+    await journal.begin({ pipeline: ["produce"] });
+    await journal.recordEvent({ type: "pr:opened", at: 1, url: "https://example/pull/7" });
+    await journal.recordEvent({ type: "run:failed", at: 2, step: "produce", error: "boom" });
+    await journal.finish("failed");
+
+    const runDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath), "runs", "run-1");
+    const metadata = readJson(join(runDir, "run.json")) as {
+      prUrl?: string;
+      failureSummary?: string;
+      finishedAt?: string;
+      status: string;
+      owner?: { pid: number; host: string };
+    };
+    expect(metadata.prUrl).toBe("https://example/pull/7");
+    expect(metadata.failureSummary).toBe("boom");
+    expect(metadata.status).toBe("failed");
+    expect(typeof metadata.finishedAt).toBe("string");
+    expect(metadata.owner?.pid).toBe(process.pid);
+    expect(typeof metadata.owner?.host).toBe("string");
+  });
+
+  test("denormalizes the pr url even when the event stream is not persisted", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const journal = createRunJournal({ stateHome, checkoutPath, runId: "run-1", events: false });
+    await journal.begin({ pipeline: ["produce"] });
+    await journal.recordEvent({ type: "pr:opened", at: 1, url: "https://example/pull/9" });
+
+    const run = await readRun({ stateHome, checkoutPath }, "run-1");
+    expect(run?.prUrl).toBe("https://example/pull/9");
+  });
+
+  test("listRuns returns every run for the checkout, newest-updated first", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+
+    const older = createRunJournal({ stateHome, checkoutPath, runId: "older" });
+    await older.begin({ pipeline: ["produce"] });
+    await older.finish("finished");
+
+    const newer = createRunJournal({ stateHome, checkoutPath, runId: "newer" });
+    await newer.begin({ pipeline: ["produce"] });
+
+    const runs = await listRuns({ stateHome, checkoutPath });
+    expect(runs.map((run) => run.runId)).toEqual(["newer", "older"]);
+    expect(runs[0]?.status).toBe("running");
+    expect(runs[1]?.status).toBe("finished");
+  });
+
+  test("listRuns and readRunEvents are empty for an unknown checkout", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "never-run");
+    expect(await listRuns({ stateHome, checkoutPath })).toEqual([]);
+    expect(await readRunEvents({ stateHome, checkoutPath }, "missing")).toEqual([]);
+    expect(await readRun({ stateHome, checkoutPath }, "missing")).toBeUndefined();
+  });
+
+  test("refuses to resume a run whose owner is a live, different process", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const first = createRunJournal({ stateHome, checkoutPath, runId: "run-1" });
+    await first.begin({ pipeline: ["produce"] });
+
+    // Rewrite the owner to our live parent process: a different pid that is genuinely alive.
+    const runDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath), "runs", "run-1");
+    const metaPath = join(runDir, "run.json");
+    const metadata = JSON.parse(readFileSync(metaPath, "utf8"));
+    metadata.owner = { pid: process.ppid, host: hostname() };
+    writeFileSync(metaPath, JSON.stringify(metadata));
+
+    const second = createRunJournal({ stateHome, checkoutPath, runId: "run-1", resume: "exact" });
+    const error = await rejection(second.begin({ pipeline: ["produce"] }));
+    expect((error as Error).message).toMatch(/already in progress/);
+  });
+
+  test("reclaims a run whose owner is a dead process", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const first = createRunJournal({ stateHome, checkoutPath, runId: "run-1" });
+    await first.begin({ pipeline: ["produce"] });
+
+    const runDir = join(stateHome, "tml", checkoutKeyForPath(checkoutPath), "runs", "run-1");
+    const metaPath = join(runDir, "run.json");
+    const metadata = JSON.parse(readFileSync(metaPath, "utf8"));
+    metadata.owner = { pid: 999_999, host: hostname() }; // beyond PID_MAX: certainly dead
+    writeFileSync(metaPath, JSON.stringify(metadata));
+
+    const second = createRunJournal({ stateHome, checkoutPath, runId: "run-1", resume: "exact" });
+    await second.begin({ pipeline: ["produce"] });
+    const reclaimed = JSON.parse(readFileSync(metaPath, "utf8"));
+    expect(reclaimed.owner.pid).toBe(process.pid);
+    expect(reclaimed.status).toBe("running");
+  });
+
+  test("readRunEvents replays the recorded event stream in order", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const journal = createRunJournal({ stateHome, checkoutPath, runId: "run-1" });
+    await journal.begin({ pipeline: ["produce"] });
+    await journal.recordEvent({ type: "run:started", at: 0, pipeline: ["produce"] });
+    await journal.recordEvent({ type: "step:started", at: 1, step: "produce" });
+    await journal.recordEvent({ type: "run:finished", at: 2 });
+    await journal.finish("finished");
+
+    const records = await readRunEvents({ stateHome, checkoutPath }, "run-1");
+    expect(records.map((record) => record.event.type)).toEqual([
+      "run:started",
+      "step:started",
+      "run:finished",
+    ]);
+    expect(typeof records[0]?.recordedAt).toBe("string");
   });
 });

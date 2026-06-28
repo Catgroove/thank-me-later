@@ -110,14 +110,22 @@ export type {
 } from "./providers/harness.ts";
 export type { PipelineStep, RunEvent, RunEventInput } from "./events.ts";
 export { createEngine, type Engine, type EngineOptions } from "./engine.ts";
+export { classifyLiveness, type Liveness, type LivenessProbe } from "./liveness.ts";
 export {
   checkoutKeyForPath,
   createRunJournal,
   type CreateRunJournalOptions,
+  listRuns,
+  readRun,
+  readRunEvents,
+  type ReadRunsOptions,
+  type RecordedEvent,
+  runMatchesBranch,
   type RunJournal,
   type RunJournalResumeMode,
   type RunJournalSnapshot,
   type RunMetadata,
+  type RunOwner,
   type RunStatus,
   type RunWorktreeHandoff,
 } from "./run-journal.ts";

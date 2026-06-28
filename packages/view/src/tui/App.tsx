@@ -39,6 +39,12 @@ export interface AppProps {
   readonly onAbort: () => void;
   /** Leave a completed Run; supplied by the CLI. Called when a dismiss key is pressed once terminal. */
   readonly onDismiss?: () => void;
+  /**
+   * Read-only viewer mode: the Run is being viewed or attached to, not conducted here. There is
+   * nothing to abort (a live Run is owned by another process), no interaction drawers, and a quit
+   * key detaches via `onDismiss` at any time - even while the Run is still running.
+   */
+  readonly readOnly?: boolean;
 }
 
 export function App(props: AppProps) {
@@ -55,6 +61,8 @@ export function App(props: AppProps) {
   type UiMode = "activity" | "prompt" | "abort" | "terminal";
   const uiMode = (): UiMode => {
     if (isTerminal()) return "terminal";
+    // A read-only viewer never aborts or prompts - it only observes the Run and navigates it.
+    if (props.readOnly) return "activity";
     if (confirmAbort()) return "abort";
     if (props.prompt() !== undefined) return "prompt";
     return "activity";
@@ -164,6 +172,17 @@ export function App(props: AppProps) {
 
     const mode = uiMode();
 
+    // A read-only viewer: a quit key detaches at any time (even while the Run runs); the Run is not
+    // ours to abort. Every other key navigates the view. No prompts or abort confirmation apply.
+    if (props.readOnly) {
+      if (isDismissKey(key)) {
+        props.onDismiss?.();
+        return;
+      }
+      setNav(navOnKey(nav(), { name: key.name, shift: key.shift }, props.view()));
+      return;
+    }
+
     // A completed Run: a dismiss key leaves (the CLI then tears down and prints the epilogue). Other
     // keys keep navigating the finished Run, and abort is no longer possible.
     if (mode === "terminal") {
@@ -243,7 +262,12 @@ export function App(props: AppProps) {
       <Show when={uiMode() === "abort"}>
         <AbortConfirm />
       </Show>
-      <Show when={uiMode() === "terminal"} fallback={<FooterKeys view={props.view} />}>
+      <Show
+        when={uiMode() === "terminal"}
+        fallback={
+          props.readOnly ? <ViewerFooter view={props.view} /> : <FooterKeys view={props.view} />
+        }
+      >
         <DoneBanner view={props.view} />
       </Show>
     </box>
@@ -420,6 +444,16 @@ function AbortConfirm() {
       <text fg={theme.failed}>
         Abort the Run? y to confirm · n to keep going · ctrl-c again to abort now
       </text>
+    </box>
+  );
+}
+
+/** Footer for the read-only viewer while a Run is still running (attach): navigate, or detach. */
+function ViewerFooter(props: { view: Accessor<ViewState> }) {
+  const openHint = () => (props.view().prUrl !== undefined ? " · o open PR" : "");
+  return (
+    <box paddingLeft={1} backgroundColor="#0b1120">
+      <text fg="#475569">attached · j/k move · . follow · tab tabs{openHint()} · q detach</text>
     </box>
   );
 }

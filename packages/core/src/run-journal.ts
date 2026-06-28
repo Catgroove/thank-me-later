@@ -6,9 +6,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, chmod, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { RunEvent } from "./events.ts";
+import { classifyLiveness } from "./liveness.ts";
 import type { RoundRecord } from "./round.ts";
 
 const PRIVATE_DIR_MODE = 0o700;
@@ -44,6 +45,41 @@ export interface RunMetadata {
    * available.
    */
   readonly resumeKey?: string;
+  /**
+   * The Run's pull request URL, denormalized from the `pr:opened` event so a history row needs no
+   * event replay. Absent until a PR is opened.
+   */
+  readonly prUrl?: string;
+  /** ISO timestamp the Run reached a terminal status, set by `finish`. Absent while running. */
+  readonly finishedAt?: string;
+  /** The `run:failed` error, denormalized for a history row. Absent unless the Run failed. */
+  readonly failureSummary?: string;
+  /**
+   * The process that last held this Run for writing. Used to tell a genuinely live Run apart from
+   * one a crash left frozen at `running` (see `classifyLiveness`). Absent on legacy journals.
+   */
+  readonly owner?: RunOwner;
+}
+
+export interface RunOwner {
+  readonly pid: number;
+  readonly host: string;
+}
+
+/** Inputs for the read-only enumeration API; resolved like `createRunJournal`'s own options. */
+export interface ReadRunsOptions {
+  /** Checkout whose Runs to read. Defaults to process.cwd(). */
+  checkoutPath?: string;
+  /** Override the XDG state root in tests. Defaults to $XDG_STATE_HOME or ~/.local/state. */
+  stateHome?: string;
+  /** Environment lookup for XDG_STATE_HOME. Defaults to process.env. */
+  env?: Record<string, string | undefined>;
+}
+
+/** One line of a Run's `events.jsonl`: the recorded event plus when it was persisted. */
+export interface RecordedEvent {
+  readonly recordedAt: string;
+  readonly event: RunEvent;
 }
 
 export interface RunJournalSnapshot {
@@ -95,12 +131,10 @@ export interface CreateRunJournalOptions {
 }
 
 export function createRunJournal(opts: CreateRunJournalOptions = {}): RunJournal {
-  const env = opts.env ?? process.env;
   const checkoutPath = resolve(opts.checkoutPath ?? process.cwd());
   const checkoutKey = checkoutKeyForPath(checkoutPath);
-  const stateHome = opts.stateHome ?? defaultStateHome(env);
   return new FileRunJournal({
-    root: join(stateHome, "tml", checkoutKey),
+    root: rootForOptions(opts),
     checkoutKey,
     checkoutPath,
     runId: opts.runId,
@@ -109,15 +143,75 @@ export function createRunJournal(opts: CreateRunJournalOptions = {}): RunJournal
   });
 }
 
+/**
+ * List every Run recorded for a checkout, most-recently-updated first. Read-only: it does not
+ * require `begin`, so the history list and picker can enumerate Runs without starting one. A row is
+ * one `run.json` read - no event replay - because the display facts are denormalized onto it.
+ */
+export async function listRuns(opts: ReadRunsOptions = {}): Promise<RunMetadata[]> {
+  return readRunsIn(join(rootForOptions(opts), "runs"));
+}
+
+/** Read one Run's metadata by id, or undefined if it does not exist. Read-only. */
+export async function readRun(
+  opts: ReadRunsOptions,
+  runId: string,
+): Promise<RunMetadata | undefined> {
+  return readMetadataIfExists(join(rootForOptions(opts), "runs", validateRunId(runId)));
+}
+
+/** Read a Run's persisted event stream in order, for the read-only viewer. */
+export async function readRunEvents(
+  opts: ReadRunsOptions,
+  runId: string,
+): Promise<RecordedEvent[]> {
+  const path = join(rootForOptions(opts), "runs", validateRunId(runId), "events.jsonl");
+  if (!existsSync(path)) return [];
+  const records: RecordedEvent[] = [];
+  for (const line of (await readFile(path, "utf8")).split("\n")) {
+    if (line.trim().length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line) as unknown;
+    } catch {
+      break;
+    }
+    if (typeof parsed !== "object" || parsed === null) continue;
+    const record = parsed as Partial<RecordedEvent>;
+    if (typeof record.recordedAt !== "string" || typeof record.event !== "object") continue;
+    records.push(record as RecordedEvent);
+  }
+  return records;
+}
+
 export function checkoutKeyForPath(path: string): string {
   const absolute = resolve(path);
   const digest = createHash("sha256").update(absolute).digest("hex").slice(0, 16);
   return `${safeSegment(basename(absolute) || "checkout")}-${digest}`;
 }
 
+function rootForOptions(opts: ReadRunsOptions): string {
+  const env = opts.env ?? process.env;
+  const checkoutPath = resolve(opts.checkoutPath ?? process.cwd());
+  const stateHome = opts.stateHome ?? defaultStateHome(env);
+  return join(stateHome, "tml", checkoutKeyForPath(checkoutPath));
+}
+
 function defaultStateHome(env: Record<string, string | undefined>): string {
   const xdg = env.XDG_STATE_HOME;
   return xdg !== undefined && xdg.length > 0 ? xdg : join(homedir(), ".local", "state");
+}
+
+/** Read and sort every `run.json` under a `runs` directory, most-recently-updated first. */
+async function readRunsIn(runsDir: string): Promise<RunMetadata[]> {
+  if (!existsSync(runsDir)) return [];
+  const runs: RunMetadata[] = [];
+  for (const runId of await readdir(runsDir)) {
+    const metadata = await readMetadataIfExists(join(runsDir, runId));
+    if (metadata !== undefined) runs.push(metadata);
+  }
+  runs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return runs;
 }
 
 interface FileRunJournalOptions {
@@ -179,13 +273,29 @@ class FileRunJournal implements RunJournal {
         updatedAt: now,
         completedSteps: [],
         workspacePath,
+        owner: currentOwner(),
         ...(input.resumeKey !== undefined ? { resumeKey: input.resumeKey } : {}),
       };
       await this.writeMetadata();
     } else {
-      const resumed: RunMetadata =
-        metadata.status === "running" ? metadata : { ...metadata, status: "running" };
-      this.metadata = { ...resumed, runId, workspacePath: resumed.workspacePath ?? workspacePath };
+      // The metadata is the lock: a `running` Run with a live owner is held by another process.
+      // Re-entering it for writing would race two engines on one journal and workspace, so refuse.
+      // The owner being *this* process is re-entry, not a conflict (a resumed run in-process).
+      const liveness = classifyLiveness(metadata, { now: Date.now() });
+      if (liveness !== "orphaned" && !ownedByCurrentProcess(metadata)) {
+        throw new Error(
+          `tml: run ${runId} is already in progress (${ownerLabel(metadata)}); attach to it or start a fresh run.`,
+        );
+      }
+      // Resuming reclaims the Run: this process becomes its owner and the status returns to running.
+      const { finishedAt: _finishedAt, failureSummary: _failureSummary, ...resumed } = metadata;
+      this.metadata = {
+        ...resumed,
+        status: "running",
+        runId,
+        owner: currentOwner(),
+        workspacePath: resumed.workspacePath ?? workspacePath,
+      };
       await this.writeMetadata();
     }
 
@@ -265,16 +375,40 @@ class FileRunJournal implements RunJournal {
   }
 
   async recordEvent(event: RunEvent): Promise<void> {
-    if (!this.events) return;
-    await appendJsonLine(join(this.requireRunDir(), "events.jsonl"), {
-      recordedAt: new Date().toISOString(),
-      event,
-    });
+    const recordedAt = new Date().toISOString();
+    if (this.events) {
+      await appendJsonLine(join(this.requireRunDir(), "events.jsonl"), {
+        recordedAt,
+        event,
+      });
+    }
+    // Denormalize display facts onto the metadata regardless of whether the full event stream is
+    // persisted, so a history row never has to replay events to learn the PR URL or failure.
+    await this.captureFromEvent(event, recordedAt);
+  }
+
+  private async captureFromEvent(event: RunEvent, updatedAt: string): Promise<void> {
+    const metadata = this.requireMetadata();
+    this.metadata = {
+      ...metadata,
+      ...(event.type === "pr:opened" ? { prUrl: event.url } : {}),
+      ...(event.type === "run:failed" ? { failureSummary: event.error } : {}),
+      updatedAt,
+    };
+    await this.writeMetadata();
   }
 
   async finish(status: Exclude<RunStatus, "running">): Promise<void> {
     const metadata = this.requireMetadata();
-    this.metadata = { ...metadata, status, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const { finishedAt: _finishedAt, failureSummary, ...base } = metadata;
+    this.metadata = {
+      ...base,
+      ...(status === "failed" && failureSummary !== undefined ? { failureSummary } : {}),
+      status,
+      finishedAt: now,
+      updatedAt: now,
+    };
     await this.writeMetadata();
   }
 
@@ -309,21 +443,18 @@ class FileRunJournal implements RunJournal {
     pipeline: string[],
     resumeKey: string | undefined,
   ): Promise<RunMetadata | undefined> {
-    const runsDir = join(this.root, "runs");
-    if (!existsSync(runsDir)) return undefined;
-    const candidates: RunMetadata[] = [];
-    for (const runId of await readdir(runsDir)) {
-      const metadata = await readMetadataIfExists(join(runsDir, runId));
-      if (metadata === undefined || metadata.status === "finished") continue;
-      if (!samePipeline(metadata.pipeline, pipeline)) continue;
-      // Only resume a parked Run that belongs to the branch you're on now. Once the source checkout
-      // has started handing the feature branch to a worktree, either side of that handoff may need to
-      // recover the same Run.
-      if (!matchesResumeKey(metadata, resumeKey)) continue;
-      candidates.push(metadata);
-    }
-    candidates.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return candidates[0];
+    // `readRunsIn` already returns runs most-recently-updated first, so the first match is the
+    // latest. Only resume a parked Run that belongs to the branch you're on now; once the source
+    // checkout has started handing the feature branch to a worktree, either side of that handoff may
+    // need to recover the same Run.
+    const runs = await readRunsIn(join(this.root, "runs"));
+    const now = Date.now();
+    return runs.find(
+      (metadata) =>
+        isResumable(metadata, now) &&
+        samePipeline(metadata.pipeline, pipeline) &&
+        runMatchesBranch(metadata, resumeKey),
+    );
   }
 
   private async readArtifacts(): Promise<Map<string, unknown>> {
@@ -390,10 +521,15 @@ function assertCompatible(metadata: RunMetadata, pipeline: string[], runId: stri
   }
 }
 
-function matchesResumeKey(metadata: RunMetadata, resumeKey: string | undefined): boolean {
-  if (metadata.resumeKey === resumeKey) return true;
+/**
+ * Whether a Run belongs to the given branch: its `resumeKey` matches, or either side of an
+ * in-flight source-to-worktree handoff does. Shared by `auto` resume and the startup gate so both
+ * decide "is this Run for the branch I'm on now?" the same way.
+ */
+export function runMatchesBranch(metadata: RunMetadata, branch: string | undefined): boolean {
+  if (metadata.resumeKey === branch) return true;
   const handoff = metadata.worktreeHandoff;
-  return handoff?.sourceResumeKey === resumeKey || handoff?.workspaceBranch === resumeKey;
+  return handoff?.sourceResumeKey === branch || handoff?.workspaceBranch === branch;
 }
 
 function samePipeline(a: readonly string[], b: readonly string[]): boolean {
@@ -406,6 +542,25 @@ function roundIndexesFor(rounds: readonly RoundRecord[]): Map<string, number> {
     indexes.set(record.step, Math.max(indexes.get(record.step) ?? 0, record.index + 1));
   }
   return indexes;
+}
+
+function ownedByCurrentProcess(metadata: RunMetadata): boolean {
+  const owner = metadata.owner;
+  return owner?.pid === process.pid && owner.host === hostname();
+}
+
+function ownerLabel(metadata: RunMetadata): string {
+  const owner = metadata.owner;
+  return owner === undefined ? "unknown owner" : `pid ${owner.pid} on ${owner.host}`;
+}
+
+function isResumable(metadata: RunMetadata, now: number): boolean {
+  if (metadata.status === "finished") return false;
+  return metadata.status !== "running" || classifyLiveness(metadata, { now }) === "orphaned";
+}
+
+function currentOwner(): RunOwner {
+  return { pid: process.pid, host: hostname() };
 }
 
 function newRunId(): string {

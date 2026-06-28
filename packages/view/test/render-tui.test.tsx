@@ -137,4 +137,33 @@ describe("TUI App (no real terminal)", () => {
     expect(frame).not.toContain("(ask-user)");
     t.renderer.destroy();
   });
+
+  test("read-only viewer attaching to a live run offers detach, never abort", async () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["produce"] },
+      { type: "step:started", step: "produce" },
+    ]);
+    const [getView] = createSignal(view);
+    const [now] = createSignal(1000);
+    const [prompt] = createSignal<ActivePrompt | undefined>(undefined);
+
+    const t = await testRender(
+      () =>
+        App({
+          view: getView,
+          now,
+          prompt,
+          readOnly: true,
+          onCopySelection: () => false,
+          onAbort: () => {},
+        }),
+      { width: 100, height: 24 },
+    );
+    await t.flush();
+    const frame = t.captureCharFrame();
+    expect(frame).toContain("attached");
+    expect(frame).toContain("q detach");
+    expect(frame).not.toContain("q abort");
+    t.renderer.destroy();
+  });
 });
