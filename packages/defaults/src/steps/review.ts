@@ -20,7 +20,13 @@ import {
 import { prBody, reviewSummary } from "../artifacts.ts";
 import { guardReadOnly } from "../git-guard.ts";
 import { findingsSchema, fixPrompt, reviewPrompt } from "../prompts.ts";
-import { parseReviewFindings, summarize } from "../review/synthesize.ts";
+import {
+  findingsLogLine,
+  overviewLine,
+  parseReviewFindings,
+  reviewTally,
+  summarize,
+} from "../review/synthesize.ts";
 import { fixCommitSubject } from "../semantic-commit.ts";
 
 const REVIEW_PASS_TITLE = "code review";
@@ -65,7 +71,7 @@ async function runReviewPass(
     prBody: ctx.read(prBody),
     base: await ctx.git.defaultBranch(),
   });
-  return ctx.phase(
+  const findings = await ctx.phase(
     REVIEW_PASS_TITLE,
     () =>
       guardReadOnly(ctx, READ_ONLY_EDIT_WARNING, () =>
@@ -73,6 +79,8 @@ async function runReviewPass(
       ),
     { group: passGroup(input), findings: (findings) => findings },
   );
+  ctx.log(findingsLogLine(findings));
+  return findings;
 }
 
 function fixSummaries(rounds: readonly { readonly fixSummary?: string }[]): string {
@@ -112,9 +120,13 @@ export function reviewStep(): Step {
         recordRounds: "live",
       });
 
+      const fixes = fixSummaries(result.rounds);
+      const overview = overviewLine(reviewTally(result.rounds));
+      ctx.log(fixes.length > 0 ? `${overview} (${fixes})` : overview);
+
       return {
         artifacts: {
-          reviewSummary: summarize(result.findings, fixSummaries(result.rounds)),
+          reviewSummary: summarize(result.rounds, fixes),
         },
         rounds: [],
       };

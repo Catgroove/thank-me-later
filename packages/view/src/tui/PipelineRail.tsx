@@ -10,9 +10,11 @@ import type { Accessor } from "solid-js";
 import type { PhaseView, StepView, ViewState } from "../present.ts";
 import { sanitize } from "./sanitize.ts";
 import {
+  findingTally,
   latestGroupPhases,
   phaseElapsed,
   railWidth,
+  stepChecklist,
   stepElapsed,
   statusColor,
   statusGlyph,
@@ -65,6 +67,25 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
   );
 }
 
+/** A row of compact glyph+count chips summarising a Step's finding lifecycle: ✓ fixed, ✗ unresolved,
+ *  ? needs you, ⟳ pending - so "is it fixed / does it need me" reads off the rail without opening the
+ *  inspector. Empty (renders nothing) for Steps with no findings. */
+function RailTally(props: { step: StepView }) {
+  const segments = () => findingTally(stepChecklist(props.step));
+  return (
+    <Show when={segments().length > 0}>
+      <For each={segments()}>
+        {(segment) => (
+          <text flexShrink={0} marginLeft={1} fg={segment.color} wrapMode="none">
+            {segment.glyph}
+            {segment.count}
+          </text>
+        )}
+      </For>
+    </Show>
+  );
+}
+
 function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<number> }) {
   const isSelected = () => props.stepIndex() === effectiveIndex(props.nav(), props.view());
   const pendingAt = () => {
@@ -105,6 +126,7 @@ function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<nu
         <text flexShrink={0} marginLeft={1} fg={theme.textFaint} wrapMode="none">
           {elapsed()}
         </text>
+        <RailTally step={props.step} />
       </box>
       <Show when={phases().length > 0}>
         <For each={phases()}>
