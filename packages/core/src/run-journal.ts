@@ -510,7 +510,12 @@ export function parseRounds(text: string): RoundRecord[] {
   const rounds: RoundRecord[] = [];
   for (const line of text.split("\n")) {
     if (line.trim().length === 0) continue;
-    const parsed = JSON.parse(line) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line) as unknown;
+    } catch {
+      continue;
+    }
     if (typeof parsed !== "object" || parsed === null) continue;
     const record = parsed as Partial<RoundRecord>;
     if (typeof record.step !== "string" || typeof record.index !== "number") continue;
