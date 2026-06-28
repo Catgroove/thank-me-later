@@ -8,7 +8,6 @@ import type { Accessor } from "solid-js";
 import type { Finding, FindingAction } from "@tml/core";
 import { sanitize } from "./sanitize.ts";
 import { actionOptions, findingSections, SECTION_LABEL, summaryLine } from "./approval.ts";
-import { DISPOSITION_COLOR, findingMarker } from "./format.ts";
 import { theme } from "./theme.ts";
 import type { ActivePrompt } from "./interaction.ts";
 
@@ -94,46 +93,23 @@ function AskBody(props: {
   );
 }
 
-// A finding in the drawer mirrors the inspector's findings tab: the title leads (prefixed by the
-// selection checkbox), then a dim metadata line carries the `[disposition]` badge and the file:line,
-// indented to sit under the title. Keeping the layout identical means the two surfaces read as the
-// same finding rather than two different renderings.
-const FINDING_INDENT = 4; // the width of the "[x] " checkbox, so metadata lines align under the title
-
+// The drawer is a pick-list, not a detail view: each finding is just its selection checkbox and
+// title. Severity, location, and evidence live in the step's findings tab, so repeating them here
+// would only duplicate that detailed view and crowd the decision surface.
 function FindingRow(props: { finding: Finding; selected: boolean; focused: boolean }) {
-  const f = () => props.finding;
   return (
     <box
-      flexDirection="column"
+      flexDirection="row"
       backgroundColor={props.focused ? theme.focusBg : undefined}
       paddingLeft={1}
       paddingRight={1}
     >
-      <box flexDirection="row">
-        <text flexShrink={0} fg={theme.text}>
-          {props.selected ? "[x]" : "[ ]"}
-        </text>
-        <text
-          flexGrow={1}
-          flexShrink={1}
-          marginLeft={1}
-          fg={theme.text}
-          attributes={1}
-          wrapMode="word"
-        >
-          {sanitize(f().title)}
-        </text>
-      </box>
-      <box flexDirection="row" marginLeft={FINDING_INDENT}>
-        <text flexShrink={0} fg={DISPOSITION_COLOR[f().disposition]}>
-          {findingMarker(f())}
-        </text>
-        <Show when={f().location}>
-          <text flexShrink={1} marginLeft={1} fg={theme.textFaint} wrapMode="none" truncate>
-            {sanitize(f().location ?? "")}
-          </text>
-        </Show>
-      </box>
+      <text flexShrink={0} fg={theme.text}>
+        {props.selected ? "[x]" : "[ ]"}
+      </text>
+      <text flexGrow={1} flexShrink={1} marginLeft={1} fg={theme.text} wrapMode="word">
+        {sanitize(props.finding.title)}
+      </text>
     </box>
   );
 }

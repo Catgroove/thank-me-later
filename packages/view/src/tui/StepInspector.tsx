@@ -141,11 +141,12 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
   );
 }
 
-// A finding reads as stacked tiers so nothing collides, the title leading as the prominent main
-// header. Below it a metadata row (status glyph, the `[disposition]` severity badge, and the
-// lifecycle tag pushed hard right), then the file:line as a dim secondary header, then the evidence.
-// The badge carries the severity colour and the title carries the prominence, so the two concerns
-// never fight for the same line. The focused background matches the approval drawer's focused row.
+// The detailed view of a finding: the status glyph, the `[disposition]` severity badge, and the
+// title share the header row (the title takes the remaining width and wraps under itself); the
+// file:line sits below as a dim secondary header, then the evidence. The glyph and its colour carry
+// the lifecycle status - the aggregate tally at the top of the tab spells it out in words - so the
+// header row stays free of a right-hand tag that would collide with a wrapping title. The badge
+// carries severity colour; the title carries prominence. Focused background matches the drawer.
 function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const f = () => props.entry.finding;
   const meta = () => STATUS_META[props.entry.status];
@@ -162,21 +163,23 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
       paddingRight={1}
       backgroundColor={props.focused ? theme.focusBg : undefined}
     >
-      <text fg={titleColor()} attributes={1} wrapMode="word">
-        {sanitize(f().title)}
-      </text>
       <box flexDirection="row">
         <text flexShrink={0} fg={meta().color}>
           {meta().glyph}
         </text>
-        <text flexGrow={1} flexShrink={1} marginLeft={1} fg={badgeColor()} wrapMode="none" truncate>
+        <text flexShrink={0} marginLeft={1} fg={badgeColor()}>
           {marker()}
         </text>
-        <Show when={meta().tag !== ""}>
-          <text flexShrink={0} marginLeft={1} fg={meta().color}>
-            {meta().tag}
-          </text>
-        </Show>
+        <text
+          flexGrow={1}
+          flexShrink={1}
+          marginLeft={1}
+          fg={titleColor()}
+          attributes={1}
+          wrapMode="word"
+        >
+          {sanitize(f().title)}
+        </text>
       </box>
       <Show when={f().location}>
         <text fg={theme.textFaint} wrapMode="word">
