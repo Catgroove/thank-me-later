@@ -310,28 +310,39 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
   const active = () => props.view().activeStep;
   const branch = () => props.view().currentBranch;
   const elapsed = () => runElapsed(props.view(), props.now());
+  // The PR link gets its own full-width line so a long URL never crowds the status row, and only
+  // while the Run is live - once it ends the DoneBanner carries the link, so it shows in one place
+  // at a time rather than the header and the banner both at once.
+  const showPr = () => props.view().prUrl !== undefined && status() === "running";
   return (
-    <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-      <text fg={theme.accent} attributes={1}>
-        tml
-      </text>
-      <text marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
-        {status()}
-        {active() ? ` · ${sanitize(active() ?? "")}` : ""}
-      </text>
-      <Show when={branch() !== undefined}>
-        <text marginLeft={2} fg={theme.textMuted}>
-          {`⎇ ${sanitize(truncateBranch(branch() ?? ""))}`}
+    <box flexDirection="column">
+      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+        <text fg={theme.accent} attributes={1}>
+          tml
         </text>
-      </Show>
-      <box flexGrow={1} />
-      <Show when={elapsed() !== ""}>
-        <text fg={theme.textFaint}>total {elapsed()}</text>
-      </Show>
-      <Show when={props.view().prUrl !== undefined}>
-        <text marginLeft={2} fg={theme.info}>
-          {sanitize(props.view().prUrl ?? "")}
+        <text marginLeft={2} fg={statusColor(stepStatusOf(status()))}>
+          {status()}
+          {active() ? ` · ${sanitize(active() ?? "")}` : ""}
         </text>
+        <Show when={branch() !== undefined}>
+          <text marginLeft={2} fg={theme.textMuted}>
+            {`⎇ ${sanitize(truncateBranch(branch() ?? ""))}`}
+          </text>
+        </Show>
+        <box flexGrow={1} />
+        <Show when={elapsed() !== ""}>
+          <text fg={theme.textFaint}>total {elapsed()}</text>
+        </Show>
+      </box>
+      <Show when={showPr()}>
+        <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+          <text flexShrink={0} fg={theme.textFaint}>
+            pull request
+          </text>
+          <text flexGrow={1} flexShrink={1} marginLeft={2} fg={theme.info} wrapMode="none" truncate>
+            {sanitize(props.view().prUrl ?? "")}
+          </text>
+        </box>
       </Show>
     </box>
   );

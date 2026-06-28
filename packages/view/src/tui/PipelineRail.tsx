@@ -67,21 +67,28 @@ function PhaseRow(props: { phase: PhaseView; last: boolean; now: number }) {
   );
 }
 
-/** A row of compact glyph+count chips summarising a Step's finding lifecycle: ✓ fixed, ✗ unresolved,
- *  ? needs you, ⟳ pending - so "is it fixed / does it need me" reads off the rail without opening the
- *  inspector. Empty (renders nothing) for Steps with no findings. */
+/** A dim sub-line beneath the Step name with compact glyph+count chips summarising its finding
+ *  lifecycle: ✓ fixed, ✗ unresolved, ? needs you, ⟳ pending - so "is it fixed / does it need me" reads
+ *  off the rail without opening the inspector. On its own row (not the trailing zone) so the elapsed
+ *  column stays aligned across every step. Renders nothing for Steps with no findings. The two-space
+ *  lead aligns the chips under the Step name (past the status glyph). */
 function RailTally(props: { step: StepView }) {
   const segments = () => findingTally(stepChecklist(props.step));
   return (
     <Show when={segments().length > 0}>
-      <For each={segments()}>
-        {(segment) => (
-          <text flexShrink={0} marginLeft={1} fg={segment.color} wrapMode="none">
-            {segment.glyph}
-            {segment.count}
-          </text>
-        )}
-      </For>
+      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+        <text flexShrink={0} fg={theme.textFaint} wrapMode="none">
+          {"  "}
+        </text>
+        <For each={segments()}>
+          {(segment, i) => (
+            <text flexShrink={0} marginLeft={i() === 0 ? 0 : 1} fg={segment.color} wrapMode="none">
+              {segment.glyph}
+              {segment.count}
+            </text>
+          )}
+        </For>
+      </box>
     </Show>
   );
 }
@@ -126,8 +133,8 @@ function StepRailRow(props: RailProps & { step: StepView; stepIndex: Accessor<nu
         <text flexShrink={0} marginLeft={1} fg={theme.textFaint} wrapMode="none">
           {elapsed()}
         </text>
-        <RailTally step={props.step} />
       </box>
+      <RailTally step={props.step} />
       <Show when={phases().length > 0}>
         <For each={phases()}>
           {(phase, i) => (

@@ -141,15 +141,19 @@ function Artifacts(props: { step: StepView; expanded: boolean }) {
   );
 }
 
+// A finding reads as three stacked tiers so nothing collides: a metadata row (status glyph, the
+// `[disposition]` severity badge, and the lifecycle tag pushed hard right), then the file:line as a
+// dim secondary header, then the title as the prominent main header, then the evidence. The badge
+// carries the severity colour and the title carries the prominence, so the two concerns never fight
+// for the same line. The focused background matches the approval drawer's focused-finding row.
 function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
   const f = () => props.entry.finding;
   const meta = () => STATUS_META[props.entry.status];
-  // The focused background matches the approval drawer's focused-finding row so the two surfaces
-  // read as pointing at the same finding.
   const marker = () => findingMarker(f());
-  // Resolved findings dim so the eye lands on what still needs work; open/pending keep the finding's
-  // disposition color.
-  const titleColor = () => (meta().resolved ? theme.textFaint : DISPOSITION_COLOR[f().disposition]);
+  // Resolved findings recede (dim) so the eye lands on what still needs work.
+  const dim = () => meta().resolved;
+  const badgeColor = () => (dim() ? theme.textFaint : DISPOSITION_COLOR[f().disposition]);
+  const titleColor = () => (dim() ? theme.textFaint : theme.text);
   return (
     <box
       flexDirection="column"
@@ -159,16 +163,27 @@ function FindingLine(props: { entry: FindingLifecycle; focused?: boolean }) {
       backgroundColor={props.focused ? theme.focusBg : undefined}
     >
       <box flexDirection="row">
-        <text fg={meta().color}>{meta().glyph}</text>
-        <text flexGrow={1} marginLeft={1} fg={titleColor()}>
-          {marker()} {sanitize(f().title)}
-          {f().location ? ` — ${sanitize(f().location ?? "")}` : ""}
+        <text flexShrink={0} fg={meta().color}>
+          {meta().glyph}
+        </text>
+        <text flexGrow={1} flexShrink={1} marginLeft={1} fg={badgeColor()} wrapMode="none" truncate>
+          {marker()}
         </text>
         <Show when={meta().tag !== ""}>
-          <text fg={meta().color}>{meta().tag}</text>
+          <text flexShrink={0} marginLeft={1} fg={meta().color}>
+            {meta().tag}
+          </text>
         </Show>
       </box>
-      <text fg={theme.textMuted} wrapMode="word" marginLeft={2}>
+      <Show when={f().location}>
+        <text fg={theme.textFaint} wrapMode="word">
+          {sanitize(f().location ?? "")}
+        </text>
+      </Show>
+      <text fg={titleColor()} attributes={1} wrapMode="word">
+        {sanitize(f().title)}
+      </text>
+      <text fg={theme.textMuted} wrapMode="word">
         {sanitize(f().detail, { preserveNewlines: true })}
       </text>
     </box>
