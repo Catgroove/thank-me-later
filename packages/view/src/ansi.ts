@@ -59,6 +59,7 @@ export interface Style {
   readonly bold: (s: string) => string;
   readonly red: (s: string) => string;
   readonly green: (s: string) => string;
+  readonly yellow: (s: string) => string;
   readonly cyan: (s: string) => string;
 }
 
@@ -71,6 +72,7 @@ export function makeStyle(color: boolean): Style {
     bold: (s) => sgr("1", s),
     red: (s) => sgr("31", s),
     green: (s) => sgr("32", s),
+    yellow: (s) => sgr("33", s),
     cyan: (s) => sgr("36", s),
   };
 }

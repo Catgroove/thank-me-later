@@ -1,102 +1,150 @@
-// Render an aggregated `RunStats` into a terminal block: a block-letter banner, headline figures,
-// fixes credited per Step, and a per-repo table - each numeric row trailed by a horizontal gauge.
-// Pure string assembly; the `tml stats` command owns reading history and choosing whether to color.
+// Render an aggregated `RunStats` as a lifetime view of the pipeline, in tml's own visual language:
+// the `▶` header and `─` rule of the run renderer, the finding-lifecycle glyphs (`✓` fixed/accepted,
+// `✗` unresolved, `⤼` skipped, `○` open) and `·`-joined tally chips of the rail and findings
+// inspector, the `▸` step glyph of the pipeline rail, and the `[disposition]` severity markers. No
+// banner, no bar charts - a stats screen that reads like the rest of the tool. Pure string assembly;
+// the `tml stats` command owns reading history and choosing whether to color.
 
-import type { RunStats } from "@tml/core";
+import type { OutcomeTally, RunStats, StepStats } from "@tml/core";
 import { makeStyle, type Style } from "./ansi.ts";
-import { bannerLines } from "./banner.ts";
 
 export interface RenderStatsOptions {
   /** ANSI color; defaults off so piped/captured output stays plain. */
   readonly color?: boolean;
-  /** Banner text; defaults to the tool name. */
-  readonly title?: string;
 }
 
-const BAR_WIDTH = 24;
-const MIN_LABEL_WIDTH = 12;
-const MAX_LABEL_WIDTH = 28;
-const VALUE_WIDTH = 5;
+const HEADER = "▶ stats";
+const STEP_GLYPH = "▸";
+const INDENT = "  ";
 const TOP_REPOS = 8;
+const MAX_NAME = 24;
+
+interface OutcomeMeta {
+  readonly key: keyof OutcomeTally;
+  readonly glyph: string;
+  readonly label: string;
+  readonly tone: keyof Pick<Style, "green" | "red" | "dim">;
+}
+
+// Lifecycle outcomes in narrative order: what got resolved well, then what did not, then what was
+// left. Glyphs and colors mirror the rail/inspector's STATUS_META so the two never read differently.
+const OUTCOMES: readonly OutcomeMeta[] = [
+  { key: "fixed", glyph: "✓", label: "fixed", tone: "green" },
+  { key: "accepted", glyph: "✓", label: "accepted", tone: "green" },
+  { key: "unresolved", glyph: "✗", label: "unresolved", tone: "red" },
+  { key: "skipped", glyph: "⤼", label: "skipped", tone: "dim" },
+  { key: "open", glyph: "○", label: "open", tone: "dim" },
+];
+
+const SEVERITY: readonly {
+  readonly key: keyof RunStats["bySeverity"];
+  readonly tone: keyof Pick<Style, "red" | "yellow" | "cyan" | "dim">;
+}[] = [
+  { key: "blocker", tone: "red" },
+  { key: "should-fix", tone: "yellow" },
+  { key: "consider", tone: "cyan" },
+  { key: "nit", tone: "dim" },
+];
 
 export function renderStats(stats: RunStats, options: RenderStatsOptions = {}): string {
   const style = makeStyle(options.color ?? false);
-  const banner = bannerLines(options.title ?? "THANK ME LATER").map((line) => style.green(line));
 
   if (stats.runs === 0) {
-    return [...banner, "", style.dim("No runs recorded yet. Run tml to get started.")].join("\n");
+    return [style.bold(HEADER), style.dim("no runs recorded yet · run tml to get started")].join(
+      "\n",
+    );
   }
 
-  const withFixes = stats.topRepos.filter((r) => r.fixed > 0);
-  const topRepos = withFixes.slice(0, TOP_REPOS);
-  const labelWidth = clampLabelWidth([
-    "Runs",
-    "Findings",
-    "Fixed",
-    ...stats.fixesByStep.map((s) => s.step),
-    ...topRepos.map((r) => r.repo),
-  ]);
-  const row = (label: string, value: string, trail?: string): string =>
-    `${fit(label, labelWidth)}${style.bold(value.padStart(VALUE_WIDTH))}${trail ? `  ${trail}` : ""}`;
+  const context = `${repoContext(stats)} · ${stats.runs} ${plural(stats.runs, "run")}`;
+  const header = `${style.bold(HEADER)} ${style.dim(`· ${context}`)}`;
+  const lines: string[] = [header, style.dim("─".repeat(HEADER.length + context.length + 3)), ""];
 
-  const lines: string[] = [...banner, ""];
-
+  // Headline: one line of the whole story.
   lines.push(
-    row(
-      "Runs",
-      String(stats.runs),
-      style.dim(`across ${stats.repos} ${plural(stats.repos, "repo")}`),
-    ),
-  );
-  lines.push(row("Findings", String(stats.findingsReported)));
-  lines.push(
-    row(
-      "Fixed",
-      String(stats.findingsFixed),
-      `${gauge(style, stats.fixRate, 1)}  ${style.dim(`${pct(stats.fixRate)}%`)}`,
-    ),
+    `${INDENT}${style.bold(String(stats.findingsSeen))} findings seen${style.dim(" · ")}` +
+      `${style.bold(String(stats.findingsFixed))} fixed${style.dim(" · ")}` +
+      `${style.dim(`${pct(stats.fixRate)}% fix rate`)}`,
   );
 
-  if (stats.fixesByStep.length > 0) {
-    const max = stats.fixesByStep[0].fixed; // sorted desc
-    lines.push("", style.bold("Fixes by step"));
-    for (const s of stats.fixesByStep) {
-      lines.push(row(s.step, String(s.fixed), gauge(style, s.fixed, max)));
-    }
+  // Lifecycle breakdown as labeled tally chips.
+  const breakdown = outcomeChips(style, stats.outcomes);
+  if (breakdown !== "") lines.push("", `${INDENT}${breakdown}`);
+
+  // Severity mix.
+  const severity = severityChips(style, stats.bySeverity);
+  if (severity !== "") lines.push("", `${INDENT}${style.dim("severity")}  ${severity}`);
+
+  // The pipeline itself: each step's lifetime contribution.
+  if (stats.byStep.length > 0) {
+    lines.push("", `${INDENT}${style.dim("pipeline")}`);
+    lines.push(...stepLines(style, stats.byStep));
   }
 
-  if (topRepos.length > 0) {
-    const max = Math.max(...topRepos.map((r) => r.fixed), 1);
-    lines.push("", style.bold("Top repos"));
-    for (const r of topRepos) {
-      const runs = style.dim(`${r.runs} ${plural(r.runs, "run")}`);
-      lines.push(row(r.repo, String(r.fixed), `${gauge(style, r.fixed, max)}  ${runs}`));
+  // Repos, when more than one is in play (otherwise it just repeats the header).
+  if (stats.repos > 1) {
+    const withFixes = stats.topRepos.filter((r) => r.fixed > 0);
+    const shown = withFixes.slice(0, TOP_REPOS);
+    if (shown.length > 0) {
+      lines.push("", `${INDENT}${style.dim("repos")}`);
+      const names = shown.map((r) => shortRepo(r.repo));
+      const nameWidth = Math.min(MAX_NAME, Math.max(...names.map((n) => n.length)));
+      shown.forEach((r, i) => {
+        const runs = style.dim(`· ${r.runs} ${plural(r.runs, "run")}`);
+        lines.push(
+          `${INDENT}${fit(names[i], nameWidth)}  ${style.green(`✓ ${r.fixed} fixed`)}  ${runs}`,
+        );
+      });
+      const more = withFixes.length - shown.length;
+      if (more > 0) lines.push(`${INDENT}${style.dim(`+${more} more`)}`);
     }
-    const more = withFixes.length - topRepos.length;
-    if (more > 0) lines.push(style.dim(`+${more} more`));
   }
 
   return lines.join("\n");
 }
 
-function clampLabelWidth(labels: readonly string[]): number {
-  const longest = labels.reduce((max, label) => Math.max(max, label.length), 0);
-  return Math.min(MAX_LABEL_WIDTH, Math.max(MIN_LABEL_WIDTH, longest + 2));
+function stepLines(style: Style, byStep: readonly StepStats[]): string[] {
+  const nameWidth = Math.min(MAX_NAME, Math.max(...byStep.map((s) => s.step.length)));
+  const seenWidth = Math.max(...byStep.map((s) => String(s.seen).length));
+  return byStep.map((s) => {
+    const name = fit(s.step, nameWidth);
+    const seen = style.dim(`${String(s.seen).padStart(seenWidth)} seen`);
+    const chips: string[] = [];
+    if (s.fixed > 0) chips.push(style.green(`✓ ${s.fixed} fixed`));
+    if (s.outcomes.unresolved > 0) chips.push(style.red(`✗ ${s.outcomes.unresolved}`));
+    const trail = chips.length > 0 ? `  ${chips.join("  ")}` : "";
+    return `${INDENT}${STEP_GLYPH} ${name}  ${seen}${trail}`;
+  });
 }
 
-/** Pad a label to `width`, or truncate with an ellipsis so over-long names keep the bars aligned. */
-function fit(label: string, width: number): string {
-  if (label.length <= width) return label.padEnd(width);
-  return `${label.slice(0, width - 2)}… `;
+/** `glyph count label · …` chips for the nonzero lifecycle buckets, in narrative order. */
+function outcomeChips(style: Style, outcomes: OutcomeTally): string {
+  return OUTCOMES.filter((o) => outcomes[o.key] > 0)
+    .map((o) => `${style[o.tone](o.glyph)} ${outcomes[o.key]} ${o.label}`)
+    .join(style.dim(" · "));
 }
 
-/** A horizontal gauge: green fill over a dim track, `value` of `max`. */
-function gauge(style: Style, value: number, max: number, width = BAR_WIDTH): string {
-  const ratio = max <= 0 ? 0 : Math.max(0, Math.min(1, value / max));
-  const filled = Math.round(ratio * width);
-  const head = filled > 0 ? style.green("█".repeat(filled)) : "";
-  const tail = filled < width ? style.dim("░".repeat(width - filled)) : "";
-  return head + tail;
+function severityChips(style: Style, severity: RunStats["bySeverity"]): string {
+  return SEVERITY.filter((s) => severity[s.key] > 0)
+    .map((s) => `${style[s.tone](`[${s.key}]`)} ${severity[s.key]}`)
+    .join(style.dim(" · "));
+}
+
+function repoContext(stats: RunStats): string {
+  if (stats.repos === 1 && stats.topRepos[0] !== undefined)
+    return shortRepo(stats.topRepos[0].repo);
+  return `${stats.repos} repos`;
+}
+
+/** Display form of a repo identity: its `owner/repo` tail, dropping the host. */
+function shortRepo(identity: string): string {
+  const segments = identity.split("/").filter((s) => s !== "");
+  return segments.slice(-2).join("/") || identity;
+}
+
+/** Pad a name to `width`, or truncate with an ellipsis so trailing columns stay aligned. */
+function fit(name: string, width: number): string {
+  if (name.length <= width) return name.padEnd(width);
+  return `${name.slice(0, width - 1)}…`;
 }
 
 function pct(ratio: number): number {
