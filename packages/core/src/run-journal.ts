@@ -288,11 +288,7 @@ class FileRunJournal implements RunJournal {
         );
       }
       // Resuming reclaims the Run: this process becomes its owner and the status returns to running.
-      const {
-        finishedAt: _finishedAt,
-        failureSummary: _failureSummary,
-        ...resumed
-      } = metadata;
+      const { finishedAt: _finishedAt, failureSummary: _failureSummary, ...resumed } = metadata;
       this.metadata = {
         ...resumed,
         status: "running",
