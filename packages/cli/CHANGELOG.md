@@ -1,5 +1,14 @@
 # tml
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [0d29d94]
+  - @tml/defaults@4.0.1
+  - @tml/view@4.0.1
+  - @tml/pi@4.0.1
+
 ## 0.3.1
 
 ### Patch Changes
