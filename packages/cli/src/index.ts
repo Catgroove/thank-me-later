@@ -420,7 +420,7 @@ async function gateAndRun(args: ShipArgs): Promise<number> {
   const candidate = all.find((run) => run.status !== "finished" && runMatchesBranch(run, branch));
   if (candidate === undefined) return ship(args);
 
-  const live = classifyLiveness(candidate, { now: Date.now() }) === "live";
+  const live = classifyLiveness(candidate, { now: Date.now() }) !== "orphaned";
   const { runStartupGate } = await import("@tml/view/tui");
   const decision = await runStartupGate({ run: candidate, live });
   switch (decision) {

@@ -282,9 +282,9 @@ class FileRunJournal implements RunJournal {
       // Re-entering it for writing would race two engines on one journal and workspace, so refuse.
       // The owner being *this* process is re-entry, not a conflict (a resumed run in-process).
       const liveness = classifyLiveness(metadata, { now: Date.now() });
-      if (liveness === "live" && metadata.owner?.pid !== process.pid) {
+      if (liveness !== "orphaned" && !ownedByCurrentProcess(metadata)) {
         throw new Error(
-          `tml: run ${runId} is already in progress (pid ${metadata.owner?.pid} on ${metadata.owner?.host}); attach to it or start a fresh run.`,
+          `tml: run ${runId} is already in progress (${ownerLabel(metadata)}); attach to it or start a fresh run.`,
         );
       }
       // Resuming reclaims the Run: this process becomes its owner and the status returns to running.
@@ -379,29 +379,27 @@ class FileRunJournal implements RunJournal {
   }
 
   async recordEvent(event: RunEvent): Promise<void> {
+    const recordedAt = new Date().toISOString();
+    if (this.events) {
+      await appendJsonLine(join(this.requireRunDir(), "events.jsonl"), {
+        recordedAt,
+        event,
+      });
+    }
     // Denormalize display facts onto the metadata regardless of whether the full event stream is
     // persisted, so a history row never has to replay events to learn the PR URL or failure.
-    await this.captureFromEvent(event);
-    if (!this.events) return;
-    await appendJsonLine(join(this.requireRunDir(), "events.jsonl"), {
-      recordedAt: new Date().toISOString(),
-      event,
-    });
+    await this.captureFromEvent(event, recordedAt);
   }
 
-  private async captureFromEvent(event: RunEvent): Promise<void> {
+  private async captureFromEvent(event: RunEvent, updatedAt: string): Promise<void> {
     const metadata = this.requireMetadata();
-    if (event.type === "pr:opened" && metadata.prUrl !== event.url) {
-      this.metadata = { ...metadata, prUrl: event.url, updatedAt: new Date().toISOString() };
-      await this.writeMetadata();
-    } else if (event.type === "run:failed" && metadata.failureSummary !== event.error) {
-      this.metadata = {
-        ...metadata,
-        failureSummary: event.error,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.writeMetadata();
-    }
+    this.metadata = {
+      ...metadata,
+      ...(event.type === "pr:opened" ? { prUrl: event.url } : {}),
+      ...(event.type === "run:failed" ? { failureSummary: event.error } : {}),
+      updatedAt,
+    };
+    await this.writeMetadata();
   }
 
   async finish(status: Exclude<RunStatus, "running">): Promise<void> {
@@ -454,9 +452,10 @@ class FileRunJournal implements RunJournal {
     // checkout has started handing the feature branch to a worktree, either side of that handoff may
     // need to recover the same Run.
     const runs = await readRunsIn(join(this.root, "runs"));
+    const now = Date.now();
     return runs.find(
       (metadata) =>
-        metadata.status !== "finished" &&
+        isResumable(metadata, now) &&
         samePipeline(metadata.pipeline, pipeline) &&
         runMatchesBranch(metadata, resumeKey),
     );
@@ -547,6 +546,21 @@ function roundIndexesFor(rounds: readonly RoundRecord[]): Map<string, number> {
     indexes.set(record.step, Math.max(indexes.get(record.step) ?? 0, record.index + 1));
   }
   return indexes;
+}
+
+function ownedByCurrentProcess(metadata: RunMetadata): boolean {
+  const owner = metadata.owner;
+  return owner?.pid === process.pid && owner.host === hostname();
+}
+
+function ownerLabel(metadata: RunMetadata): string {
+  const owner = metadata.owner;
+  return owner === undefined ? "unknown owner" : `pid ${owner.pid} on ${owner.host}`;
+}
+
+function isResumable(metadata: RunMetadata, now: number): boolean {
+  if (metadata.status === "finished") return false;
+  return metadata.status !== "running" || classifyLiveness(metadata, { now }) === "orphaned";
 }
 
 function currentOwner(): RunOwner {

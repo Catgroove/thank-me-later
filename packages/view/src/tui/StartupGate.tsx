@@ -13,7 +13,7 @@ import { sanitize } from "./sanitize.ts";
 
 export interface StartupGateProps {
   readonly run: RunMetadata;
-  /** Whether the candidate Run is genuinely live (its owner process is running). */
+  /** Whether the candidate Run is live or unknown and therefore not safely resumable. */
   readonly live: boolean;
   readonly now: number;
   readonly onResolve: (decision: GateDecision) => void;
