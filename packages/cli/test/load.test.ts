@@ -57,6 +57,26 @@ describe("loadTmlConfig", () => {
     expect(selection.disable).toEqual(["quality", "test"]); // union, order-preserving
   });
 
+  test("watch + watchInterval: project wins; interval defaults when unset", () => {
+    const empty = load(tempDir(), tempDir());
+    expect(empty.selection.watch).toBeUndefined(); // unset → resolved later by flag/TTY
+    expect(empty.watchIntervalSeconds).toBe(60); // default
+
+    const globalDir = tempDir();
+    const projectRoot = tempDir();
+    writeConfig(globalDir, { watch: false, watchInterval: 30 });
+    writeConfig(projectRoot, { watch: true });
+    const loaded = load(globalDir, projectRoot);
+    expect(loaded.selection.watch).toBe(true); // project wins
+    expect(loaded.watchIntervalSeconds).toBe(30); // global, not overridden by project
+  });
+
+  test("a non-boolean watch is rejected", () => {
+    const projectRoot = tempDir();
+    writeConfig(projectRoot, { watch: "yes" });
+    expect(() => load(tempDir(), projectRoot)).toThrow(/"watch".*must be a boolean/);
+  });
+
   test("plugins concatenate global-then-project, each resolved against its own config dir", () => {
     const globalDir = tempDir();
     const projectRoot = tempDir();

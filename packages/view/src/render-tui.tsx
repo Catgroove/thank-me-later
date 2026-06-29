@@ -39,6 +39,9 @@ function isUrgent(event: RunEvent): boolean {
     event.type === "approval:pending" ||
     event.type === "run:failed" ||
     event.type === "run:finished" ||
+    event.type === "run:parked" ||
+    event.type === "watch:checking" ||
+    event.type === "watch:waiting" ||
     event.type === "run:cancelled"
   );
 }
@@ -152,7 +155,12 @@ export async function createTuiRenderer(
       return interactions.approveFindings(input);
     },
     complete(finalView: ViewState): Promise<void> | void {
-      if (finalView.status === "finished" || finalView.status === "failed") return dismissed;
+      if (
+        finalView.status === "finished" ||
+        finalView.status === "parked" ||
+        finalView.status === "failed"
+      )
+        return dismissed;
     },
     close(): void {
       if (closed) return;

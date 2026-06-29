@@ -440,6 +440,28 @@ describe("present", () => {
     expect(view.prUrl).toBe("https://git-provider.test/pr/7");
   });
 
+  test("watch:waiting records the rest while parked", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["merge-gate"] },
+      { type: "run:parked" },
+      { type: "watch:waiting", checks: 1, nextCheckInMs: 60_000 },
+    ]);
+    expect(view.status).toBe("parked");
+    expect(view.watch).toEqual({ checks: 1, nextCheckInMs: 60_000 });
+  });
+
+  test("watch:checking folds a re-entry tick back to running (one continuous session)", () => {
+    const view = fold([
+      { type: "run:started", pipeline: ["merge-gate"] },
+      { type: "run:parked" },
+      { type: "watch:waiting", checks: 1, nextCheckInMs: 60_000 },
+      { type: "watch:checking", checks: 1 },
+    ]);
+    expect(view.status).toBe("running"); // re-checking, not done
+    expect(view.finishedAt).toBeUndefined();
+    expect(view.watch).toEqual({ checks: 1 });
+  });
+
   test("activity buffers are bounded under high-volume streams", () => {
     const events: RunEventInput[] = [
       { type: "run:started", pipeline: ["work"] },

@@ -28,7 +28,12 @@ const ALLOWED_KEYS = new Set([
   "disable",
   "plugins",
   "openInBrowser",
+  "watch",
+  "watchInterval",
 ]);
+
+/** Default seconds between `--watch` ticks when `watchInterval` is unset. */
+export const DEFAULT_WATCH_INTERVAL_SECONDS = 60;
 
 export interface LoadOptions {
   /** Global config dir. Defaults to $XDG_CONFIG_HOME/tml or ~/.config/tml. Tests inject a temp dir. */
@@ -46,6 +51,8 @@ export interface Loaded {
   pluginPaths: string[];
   /** Open the Run's PR in the browser when the Run finishes or fails (same as the TUI `o` key). Default false. */
   openInBrowser: boolean;
+  /** Seconds between `--watch` ticks. Defaults to {@link DEFAULT_WATCH_INTERVAL_SECONDS}. */
+  watchIntervalSeconds: number;
 }
 
 interface RawConfig {
@@ -57,6 +64,8 @@ interface RawConfig {
   disable?: string[];
   plugins?: string[];
   openInBrowser?: boolean;
+  watch?: boolean;
+  watchInterval?: number;
 }
 
 export function loadTmlConfig(cwd: string, opts: LoadOptions = {}): Loaded {
@@ -75,8 +84,15 @@ export function loadTmlConfig(cwd: string, opts: LoadOptions = {}): Loaded {
   ];
 
   const openInBrowser = project?.openInBrowser ?? global?.openInBrowser ?? false;
+  const watchIntervalSeconds =
+    project?.watchInterval ?? global?.watchInterval ?? DEFAULT_WATCH_INTERVAL_SECONDS;
 
-  return { selection: mergeSelection(global, project), pluginPaths, openInBrowser };
+  return {
+    selection: mergeSelection(global, project),
+    pluginPaths,
+    openInBrowser,
+    watchIntervalSeconds,
+  };
 }
 
 function defaultConfigHome(env: Record<string, string | undefined>): string {
@@ -133,6 +149,8 @@ function validate(data: unknown, path: string): RawConfig {
   assertStringArray(obj, "disable", path);
   assertStringArray(obj, "plugins", path);
   assertBoolean(obj, "openInBrowser", path);
+  assertBoolean(obj, "watch", path);
+  assertNonNegativeInteger(obj, "watchInterval", path);
   return obj as RawConfig;
 }
 
@@ -197,6 +215,7 @@ function mergeSelection(global: RawConfig | undefined, project: RawConfig | unde
   const maxFixAttempts = project?.maxFixAttempts ?? global?.maxFixAttempts;
   const models = mergeModels(global?.models, project?.models);
   const disable = union(global?.disable, project?.disable);
+  const watch = project?.watch ?? global?.watch;
   return {
     ...(harness !== undefined ? { harness } : {}),
     ...(gitProvider !== undefined ? { gitProvider } : {}),
@@ -204,6 +223,7 @@ function mergeSelection(global: RawConfig | undefined, project: RawConfig | unde
     ...(maxFixAttempts !== undefined ? { maxFixAttempts } : {}),
     ...(models !== undefined ? { models } : {}),
     ...(disable !== undefined ? { disable } : {}),
+    ...(watch !== undefined ? { watch } : {}),
   };
 }
 

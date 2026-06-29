@@ -442,9 +442,30 @@ export function createTerminalRenderer(options: TerminalRendererOptions = {}): R
           return;
         case "run:finished":
           stopTimer();
-          commit([...sealed(), ...resultsBlock(view), "■ run finished"], "");
+          commit(
+            [
+              ...sealed(),
+              ...resultsBlock(view),
+              view.watch !== undefined ? "■ the pr landed" : "■ run finished",
+            ],
+            "",
+          );
           showCursor();
           return;
+        case "run:parked":
+          // A mid-watch rest: the PR is ready but not landed. The watch loop continues, so don't stop
+          // the spinner or restore the cursor here - end-of-run teardown happens in close().
+          commit([...sealed(), "● the pr is ready"], "");
+          return;
+        case "watch:checking":
+          commit([dim(`${STEP_INDENT}↻ re-checking the pr (check ${event.checks + 1})`)], "");
+          return;
+        case "watch:waiting": {
+          const secs = Math.max(1, Math.round(event.nextCheckInMs / 1000));
+          const label = event.checks === 1 ? "1 check" : `${event.checks} checks`;
+          commit([dim(`${STEP_INDENT}watching · ${label} done · next in ${secs}s`)], "");
+          return;
+        }
         case "run:cancelled":
           stopTimer();
           commit(

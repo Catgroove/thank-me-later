@@ -2,9 +2,10 @@
 // The standalone TUI, CLI logs, and host Adapters are all consumers of this one
 // stream; the engine itself renders nothing. Events are emitted live as they
 // occur — including `agent:progress` mid-Step — not batched at
-// Step boundaries. `run:finished` means success; `run:paused` means the host asked the
-// engine to stop after a boundary Step; `run:failed` carries a failure; `run:cancelled` is an
-// external Abort (distinct from the `cancel()` flow signal).
+// Step boundaries. `run:finished` means success; `run:parked` means the Run reached a clean,
+// resumable rest (a ready PR not yet landed - the `park()` flow signal); `run:paused` means the host
+// asked the engine to stop after a boundary Step; `run:failed` carries a failure; `run:cancelled` is
+// an external Abort (distinct from the `cancel()` flow signal).
 // The `type` is the discriminant, so there is no redundant `ok` flag.
 //
 // Every event carries `at`: the epoch-millisecond timestamp the engine stamped it
@@ -70,6 +71,18 @@ export type RunEvent =
   | { type: "ask:pending"; at: number; step: string; prompt: string }
   | { type: "approval:pending"; at: number; step: string; input: ApprovalFindingsInput }
   | { type: "run:finished"; at: number }
+  // The Run reached a clean, resumable rest (the `park()` flow signal): a ready PR that has not
+  // landed yet. Distinct from `run:finished` - a parked Run is resumed by a re-run or a `--watch`
+  // tick. Carries an optional human reason.
+  | { type: "run:parked"; at: number; reason?: string }
+  // The `--watch` supervisor (the CLI loop, not a Step) is reconciling the PR again after a rest:
+  // a re-entry tick is starting. Folds the view back to "running" so the watch reads as one session
+  // across ticks. `checks` is the number of reconcile passes already completed.
+  | { type: "watch:checking"; at: number; checks: number }
+  // The supervisor is resting between ticks: the PR is parked (ready, not landed) and tml will
+  // re-check after `nextCheckInMs`. Purely presentational (not journaled). `checks` counts the passes
+  // completed so far.
+  | { type: "watch:waiting"; at: number; checks: number; nextCheckInMs: number }
   | { type: "run:paused"; at: number; step: string }
   | { type: "run:cancelled"; at: number; step?: string }
   | { type: "run:failed"; at: number; step?: string; error: string };

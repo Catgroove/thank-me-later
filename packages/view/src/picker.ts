@@ -38,14 +38,11 @@ export function pickerOnKey(state: PickerState, key: string, count: number): Pic
 
 /**
  * The default action for a Run when the user presses enter: a finished Run is viewed; a Run still
- * progressing is attached to; an orphaned or parked (cancelled/failed) Run is resumed. A resume
- * whose Pipeline has since changed is rejected by the journal with a clear error - the picker does
- * not load config to pre-check.
+ * progressing or parked under an active watch is attached to; an orphaned, cancelled, failed, or
+ * idle parked Run is resumed. A resume whose Pipeline has since changed is rejected by the journal
+ * with a clear error - the picker does not load config to pre-check.
  */
 export function defaultAction(meta: RunMetadata, now: number): RunAction {
   if (meta.status === "finished") return "view";
-  if (meta.status === "running") {
-    return classifyLiveness(meta, { now }) === "orphaned" ? "resume" : "attach";
-  }
-  return "resume";
+  return classifyLiveness(meta, { now }) === "orphaned" ? "resume" : "attach";
 }

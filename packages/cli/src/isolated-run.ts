@@ -22,9 +22,11 @@ export interface RunOutcome {
   readonly failed: boolean;
   readonly cancelled: boolean;
   readonly finished: boolean;
+  /** The Run reached a resumable rest (a ready PR not yet landed); a success-like, re-runnable state. */
+  readonly parked: boolean;
 }
 
-/** Conventional exit code for a run: 130 (SIGINT) when cancelled, 1 on failure, else 0. */
+/** Conventional exit code for a run: 130 (SIGINT) when cancelled, 1 on failure, else 0 (parked too). */
 export const outcomeExitCode = (o: RunOutcome): number => (o.cancelled ? 130 : o.failed ? 1 : 0);
 
 /** Outcome of one engine pass; `paused` only matters between the two phases of an isolated run. */
@@ -32,6 +34,7 @@ interface PassOutcome {
   failed: boolean;
   cancelled: boolean;
   finished: boolean;
+  parked: boolean;
   paused: boolean;
 }
 
@@ -150,14 +153,33 @@ const toOutcome = (o: PassOutcome): RunOutcome => ({
   failed: o.failed,
   cancelled: o.cancelled,
   finished: o.finished,
+  parked: o.parked,
 });
+
+function replayCoalescingSteps(
+  pipeline: Config["pipeline"],
+  boundaryIndex: number,
+): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const step of pipeline.slice(0, boundaryIndex + 1)) names.add(step.name);
+
+  const firstReconcileAfterBoundary = pipeline.findIndex(
+    (step, index) => index > boundaryIndex && step.resume === "reconcile",
+  );
+  if (firstReconcileAfterBoundary < 0) return names;
+
+  for (const step of pipeline.slice(boundaryIndex + 1, firstReconcileAfterBoundary)) {
+    names.add(step.name);
+  }
+  return names;
+}
 
 /**
  * Drive the two-phase isolated run on a journaled Run. A pipeline with an isolation boundary runs
  * its deterministic prefix (branch/describe/commit-change) in the source checkout, pauses, hands the
  * feature branch to the isolation adapter, then resumes the rest in the workspace - the engine
- * coalesces the phase-1 replay so the Run reads as one continuous stream. A pipeline with no
- * boundary runs in a single pass in the source checkout.
+ * coalesces already-rendered journal replay so the Run reads as one continuous stream. A pipeline
+ * with no boundary runs in a single pass in the source checkout.
  */
 export async function isolatedRun(
   sourceConfig: Config,
@@ -171,6 +193,7 @@ export async function isolatedRun(
       failed: false,
       cancelled: false,
       finished: false,
+      parked: false,
       paused: false,
     };
     for await (const event of engine.run()) {
@@ -182,6 +205,7 @@ export async function isolatedRun(
       if (event.type === "run:failed") outcome.failed = true;
       if (event.type === "run:cancelled") outcome.cancelled = true;
       if (event.type === "run:finished") outcome.finished = true;
+      if (event.type === "run:parked") outcome.parked = true;
     }
     return outcome;
   };
@@ -202,7 +226,7 @@ export async function isolatedRun(
   const worktreePath = snapshot.metadata.workspacePath;
   if (worktreePath === undefined) throw new Error("tml ship: Run Journal has no workspace.");
   const boundaryName = boundary.step.name;
-  const sourcePhase = new Set(boundary.sourceSteps.map((step) => step.name));
+  const coalescedReplaySteps = replayCoalescingSteps(sourceConfig.pipeline, boundary.index);
 
   // Phase 1: branch/describe/commit-change in the source checkout, pausing at the boundary. Skip it
   // when a resumed Run already finished the boundary (the branch + commit are durable in git).
@@ -216,14 +240,15 @@ export async function isolatedRun(
       stopAfter: boundaryName,
     });
     const outcome = await runPass(phase1);
-    if (outcome.finished || outcome.failed || outcome.cancelled) return toOutcome(outcome);
+    if (outcome.finished || outcome.failed || outcome.cancelled || outcome.parked)
+      return toOutcome(outcome);
     if (!outcome.paused) throw new Error("tml ship: engine stopped before the isolation handoff.");
   }
 
   const workspace = await isolation.handoff({ cwd, journal, snapshot, worktreePath });
   try {
     // Phase 2: the rest of the pipeline runs in the workspace, resuming the same journaled Run. The
-    // engine coalesces the source-phase replay so the Run reads as one continuous stream.
+    // engine coalesces already-rendered journal replay so the Run reads as one continuous stream.
     const worktreeConfig = await buildConfig(workspace.path);
     if (worktreeConfig.pipeline.map((s) => s.name).join("\0") !== pipelineNames.join("\0")) {
       throw new Error("tml ship: snapshot pipeline does not match the selected Run Journal.");
@@ -234,7 +259,7 @@ export async function isolatedRun(
       approveFindings,
       signal,
       journal,
-      coalesceEvents: { suppressRunStarted: true, replaySteps: sourcePhase },
+      coalesceEvents: { suppressRunStarted: true, replaySteps: coalescedReplaySteps },
     });
     return toOutcome(await runPass(phase2));
   } finally {

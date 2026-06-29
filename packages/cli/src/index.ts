@@ -32,11 +32,13 @@ import {
   type IsolationAdapter,
   isolatedRun,
   outcomeExitCode,
+  type RunOutcome,
   worktreeIsolation,
 } from "./isolated-run.ts";
 import { loadTmlConfig } from "./load.ts";
 import { runs, viewRun } from "./runs.ts";
 import { stats } from "./stats.ts";
+import { abortableSleep, resolveWatch, runWatched } from "./watch.ts";
 import { update } from "./update.ts";
 import { maybeStartCheck, updateNotice } from "./update-check.ts";
 import { VERSION } from "./version.ts";
@@ -61,6 +63,8 @@ export interface ShipDeps {
   plain?: boolean;
   /** Open the Run's PR in the browser when it finishes or fails; overrides the `tml.json` `openInBrowser` knob. */
   openInBrowser?: boolean;
+  /** Force watch on (`--watch`) or off (`--no-watch`); overrides the `tml.json` `watch` knob and TTY default. */
+  watch?: boolean;
   /** Whether stdout is a TTY. Defaults to `process.stdout.isTTY`; injected by tests. */
   isTTY?: boolean;
   /** Override the renderer; defaults to the TTY-vs-plain-vs-TUI selection below. */
@@ -100,11 +104,15 @@ const SIGNAL_EXIT: Readonly<Record<string, number>> = { SIGINT: 130, SIGTERM: 14
 
 export async function ship(deps: ShipDeps = {}): Promise<number> {
   const cwd = deps.cwd ?? process.cwd();
-  // `openInBrowser` is a presentation knob read from `tml.json`, not part of the pipeline Config, so
-  // the default `buildConfig` captures it off the same load instead of parsing config a second time.
-  // An injected `buildConfig` (tests) leaves it false unless overridden via `deps.openInBrowser`.
+  const isTTY = deps.isTTY ?? !!process.stdout.isTTY;
+  // `openInBrowser`, the effective watch decision, and the watch interval are read from `tml.json`,
+  // not part of the pipeline Config, so the default `buildConfig` captures them off the same load.
+  // The resolved watch is injected back into the assembly knobs so `merge-gate` parks under watch.
+  // An injected `buildConfig` (tests) leaves these at their defaults unless overridden.
   let configOpenInBrowser = false;
   let configOpenInBrowserLoaded = false;
+  let effectiveWatch = false;
+  let watchIntervalMs = 60_000;
   const buildConfig =
     deps.buildConfig ??
     ((dir: string) => {
@@ -113,7 +121,16 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
         configOpenInBrowser = loaded.openInBrowser;
         configOpenInBrowserLoaded = true;
       }
-      return assembleShipConfig(dir, loaded);
+      effectiveWatch = resolveWatch({
+        ...(deps.watch !== undefined ? { flag: deps.watch } : {}),
+        ...(loaded.selection.watch !== undefined ? { configWatch: loaded.selection.watch } : {}),
+        isTTY,
+      });
+      watchIntervalMs = Math.max(1, loaded.watchIntervalSeconds) * 1000;
+      return assembleShipConfig(dir, {
+        ...loaded,
+        selection: { ...loaded.selection, watch: effectiveWatch },
+      });
     });
   const engineFor = deps.engineFor ?? createEngine;
   const verbose = deps.verbose ?? false;
@@ -123,7 +140,7 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
   const renderer =
     deps.renderer ??
     (await selectRenderer({
-      isTTY: deps.isTTY ?? !!process.stdout.isTTY,
+      isTTY,
       plain: deps.plain ?? false,
       verbose,
       onAbort: () => abortController.abort(),
@@ -169,25 +186,48 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     if (deps.journal === false) {
       throw new Error("tml ship: isolated runs require the Run Journal.");
     }
+    // Build the source Config first: this resolves `effectiveWatch`/`watchIntervalMs` (the default
+    // `buildConfig` sets them off `tml.json` + the flag + the TTY) and bakes watch into `merge-gate`.
     const sourceConfig = await buildConfig(cwd);
-    const journal =
-      deps.journal ??
-      createRunJournal({
-        checkoutPath: cwd,
-        resume: deps.journalResume ?? "fresh",
-        ...(deps.runId ? { runId: deps.runId } : {}),
+
+    // One tick of the pipeline. Tick 0 uses the configured resume policy; later ticks resume the
+    // parked Run on the same branch (`auto`), replaying the local prefix and re-running the
+    // PR-reconciling tail. An injected journal (tests) is reused across ticks (`false` is rejected above).
+    // `deps.journal === false` already threw above, so here it is a journal or undefined.
+    const injectedJournal = deps.journal;
+    const runTick = (tick: number): Promise<RunOutcome> => {
+      const journal =
+        injectedJournal ??
+        createRunJournal({
+          checkoutPath: cwd,
+          resume: tick === 0 ? (deps.journalResume ?? "fresh") : "auto",
+          ...(deps.runId && tick === 0 ? { runId: deps.runId } : {}),
+        });
+      setupJournal = journal;
+      return isolatedRun(sourceConfig, {
+        cwd,
+        buildConfig,
+        engineFor,
+        ask,
+        approveFindings,
+        signal: abortController.signal,
+        journal,
+        isolation: deps.isolation ?? worktreeIsolation,
+        emit,
       });
-    setupJournal = journal;
-    const outcome = await isolatedRun(sourceConfig, {
-      cwd,
-      buildConfig,
-      engineFor,
-      ask,
-      approveFindings,
+    };
+
+    const outcome = await runWatched({
+      enabled: effectiveWatch,
+      intervalMs: watchIntervalMs,
       signal: abortController.signal,
-      journal,
-      isolation: deps.isolation ?? worktreeIsolation,
-      emit,
+      runTick,
+      sleep: abortableSleep,
+      // Surface the watch rhythm through the same view sink, so the renderers fold successive ticks
+      // into one "watching" session (these events are presentation-only, never journaled).
+      onWaiting: (checks, nextCheckInMs) =>
+        emit({ type: "watch:waiting", at: Date.now(), checks, nextCheckInMs }),
+      onChecking: (checks) => emit({ type: "watch:checking", at: Date.now(), checks }),
     });
     return outcomeExitCode(outcome);
   } catch (error) {
@@ -207,13 +247,13 @@ export async function ship(deps: ShipDeps = {}): Promise<number> {
     // After the alternate screen is torn down, print a compact scrollback epilogue (TUI only).
     interactive.epilogue?.(view);
     // Best-effort: with `openInBrowser` set, do for the user what the TUI `o` key does once the Run
-    // has a PR and reached a finished/failed terminal state. Opening here (after teardown) avoids
-    // stealing focus from a live TUI; a user-cancelled Run is left alone.
+    // has a PR and reached a finished/parked/failed terminal state. Opening here (after teardown)
+    // avoids stealing focus from a live TUI; a user-cancelled Run is left alone.
     const openInBrowser = deps.openInBrowser ?? configOpenInBrowser;
     if (
       openInBrowser &&
       view.prUrl !== undefined &&
-      (view.status === "finished" || view.status === "failed")
+      (view.status === "finished" || view.status === "parked" || view.status === "failed")
     ) {
       openSystemUrl(view.prUrl);
     }
@@ -226,6 +266,8 @@ export interface ShipArgs {
   readonly plain: boolean;
   readonly journalResume?: RunJournalResumeMode;
   readonly runId?: string;
+  /** `--watch` / `--no-watch`: force the watch loop on or off; absent leaves it to config + TTY. */
+  readonly watch?: boolean;
 }
 
 type JournalSelection =
@@ -236,6 +278,7 @@ type JournalSelection =
 export function parseShipArgs(args: string[]): ShipArgs {
   let verbose = false;
   let plain = false;
+  let watch: boolean | undefined;
   let journalSelection: JournalSelection | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -245,6 +288,14 @@ export function parseShipArgs(args: string[]): ShipArgs {
     }
     if (arg === "--plain" || arg === "--no-tui") {
       plain = true;
+      continue;
+    }
+    if (arg === "--watch") {
+      watch = true;
+      continue;
+    }
+    if (arg === "--no-watch") {
+      watch = false;
       continue;
     }
     if (arg === "--fresh") {
@@ -272,6 +323,7 @@ export function parseShipArgs(args: string[]): ShipArgs {
   return {
     verbose,
     plain,
+    ...(watch !== undefined ? { watch } : {}),
     ...(journalSelection ? { journalResume: journalSelection.mode } : {}),
     ...(journalSelection?.mode === "exact" ? { runId: journalSelection.runId } : {}),
   };
@@ -302,6 +354,10 @@ Options:
                       (default).
       --resume [id]   Resume the latest compatible run for this branch, or a
                       specific run by exact id. (also --resume=<id>)
+      --watch         After the PR is ready, keep reconciling it (rebase,
+                      resolve conflicts, re-run CI) until it merges/closes or you
+                      quit. Defaults on in an interactive terminal, off otherwise.
+      --no-watch      Finish at the gate instead of watching.
 
 Init options:
   -f, --force         Overwrite an existing tml.json.

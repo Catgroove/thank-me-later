@@ -137,6 +137,32 @@ describe("RunJournal", () => {
     expect([...snapshot.completedSteps]).toEqual(["branch"]);
   });
 
+  test("a parked run is resumable; a finished run is not", async () => {
+    const stateHome = tempDir();
+    const checkoutPath = join(stateHome, "repo");
+    const pipeline = ["branch", "commit"];
+
+    // A shipment reached a ready PR and parked (resumable rest).
+    const parked = createRunJournal({ stateHome, checkoutPath, resume: "fresh", events: false });
+    const parkedId = (await parked.begin({ pipeline, resumeKey: "feat/x" })).metadata.runId;
+    await parked.recordStepCompleted("branch");
+    await parked.finish("parked");
+
+    // The next `--watch` tick (auto resume on the same branch) picks the parked run up and flips it
+    // back to running.
+    const resumed = createRunJournal({ stateHome, checkoutPath, resume: "auto", events: false });
+    const resumedSnapshot = await resumed.begin({ pipeline, resumeKey: "feat/x" });
+    expect(resumedSnapshot.metadata.runId).toBe(parkedId);
+    expect(resumedSnapshot.metadata.status).toBe("running");
+    expect([...resumedSnapshot.completedSteps]).toEqual(["branch"]);
+
+    // Once the PR lands the run finishes; a finished run is never resumed - a re-run starts fresh.
+    await resumed.finish("finished");
+    const after = createRunJournal({ stateHome, checkoutPath, resume: "auto", events: false });
+    const afterSnapshot = await after.begin({ pipeline, resumeKey: "feat/x" });
+    expect(afterSnapshot.metadata.runId).not.toBe(parkedId);
+  });
+
   test("rejects resuming an incompatible pipeline", async () => {
     const stateHome = tempDir();
     const checkoutPath = join(stateHome, "repo");
@@ -153,7 +179,7 @@ describe("RunJournal", () => {
     const stateHome = tempDir();
     const checkoutPath = join(stateHome, "repo");
 
-    for (const status of ["finished", "failed", "cancelled"] as const) {
+    for (const status of ["finished", "parked", "failed", "cancelled"] as const) {
       const journal = createRunJournal({ stateHome, checkoutPath, runId: status, events: false });
       await journal.begin({ pipeline: ["produce"] });
       await journal.finish(status);

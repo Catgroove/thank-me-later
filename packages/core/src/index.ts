@@ -16,7 +16,7 @@ export {
   type SkipDecision,
 } from "./approval.ts";
 export { type Artifact, defineArtifact, type Produced } from "./artifact.ts";
-export { cancel, type FlowSignal, goto, retry, skip } from "./signals.ts";
+export { cancel, type FlowSignal, goto, park, retry, skip } from "./signals.ts";
 export { AbortError, type Pending, type PollResult, TimeoutError, until } from "./pending.ts";
 export type { Ctx, PhaseOptions } from "./context.ts";
 export {

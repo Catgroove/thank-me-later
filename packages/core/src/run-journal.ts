@@ -16,7 +16,11 @@ const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const RUN_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-export type RunStatus = "running" | "finished" | "failed" | "cancelled";
+// `parked` is a terminal-but-resumable rest: the Run reached a clean stopping point (a ready PR that
+// has not landed yet) and a re-run - or the next `--watch` tick - resumes it. Only `finished` is
+// never resumable; a parked Run still held by a live `--watch` owner is not re-entered by another
+// process.
+export type RunStatus = "running" | "parked" | "finished" | "failed" | "cancelled";
 export type RunJournalResumeMode = "fresh" | "auto" | "exact";
 
 export interface RunWorktreeHandoff {
@@ -566,7 +570,11 @@ function ownerLabel(metadata: RunMetadata): string {
 
 function isResumable(metadata: RunMetadata, now: number): boolean {
   if (metadata.status === "finished") return false;
-  return metadata.status !== "running" || classifyLiveness(metadata, { now }) === "orphaned";
+  if (metadata.status === "running") return classifyLiveness(metadata, { now }) === "orphaned";
+  if (metadata.status === "parked") {
+    return ownedByCurrentProcess(metadata) || classifyLiveness(metadata, { now }) === "orphaned";
+  }
+  return true;
 }
 
 function currentOwner(): RunOwner {

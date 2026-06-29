@@ -125,6 +125,8 @@ export class FakeGitProvider implements GitProvider {
   checks: CheckRun[] = [{ name: "ci", status: "completed", conclusion: "success" }];
   /** Merge-readiness the merge gate polls; `clean` is mergeable by default. */
   mergeStateStatus: MergeState = "clean";
+  /** PR lifecycle the merge gate reads to detect a landed PR; `open` by default. */
+  state: PullRequest["state"] = "open";
   /** Whether the current user may bypass merge rules; the gate consults this for blocked/behind. */
   mergeBypass = false;
   private nextNumber = 1;
@@ -149,7 +151,18 @@ export class FakeGitProvider implements GitProvider {
     });
   }
   getPullRequest(prNumber: number): Promise<PullRequest> {
-    return Promise.reject(new Error(`fake Git provider stores no PR #${prNumber}`));
+    return Promise.resolve({
+      number: prNumber,
+      url: `https://git-provider.test/pr/${prNumber}`,
+      head: "feature",
+      base: "main",
+      title: "",
+      body: "",
+      state: this.state,
+      mergeable: "mergeable",
+      mergeStateStatus: this.mergeStateStatus,
+      checks: this.checks,
+    });
   }
   updatePullRequestBody(input: { prNumber: number; body: string }): Promise<void> {
     this.bodyUpdates.push(input);

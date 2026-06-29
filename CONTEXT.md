@@ -50,12 +50,13 @@ by default.
 _Avoid_: Hook, entry point, event
 
 **Re-entry**:
-A fresh, short-lived Run that picks up asynchronous work after the initial ship —
-typically responding to PR comments or reacting to CI completion. Fired by a poll, a
-Git provider webhook, a harness hook, or by hand; each re-entry recomputes what remains from
-the Git provider. A long-lived `--watch` is merely a loop of re-entries; a multi-PR daemon is
-a non-goal.
-_Avoid_: Resume, retrigger, wake
+A short-lived pickup of asynchronous work after the initial ship — typically responding to PR
+comments or reacting to CI completion. Fired by a poll, a Git provider webhook, a harness hook, or by
+hand; each re-entry recomputes what remains from the Git provider. It is realized either as a fresh
+Run or, under `--watch`, as a *resume* of a parked Run that replays the local prefix from the journal
+and re-runs only the PR-reconciling tail (the cheap tick — no re-review, no re-running local checks).
+A long-lived `--watch` is merely a loop of re-entries; a multi-PR daemon is a non-goal.
+_Avoid_: retrigger, wake (and "Resume" for the *concept* — a resume is one way to realize a Re-entry)
 
 **Parked Run**:
 A Run that ended without finishing - cancelled, failed, or interrupted - and so sits in the Run

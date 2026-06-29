@@ -5,7 +5,7 @@ import type { RunEvent, RunEventInput } from "../src/events.ts";
 import { makeFinding, type RoundRecord } from "../src/round.ts";
 import type { Pipeline } from "../src/pipeline.ts";
 import type { RunJournal } from "../src/run-journal.ts";
-import { cancel, goto, retry, skip } from "../src/signals.ts";
+import { cancel, goto, park, retry, skip } from "../src/signals.ts";
 import { defineStep } from "../src/step.ts";
 import { AssemblyError } from "../src/validate.ts";
 import { FakeGit, FakeGitProvider, FakeHarness } from "./fakes.ts";
@@ -41,6 +41,37 @@ async function collectRaw(engine: Engine): Promise<RunEvent[]> {
 }
 
 const types = (events: readonly { type: RunEvent["type"] }[]) => events.map((e) => e.type);
+
+/** A no-op RunJournal whose methods can be selectively overridden (e.g. to capture `finish`). */
+function stubJournal(overrides: Partial<RunJournal> = {}): RunJournal {
+  return {
+    begin: () =>
+      Promise.resolve({
+        metadata: {
+          runId: "test",
+          checkoutKey: "checkout",
+          checkoutPath: "/repo",
+          pipeline: [],
+          status: "running",
+          startedAt: "2026-06-29T00:00:00.000Z",
+          updatedAt: "2026-06-29T00:00:00.000Z",
+          completedSteps: [],
+        },
+        artifacts: new Map(),
+        completedSteps: new Set(),
+        rounds: [],
+        roundIndexes: new Map(),
+      }),
+    recordArtifact: () => Promise.resolve(),
+    recordStepCompleted: () => Promise.resolve(),
+    recordResumeKey: () => Promise.resolve(),
+    recordWorktreeHandoff: () => Promise.resolve(),
+    recordRound: () => Promise.resolve(),
+    recordEvent: () => Promise.resolve(),
+    finish: () => Promise.resolve(),
+    ...overrides,
+  };
+}
 
 describe("engine - happy path", () => {
   test("runs steps in order, threads artifacts, and emits an ordered event stream", async () => {
@@ -276,6 +307,37 @@ describe("engine - flow signals, ask, and failure", () => {
       "step:started",
       "run:finished",
     ]);
+  });
+
+  test("park ends the Run in a resumable rest, emitting run:parked", async () => {
+    let finishedStatus: string | undefined;
+    const journal = stubJournal({
+      finish: (status) => {
+        finishedStatus = status;
+        return Promise.resolve();
+      },
+    });
+    const rest = defineStep({
+      name: "rest",
+      run: () => Promise.resolve(park("the PR is ready; watching until it lands")),
+    });
+    const never = defineStep({ name: "never", run: () => Promise.resolve({}) });
+    const events = await collect(
+      createEngine(
+        {
+          pipeline: [rest, never],
+          providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
+        },
+        { git: new FakeGit(), journal },
+      ),
+    );
+    expect(types(events)).toEqual(["run:started", "branch:changed", "step:started", "run:parked"]);
+    expect(events.at(-1)).toEqual({
+      type: "run:parked",
+      reason: "the PR is ready; watching until it lands",
+    });
+    // The Run is parked (resumable), never finished.
+    expect(finishedStatus).toBe("parked");
   });
 
   test("goto jumps forward, skipping the step in between", async () => {

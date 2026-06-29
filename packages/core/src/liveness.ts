@@ -1,6 +1,7 @@
-// Liveness of a Run that is still marked `running`. A hard kill or crash skips the cancellation
-// path, so a Run can sit at `running` forever with no live process behind it. The Run's recorded
-// `owner` (pid + host) lets us tell a Run genuinely executing now apart from such an orphan, so the
+// Liveness of a Run whose `owner` may still hold it for writing. A hard kill or crash skips the
+// cancellation path, so a Run can sit at `running` forever with no live process behind it. A `--watch`
+// supervisor also parks the Run between checks while keeping the process alive. The Run's recorded
+// `owner` (pid + host) lets us tell a Run genuinely held now apart from such an orphan, so the
 // history list, the picker, and the startup gate can guide the user, and so `begin` can refuse to
 // re-enter a Run another live process already holds.
 
@@ -8,11 +9,11 @@ import { hostname } from "node:os";
 import type { RunMetadata } from "./run-journal.ts";
 
 export type Liveness =
-  /** Status `running`, owner process is alive on this host. */
+  /** Owner process is alive on this host. */
   | "live"
   /** Owner process is gone (dead pid on this host, or stale beyond probing). Resumable. */
   | "orphaned"
-  /** Status `running` on another host we cannot probe, with recent activity. Assume live elsewhere. */
+  /** Owner on another host we cannot probe, with recent activity. Assume live elsewhere. */
   | "unknown";
 
 export interface LivenessProbe {
@@ -24,21 +25,22 @@ export interface LivenessProbe {
   readonly host?: string;
 }
 
-// A `running` Run on another host (or a legacy Run with no owner) that has not touched its journal
-// in this long is almost certainly dead. Same-host Runs are decided by the authoritative pid probe,
-// not by this, so a long, quiet `ci-wait` on this machine is never misread as orphaned.
+// A held Run on another host (or a legacy `running` Run with no owner) that has not touched its
+// journal in this long is almost certainly dead. Same-host Runs are decided by the authoritative pid
+// probe, not by this, so a long, quiet `ci-wait` on this machine is never misread as orphaned.
 const STALE_RUNNING_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Classify a Run's liveness. Meaningful only for `running` Runs; a terminal/parked Run has no live
- * owner and classifies as `orphaned` (callers branch on the terminal status before showing this).
+ * Classify whether the Run's recorded owner still holds it. Meaningful for `running` Runs and for a
+ * `parked` Run between active `--watch` checks; other terminal statuses have no live holder.
  */
 export function classifyLiveness(meta: RunMetadata, probe: LivenessProbe): Liveness {
-  if (meta.status !== "running") return "orphaned";
+  if (meta.status !== "running" && meta.status !== "parked") return "orphaned";
   const isAlive = probe.isAlive ?? defaultIsAlive;
   const host = probe.host ?? hostname();
   const owner = meta.owner;
   if (owner === undefined) {
+    if (meta.status === "parked") return "orphaned";
     // Legacy `running` Run with no recorded owner: we cannot probe, so fall back to staleness.
     return isStale(meta, probe.now) ? "orphaned" : "unknown";
   }
