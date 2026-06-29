@@ -328,7 +328,7 @@ describe("engine - flow signals, ask, and failure", () => {
           pipeline: [rest, never],
           providers: { gitProvider: new FakeGitProvider(), agent: new FakeHarness() },
         },
-        { journal },
+        { git: new FakeGit(), journal },
       ),
     );
     expect(types(events)).toEqual(["run:started", "branch:changed", "step:started", "run:parked"]);
