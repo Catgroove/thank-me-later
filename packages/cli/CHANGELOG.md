@@ -1,5 +1,38 @@
 # tml
 
+## 0.4.0
+
+### Minor Changes
+
+- e9d8a4c: Run history, the run picker, the viewer, and a guided startup gate. `tml runs` (alias `tml ls`)
+  lists the recent runs for a checkout - a picker in a TTY, a plain table when piped - and `tml runs
+<id>` views a finished run or attaches to one still running, read-only. A bare `tml` on an
+  interactive TTY now consults run history first: when an unfinished run for the current branch
+  exists, it offers resume / attach / fresh / list instead of silently starting over (a non-TTY/CI
+  run, `--plain`, or an explicit `--fresh`/`--resume` skips the gate). Runs record their PR URL,
+  finish time, failure summary, and owning process, and a run still marked `running` is classified by
+  liveness so a crash orphan reads as resumable rather than a phantom in progress.
+- 1cc55a9: Add `tml stats`: a lifetime view of the pipeline across journaled runs. It rolls up every checkout (`--here` narrows to the current one), folding all clones and worktrees of a repo into one row by their git remote, and reports it in tml's own visual language - the `▶`/`─` run header, the finding-lifecycle glyph tally (`✓` fixed/accepted, `✗` unresolved, `⤼` skipped, `○` open), the `▸` pipeline rail with per-step seen/fixed, and `[disposition]` severity markers. `--json` emits the raw figures.
+
+  Core gains `readRunHistory` and `summarizeRunStats`; view gains `renderStats`.
+
+- bffb297: Add `--watch`: after the PR is ready, keep reconciling it (rebase, resolve conflicts, re-run CI) until it merges/closes or you quit.
+
+  `--watch` is a thin loop of Re-entries (no daemon, no background process): each tick is a resume of the same Run that replays the cheap local prefix from the journal and re-runs only the PR-reconciling tail (`open-pr` → `ci-wait` → `merge-gate`). It defaults on in an interactive terminal and off without a TTY (so an agent or CI run is never pinned waiting for a human merge); `--watch` / `--no-watch` force it either way, and a `watch` / `watchInterval` knob in `tml.json` sets the default and cadence.
+
+  Supporting changes: a new resumable `parked` run status and `park()` flow signal (a Run can now reach a clean, re-runnable rest instead of only `finished`); `merge-gate` detects a landed PR (merged/closed) and, under watch, parks once the PR is mergeable so the next tick reconciles it again.
+
+### Patch Changes
+
+- Updated dependencies [e9d8a4c]
+- Updated dependencies [1cc55a9]
+- Updated dependencies [bffb297]
+  - @tml/core@0.5.0
+  - @tml/view@5.0.0
+  - @tml/defaults@5.0.0
+  - @tml/github@5.0.0
+  - @tml/pi@5.0.0
+
 ## 0.3.2
 
 ### Patch Changes
