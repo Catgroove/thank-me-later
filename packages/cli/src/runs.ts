@@ -113,11 +113,9 @@ export async function viewRun(deps: ViewRunDeps): Promise<number> {
       renderer = createTerminalRenderer({ plain: true, verbose: deps.verbose ?? false });
     }
   }
-  // Attach only to a Run that is actually progressing; an orphaned `running` Run gets no more events,
-  // so replay what it has rather than polling forever.
-  const live =
-    match.status === "running" &&
-    classifyLiveness(match, { now: deps.now ?? Date.now() }) !== "orphaned";
+  // Attach only to a Run that is actually progressing or parked under an active watch; an orphaned
+  // Run gets no more events, so replay what it has rather than polling forever.
+  const live = classifyLiveness(match, { now: deps.now ?? Date.now() }) !== "orphaned";
   try {
     if (live) {
       const source: EventSource = { read: () => readEvents(cwd, match.runId) };
