@@ -55,9 +55,12 @@ export function App(props: AppProps) {
   const [selectedFindingIds, setSelectedFindingIds] = createSignal<readonly string[]>([]);
   const [confirmAbort, setConfirmAbort] = createSignal(false);
 
-  // The Run has reached a terminal state (finished/failed/cancelled). Once it has, the dashboard
-  // stays up - navigation still works so the user can inspect the result - until a dismiss key leaves.
-  const isTerminal = (): boolean => props.view().status !== "running";
+  // The Run has reached a terminal state (finished/failed/cancelled, or parked outside an active
+  // watch rest). Once it has, the dashboard stays up - navigation still works so the user can
+  // inspect the result - until a dismiss key leaves.
+  const isWatchWaiting = (): boolean =>
+    props.view().status === "parked" && props.view().watch?.nextCheckInMs !== undefined;
+  const isTerminal = (): boolean => props.view().status !== "running" && !isWatchWaiting();
   type UiMode = "activity" | "prompt" | "abort" | "terminal";
   const uiMode = (): UiMode => {
     if (isTerminal()) return "terminal";
@@ -198,6 +201,7 @@ export function App(props: AppProps) {
     if (mode === "abort") {
       if (key.name === "y" || (key.ctrl && key.name === "c")) {
         props.onAbort();
+        if (isWatchWaiting()) props.onDismiss?.();
         return;
       }
       if (key.name === "n" || key.name === "escape") setConfirmAbort(false);

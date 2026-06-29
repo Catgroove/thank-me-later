@@ -14,7 +14,7 @@ import { defineArtifact } from "./artifact.ts";
 import type { Config, ModelMap, Providers } from "./pipeline.ts";
 import type { GitProvider } from "./providers/git-provider.ts";
 import type { Harness } from "./providers/harness.ts";
-import { cancel, goto, retry, skip } from "./signals.ts";
+import { cancel, goto, park, retry, skip } from "./signals.ts";
 import { type Step, defineStep } from "./step.ts";
 import { AssemblyError } from "./validate.ts";
 
@@ -63,6 +63,7 @@ export interface Tml {
   readonly defineArtifact: typeof defineArtifact;
   readonly skip: typeof skip;
   readonly cancel: typeof cancel;
+  readonly park: typeof park;
   readonly goto: typeof goto;
   readonly retry: typeof retry;
   readonly pipeline: PipelineBuilder;
@@ -132,6 +133,7 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
     defineArtifact,
     skip,
     cancel,
+    park,
     goto,
     retry,
     pipeline,
