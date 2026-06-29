@@ -43,7 +43,12 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-const NO_CONFIG: Loaded = { selection: {}, pluginPaths: [], openInBrowser: false };
+const NO_CONFIG: Loaded = {
+  selection: {},
+  pluginPaths: [],
+  openInBrowser: false,
+  watchIntervalSeconds: 60,
+};
 
 const ENTRY = new URL("../src/index.ts", import.meta.url).pathname;
 
@@ -155,6 +160,12 @@ describe("parseShipArgs", () => {
     });
   });
 
+  test("--watch / --no-watch set the watch flag; absent leaves it to config + TTY", () => {
+    expect(parseShipArgs([]).watch).toBeUndefined();
+    expect(parseShipArgs(["--watch"]).watch).toBe(true);
+    expect(parseShipArgs(["--no-watch"]).watch).toBe(false);
+  });
+
   test("rejects an unknown option", () => {
     expect(() => parseShipArgs(["--bogus"])).toThrow(/Unknown ship option: --bogus/);
   });
@@ -186,6 +197,7 @@ describe("assembleShipConfig", () => {
       selection: { disable: ["quality"], models: { review: "opus" } },
       pluginPaths: [],
       openInBrowser: false,
+      watchIntervalSeconds: 60,
     });
     expect(config.pipeline.map((s) => s.name)).not.toContain("quality");
     expect(config.pipeline.map((s) => s.name)).toContain("test");
@@ -202,6 +214,7 @@ describe("assembleShipConfig", () => {
       selection: {},
       pluginPaths: [path],
       openInBrowser: false,
+      watchIntervalSeconds: 60,
     });
     const names = config.pipeline.map((s) => s.name);
     expect(names).toContain("deep-review");
@@ -215,6 +228,7 @@ describe("assembleShipConfig", () => {
         selection: {},
         pluginPaths: [path],
         openInBrowser: false,
+        watchIntervalSeconds: 60,
       });
       throw new Error("assembleShipConfig unexpectedly resolved");
     } catch (error) {
@@ -231,6 +245,7 @@ describe("assembleShipConfig", () => {
         selection: {},
         pluginPaths: [path],
         openInBrowser: false,
+        watchIntervalSeconds: 60,
       });
       throw new Error("assembleShipConfig unexpectedly resolved");
     } catch (error) {

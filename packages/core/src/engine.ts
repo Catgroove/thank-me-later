@@ -296,6 +296,18 @@ async function drive(
           queue.close();
           return;
         }
+        case "park": {
+          // A clean, resumable rest: keep the Run resumable (status `parked`, not `finished`) so a
+          // re-run or the next `--watch` tick reconciles it again. The Step records its own rounds
+          // live (it returns a signal, not a result), so none are lost here.
+          await journal?.finish("parked");
+          await emit(run, {
+            type: "run:parked",
+            ...(result.reason !== undefined ? { reason: result.reason } : {}),
+          });
+          queue.close();
+          return;
+        }
         case "goto": {
           const target = stepByName.get(result.step);
           if (target === undefined) {

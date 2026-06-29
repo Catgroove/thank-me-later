@@ -16,7 +16,10 @@ const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const RUN_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-export type RunStatus = "running" | "finished" | "failed" | "cancelled";
+// `parked` is a terminal-but-resumable rest: the Run reached a clean stopping point (a ready PR that
+// has not landed yet) and a re-run - or the next `--watch` tick - resumes it. Only `finished` is
+// non-resumable; `selectRun`/`latestResumableRun` resume any non-`finished` Run.
+export type RunStatus = "running" | "parked" | "finished" | "failed" | "cancelled";
 export type RunJournalResumeMode = "fresh" | "auto" | "exact";
 
 export interface RunWorktreeHandoff {

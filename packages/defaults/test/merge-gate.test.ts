@@ -142,6 +142,46 @@ describe("merge-gate step", () => {
     });
   });
 
+  test("lands (finishes) without polling merge state once the PR is merged", async () => {
+    const gitProvider = new FakeGitProvider();
+    gitProvider.state = "merged";
+    // A poll would throw, proving the gate never reaches the merge-state loop for a landed PR.
+    gitProvider.getMergeState = () => {
+      throw new Error("merge state must not be polled once the PR has landed");
+    };
+    const { ctx, logs, approvals } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await mergeGateStep().run(ctx);
+
+    expect(logs).toEqual(["merge: merged — the PR has landed"]);
+    expect(approvals).toHaveLength(0);
+    expect(result).toEqual({ artifacts: {} });
+  });
+
+  test("lands (finishes) when the PR was closed", async () => {
+    const gitProvider = new FakeGitProvider();
+    gitProvider.state = "closed";
+    const { ctx, logs } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await mergeGateStep().run(ctx);
+
+    expect(logs).toEqual(["merge: closed — the PR has landed"]);
+    expect(result).toEqual({ artifacts: {} });
+  });
+
+  test("under watch, parks (resumable) once mergeable instead of finishing", async () => {
+    const gitProvider = new FakeGitProvider();
+    gitProvider.mergeStateStatus = "clean";
+    const { ctx, recordedRounds } = fakeCtx({ gitProvider, reads: { pullRequest: pr } });
+
+    const result = await mergeGateStep({ watch: true }).run(ctx);
+
+    // A park flow signal keeps the Run resumable so the next tick reconciles it again.
+    expect(result).toMatchObject({ kind: "park" });
+    // Rounds are recorded live (the Step returns a signal, not a result with rounds).
+    expect(recordedRounds).toMatchObject([{ trigger: "initial", findings: [] }]);
+  });
+
   test("reports a stuck merge state through structured approval on timeout", async () => {
     class TimeoutMergeProvider extends FakeGitProvider {
       override getMergeState(_prNumber: number): Pending<MergeState> {

@@ -91,6 +91,23 @@ describe("createTerminalRenderer (TTY)", () => {
     expect(out).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
+  test("watch: shows the ready/rest lines and a landed epilogue", () => {
+    const lines = renderLines([
+      { type: "run:started", pipeline: ["merge-gate"] },
+      { type: "step:started", step: "merge-gate" },
+      { type: "run:parked" },
+      { type: "watch:waiting", checks: 1, nextCheckInMs: 60_000 },
+      { type: "watch:checking", checks: 1 },
+      { type: "run:finished" }, // the PR landed during the second check
+    ]);
+    expect(lines.some((l) => l.includes("the pr is ready"))).toBe(true);
+    expect(lines.some((l) => l.includes("watching · 1 check done · next in 60s"))).toBe(true);
+    expect(lines.some((l) => l.includes("re-checking the pr (check 2)"))).toBe(true);
+    // The terminal event reads as "landed" (not the generic "run finished") because a watch ran.
+    expect(lines.some((l) => l.includes("the pr landed"))).toBe(true);
+    expect(lines.some((l) => l.includes("run finished"))).toBe(false);
+  });
+
   test("verbose heads the step, commits each command, and keeps the spinner bare", () => {
     const out = renderRaw(
       [

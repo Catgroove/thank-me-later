@@ -11,6 +11,7 @@ const BRAND: unique symbol = Symbol("tml.flowSignal");
 export type FlowSignal =
   | { kind: "skip" }
   | { kind: "cancel"; reason?: string }
+  | { kind: "park"; reason?: string }
   | { kind: "goto"; step: string }
   | { kind: "retry"; reason?: string };
 
@@ -26,6 +27,15 @@ export function skip(): FlowSignal {
 /** End the Run early, successfully. */
 export function cancel(reason?: string): FlowSignal {
   return brand({ kind: "cancel", reason });
+}
+
+/**
+ * End the Run in a *parked* rest: there is nothing more to do until the world changes (the PR is
+ * open and not failing). Unlike `cancel`, a parked Run is resumable - a re-run, or the next `--watch`
+ * tick, picks it up and reconciles against the Git provider again.
+ */
+export function park(reason?: string): FlowSignal {
+  return brand({ kind: "park", reason });
 }
 
 /** Jump to the named Step. */

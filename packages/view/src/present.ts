@@ -109,7 +109,7 @@ export interface ViewState {
   readonly startedAt?: number;
   /** Run end timestamp, from the terminal event. */
   readonly finishedAt?: number;
-  readonly status: "running" | "finished" | "cancelled" | "failed";
+  readonly status: "running" | "parked" | "finished" | "cancelled" | "failed";
   readonly error?: string;
   /**
    * The branch core's git view reports for the active checkout, from `branch:changed`. Undefined
@@ -119,6 +119,12 @@ export interface ViewState {
   readonly currentBranch?: string;
   /** The Run's pull request URL, once opened — surfaced on the final line. */
   readonly prUrl?: string;
+  /**
+   * Set while the `--watch` loop is supervising the PR. `checks` counts completed reconcile passes;
+   * `nextCheckInMs` is the rest interval before the next pass (present only while waiting). Drives the
+   * "watching" presentation that folds successive ticks into one session.
+   */
+  readonly watch?: { readonly checks: number; readonly nextCheckInMs?: number };
   /** The interaction blocking the Run, awaiting a human decision; cleared on the terminal event. */
   readonly pendingInteraction?: PendingInteraction;
   /** Bounded cross-Step recent activity for a global live strip. */
@@ -364,6 +370,30 @@ function reduce(view: ViewState, event: RunEvent): ViewState {
         tool: undefined,
         pendingInteraction: undefined,
       };
+    case "run:parked":
+      // A clean, resumable rest (a ready PR not yet landed). Distinct from `finished` so presenters
+      // can show "watching/parked" rather than a closed run.
+      return {
+        ...view,
+        status: "parked",
+        finishedAt: event.at,
+        activeStep: undefined,
+        tool: undefined,
+        pendingInteraction: undefined,
+      };
+    case "watch:checking":
+      // A re-entry tick is reconciling the PR: fold back to "running" so the watch reads as one
+      // continuous session rather than a fresh Run each tick.
+      return {
+        ...view,
+        status: "running",
+        finishedAt: undefined,
+        watch: { checks: event.checks },
+      };
+    case "watch:waiting":
+      // Resting between ticks: keep the parked status, record how many checks ran and when the next
+      // one is due.
+      return { ...view, watch: { checks: event.checks, nextCheckInMs: event.nextCheckInMs } };
     case "run:cancelled":
       return {
         ...view,

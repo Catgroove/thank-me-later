@@ -22,9 +22,11 @@ export interface RunOutcome {
   readonly failed: boolean;
   readonly cancelled: boolean;
   readonly finished: boolean;
+  /** The Run reached a resumable rest (a ready PR not yet landed); a success-like, re-runnable state. */
+  readonly parked: boolean;
 }
 
-/** Conventional exit code for a run: 130 (SIGINT) when cancelled, 1 on failure, else 0. */
+/** Conventional exit code for a run: 130 (SIGINT) when cancelled, 1 on failure, else 0 (parked too). */
 export const outcomeExitCode = (o: RunOutcome): number => (o.cancelled ? 130 : o.failed ? 1 : 0);
 
 /** Outcome of one engine pass; `paused` only matters between the two phases of an isolated run. */
@@ -32,6 +34,7 @@ interface PassOutcome {
   failed: boolean;
   cancelled: boolean;
   finished: boolean;
+  parked: boolean;
   paused: boolean;
 }
 
@@ -150,6 +153,7 @@ const toOutcome = (o: PassOutcome): RunOutcome => ({
   failed: o.failed,
   cancelled: o.cancelled,
   finished: o.finished,
+  parked: o.parked,
 });
 
 /**
@@ -171,6 +175,7 @@ export async function isolatedRun(
       failed: false,
       cancelled: false,
       finished: false,
+      parked: false,
       paused: false,
     };
     for await (const event of engine.run()) {
@@ -182,6 +187,7 @@ export async function isolatedRun(
       if (event.type === "run:failed") outcome.failed = true;
       if (event.type === "run:cancelled") outcome.cancelled = true;
       if (event.type === "run:finished") outcome.finished = true;
+      if (event.type === "run:parked") outcome.parked = true;
     }
     return outcome;
   };
@@ -216,7 +222,8 @@ export async function isolatedRun(
       stopAfter: boundaryName,
     });
     const outcome = await runPass(phase1);
-    if (outcome.finished || outcome.failed || outcome.cancelled) return toOutcome(outcome);
+    if (outcome.finished || outcome.failed || outcome.cancelled || outcome.parked)
+      return toOutcome(outcome);
     if (!outcome.paused) throw new Error("tml ship: engine stopped before the isolation handoff.");
   }
 

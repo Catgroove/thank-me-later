@@ -282,9 +282,24 @@ export function App(props: AppProps) {
 function DoneBanner(props: { view: Accessor<ViewState> }) {
   const status = () => props.view().status;
   const label = () =>
-    status() === "finished" ? "✓ shipped" : status() === "failed" ? "✗ failed" : "◼ cancelled";
-  const detail = () =>
-    status() === "failed" ? (props.view().error ?? "") : (props.view().prUrl ?? "");
+    status() === "finished"
+      ? props.view().watch !== undefined
+        ? "✓ landed"
+        : "✓ shipped"
+      : status() === "parked"
+        ? "● watching"
+        : status() === "failed"
+          ? "✗ failed"
+          : "◼ cancelled";
+  const detail = () => {
+    const view = props.view();
+    if (status() === "failed") return view.error ?? "";
+    if (status() === "parked" && view.watch?.nextCheckInMs !== undefined) {
+      const secs = Math.max(1, Math.round(view.watch.nextCheckInMs / 1000));
+      return `next check in ${secs}s${view.prUrl !== undefined ? ` · ${view.prUrl}` : ""}`;
+    }
+    return view.prUrl ?? "";
+  };
   return (
     <box flexDirection="row" paddingLeft={1} paddingRight={1}>
       <text fg={statusColor(stepStatusOf(status()))} attributes={1}>
@@ -374,7 +389,7 @@ function Header(props: { view: Accessor<ViewState>; now: Accessor<number> }) {
 
 /** Map the Run status onto a Step status so the header can reuse the shared status palette. */
 function stepStatusOf(status: ViewState["status"]): "active" | "done" | "failed" | "skipped" {
-  if (status === "finished") return "done";
+  if (status === "finished" || status === "parked") return "done";
   if (status === "failed") return "failed";
   if (status === "cancelled") return "skipped";
   return "active";

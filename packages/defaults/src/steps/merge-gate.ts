@@ -11,6 +11,7 @@ import {
   defineStep,
   executeRoundLoop,
   makeFinding,
+  park,
   type Ctx,
   type Finding,
   type MergeState,
@@ -53,13 +54,26 @@ function timeoutFinding(prNumber: number): Finding {
   });
 }
 
-export function mergeGateStep(): Step {
+/** `watch`: park (resumable) instead of finishing once the PR is merge-ready, so a `--watch` tick can
+ *  reconcile it again as the base moves; keep recording rounds live since a parked Step returns a
+ *  flow signal rather than a result. Default off - a plain `tml ship` finishes at the gate as before. */
+export function mergeGateStep(opts: { watch?: boolean } = {}): Step {
+  const watch = opts.watch ?? false;
   return defineStep({
     name: "merge-gate",
     consumes: [pullRequest],
     resume: "reconcile",
     async run(ctx: Ctx) {
       const pr = ctx.read(pullRequest);
+
+      // Terminal check first: if the PR already landed (merged or closed), the gate is done - let the
+      // Run finish. This is the `--watch` loop's stop condition, read straight off the PR snapshot.
+      const snapshot = await ctx.gitProvider.getPullRequest(pr.number);
+      if (snapshot.state === "merged" || snapshot.state === "closed") {
+        ctx.log(`merge: ${snapshot.state} — the PR has landed`);
+        return { artifacts: {} };
+      }
+
       // Bind so the pollers keep their provider `this` when called detached below.
       const getMergeState = ctx.gitProvider.getMergeState.bind(ctx.gitProvider);
       const canBypassMerge = ctx.gitProvider.canBypassMerge?.bind(ctx.gitProvider);
@@ -81,6 +95,9 @@ export function mergeGateStep(): Step {
       let latestState: MergeState = "unknown";
       const result = await executeRoundLoop(ctx, {
         stepName: "merge-gate",
+        // Under watch the Step returns a `park()` signal, so its rounds must be persisted as they
+        // happen rather than handed back in the result.
+        ...(watch ? { recordRounds: "live" as const } : {}),
         async check() {
           try {
             latestState = await ctx.until(getMergeState(pr.number), {
@@ -120,6 +137,9 @@ export function mergeGateStep(): Step {
         commit: false,
       });
 
+      // Under watch, park (resumable) instead of finishing: the PR is reconciled for now, and the
+      // next tick will re-check it as the base moves. The rounds were recorded live above.
+      if (watch) return park("merge readiness reconciled; watching the PR until it lands");
       return { artifacts: {}, rounds: result.rounds };
     },
   });

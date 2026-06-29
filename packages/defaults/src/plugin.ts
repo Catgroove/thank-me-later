@@ -50,7 +50,9 @@ export const tmlDefaults: Plugin = (tml) => {
     testStep(fixLoopPolicy),
     openPrStep(), // performs a final base sync before pushing the branch
     ciWaitStep(fixLoopPolicy),
-    mergeGateStep(),
+    // When watch is on, merge-gate parks (resumable) once the PR is ready so the CLI's `--watch`
+    // loop can reconcile it again as the base moves, until it lands.
+    mergeGateStep({ watch: tml.config.watch ?? false }),
   );
 };
 

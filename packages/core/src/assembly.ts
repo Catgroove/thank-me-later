@@ -35,12 +35,15 @@ export interface Selection {
   readonly maxFixAttempts?: number;
   readonly models?: ModelMap;
   readonly disable?: readonly string[];
+  /** Whether to keep watching the PR after it is ready, until it lands (the `--watch` loop). */
+  readonly watch?: boolean;
 }
 
 /** The read-only subset of `Selection` a Plugin may consult. */
 export interface ResolvedKnobs {
   readonly branch?: string;
   readonly maxFixAttempts?: number;
+  readonly watch?: boolean;
 }
 
 /** The pipeline patch surface. Every reference to a Step by name throws `AssemblyError` if absent. */
@@ -123,6 +126,7 @@ export function createAssembly(selection: Selection, cwd: string): Assembly {
     config: {
       branch: selection.branch,
       maxFixAttempts: selection.maxFixAttempts,
+      watch: selection.watch,
     },
     defineStep,
     defineArtifact,
