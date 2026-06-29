@@ -1,5 +1,14 @@
 # @tml/pi
 
+## 5.0.0
+
+### Patch Changes
+
+- Updated dependencies [e9d8a4c]
+- Updated dependencies [1cc55a9]
+- Updated dependencies [bffb297]
+  - @tml/core@0.5.0
+
 ## 4.0.1
 
 ### Patch Changes
